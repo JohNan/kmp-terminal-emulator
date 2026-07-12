@@ -11,7 +11,7 @@ kotlin {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
         }
     }
-    
+
     jvm()
 
     @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
@@ -27,10 +27,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":terminal-core"))
-            
+
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
-            
+
             // Compose Multiplatform UI, foundation, & components
             implementation(compose.runtime)
             implementation(compose.foundation)

@@ -19,8 +19,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -28,8 +26,8 @@ import androidx.compose.ui.unit.sp
 import com.sshclient.data.terminal.TerminalCell
 import com.sshclient.data.terminal.TerminalScreenState
 import com.sshclient.presentation.screens.terminal.ArrowDirection
-import com.sshclient.presentation.screens.terminal.SelectionState
 import com.sshclient.presentation.screens.terminal.SearchState
+import com.sshclient.presentation.screens.terminal.SelectionState
 
 /**
  * Renders the terminal screen state as a grid of characters with integrated keyboard input

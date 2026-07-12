@@ -17,7 +17,6 @@ import androidx.compose.ui.window.ComposeViewport
 import com.sshclient.composeapp.presentation.screens.terminal.TerminalRenderer
 import com.sshclient.data.terminal.TerminalEmulator
 import com.sshclient.domain.model.TerminalColorScheme
-import com.sshclient.presentation.screens.terminal.ArrowDirection
 import kotlinx.coroutines.launch
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -39,7 +38,7 @@ fun TerminalDemoScreen() {
     // Initialize emulator
     val emulator = remember { TerminalEmulator(terminalRows, terminalCols) }
     val scope = rememberCoroutineScope()
-    
+
     // Command buffer for local REPL shell
     val commandBuffer = remember { StringBuilder() }
 
@@ -57,7 +56,10 @@ fun TerminalDemoScreen() {
     // Print welcome instructions
     LaunchedEffect(Unit) {
         printToTerminal("\u001B[1;36mKMP Wasm Terminal Proof of Concept\u001B[0m\r\n")
-        printToTerminal("Type commands here. Try typing '\u001B[33mhelp\u001B[0m', '\u001B[33mping\u001B[0m', or '\u001B[33mcolor\u001B[0m'.\r\n\r\n")
+        printToTerminal(
+            "Type commands here. Try typing " +
+                "'\u001B[33mhelp\u001B[0m', '\u001B[33mping\u001B[0m', or '\u001B[33mcolor\u001B[0m'.\r\n\r\n"
+        )
         printToTerminal("kmp-wasm-shell$ ")
     }
 
@@ -90,7 +92,11 @@ fun TerminalDemoScreen() {
                                 }
                                 "color" -> {
                                     printToTerminal("ANSI standard colors:\r\n")
-                                    printToTerminal("  \u001B[31mRed\u001B[0m  \u001B[32mGreen\u001B[0m  \u001B[33mYellow\u001B[0m  \u001B[34mBlue\u001B[0m  \u001B[35mMagenta\u001B[0m  \u001B[36mCyan\u001B[0m\r\n")
+                                    printToTerminal(
+                                        "  \u001B[31mRed\u001B[0m  \u001B[32mGreen\u001B[0m  " +
+                                            "\u001B[33mYellow\u001B[0m  \u001B[34mBlue\u001B[0m  " +
+                                            "\u001B[35mMagenta\u001B[0m  \u001B[36mCyan\u001B[0m\r\n"
+                                    )
                                 }
                                 "" -> {}
                                 else -> {
@@ -115,7 +121,9 @@ fun TerminalDemoScreen() {
                 }
             },
             onArrowKey = { arrowDirection, _ ->
-                printToTerminal("\r\n[Arrow key pressed: $arrowDirection]\r\nkmp-wasm-shell$ " + commandBuffer.toString())
+                printToTerminal(
+                    "\r\n[Arrow key pressed: $arrowDirection]\r\nkmp-wasm-shell$ " + commandBuffer.toString()
+                )
             },
             onLog = {},
             focusRequester = focusRequester,

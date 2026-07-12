@@ -1,9 +1,9 @@
 package com.sshclient.data.terminal
 
-import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.min
+import kotlin.time.Clock
 
 /**
  * ANSI escape sequence parser
@@ -53,6 +53,7 @@ class AnsiParser(
 
     // Track the last printable character for CSI b (Repeat Character)
     private var lastPrintableChar: Char? = null
+
     // Use inline function with lambda for params to avoid String allocation when logging is disabled
     private inline fun log(
         operation: String,
@@ -984,15 +985,18 @@ private object Base64Decoder {
     fun decode(src: String): ByteArray {
         val cleanSrc = src.filter { it != '\r' && it != '\n' && it != ' ' && it != '\t' }
         if (cleanSrc.isEmpty()) return ByteArray(0)
-        
+
         var padding = 0
-        if (cleanSrc.endsWith("==")) padding = 2
-        else if (cleanSrc.endsWith("=")) padding = 1
+        if (cleanSrc.endsWith("==")) {
+            padding = 2
+        } else if (cleanSrc.endsWith("=")) {
+            padding = 1
+        }
 
         val len = cleanSrc.length
         val byteLen = (len * 6) / 8 - padding
         val result = ByteArray(byteLen)
-        
+
         var byteIdx = 0
         var i = 0
         while (i < len - 3) {

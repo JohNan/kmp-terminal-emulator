@@ -15,7 +15,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":terminal-ui"))
             implementation(libs.kotlinx.coroutines.core)
-            
+
             // Compose Multiplatform
             implementation(compose.runtime)
             implementation(compose.foundation)

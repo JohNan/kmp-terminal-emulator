@@ -1,5 +1,6 @@
 package com.sshclient.composeapp.presentation.screens.terminal
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -8,7 +9,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sshclient.presentation.screens.terminal.ArrowDirection
-import androidx.compose.foundation.layout.fillMaxSize
 
 @Composable
 actual fun TerminalInputCapture(

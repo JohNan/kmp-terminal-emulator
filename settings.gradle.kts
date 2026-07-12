@@ -12,7 +12,6 @@ pluginManagement {
     }
 }
 
-
 rootProject.name = "kmp-terminal"
 include(":terminal-core")
 include(":terminal-ui")
