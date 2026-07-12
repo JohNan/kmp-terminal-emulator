@@ -1,0 +1,47 @@
+package com.sshclient.composeapp.presentation.components
+
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/**
+ * A modifier that invokes [onClick] repeatedly while the component is pressed.
+ */
+fun Modifier.repeatingClickable(
+    enabled: Boolean = true,
+    initialDelay: Long = 400,
+    repeatDelay: Long = 100,
+    onClick: () -> Unit,
+): Modifier =
+    composed {
+        val currentOnClick = rememberUpdatedState(onClick)
+        val scope = rememberCoroutineScope()
+
+        if (!enabled) return@composed this
+
+        Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                currentOnClick.value()
+
+                val job =
+                    scope.launch {
+                        delay(initialDelay)
+                        while (true) {
+                            currentOnClick.value()
+                            delay(repeatDelay)
+                        }
+                    }
+
+                waitForUpOrCancellation()
+                job.cancel()
+            }
+        }
+    }
