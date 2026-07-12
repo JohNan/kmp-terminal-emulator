@@ -1,8 +1,9 @@
 package com.sshclient.composeapp.presentation.screens.terminal
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -12,13 +13,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.input.key.*
 import com.sshclient.presentation.screens.terminal.ArrowDirection
 
 @Composable
@@ -56,7 +60,8 @@ actual fun TerminalInputCapture(
         keyboardActions = KeyboardActions(
             onAny = {}
         ),
-        textStyle = TextStyle(color = Color.Transparent), // Keep it invisible
+        // Keep it invisible
+        textStyle = TextStyle(color = Color.Transparent),
         modifier = modifier
             .size(1.dp) // Make it tiny so it doesn't take layout space
             .focusRequester(focusRequester)

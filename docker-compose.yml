@@ -1,0 +1,8 @@
+services:
+  kmp-terminal-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    restart: unless-stopped

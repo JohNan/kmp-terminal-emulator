@@ -33,8 +33,8 @@ import com.sshclient.data.terminal.TerminalCell
 import com.sshclient.data.terminal.TerminalColor
 import com.sshclient.data.terminal.TerminalScreenState
 import com.sshclient.data.terminal.UrlRange
-import com.sshclient.presentation.screens.terminal.SelectionState
 import com.sshclient.presentation.screens.terminal.SearchState
+import com.sshclient.presentation.screens.terminal.SelectionState
 
 /**
  * Terminal canvas component - renders the terminal display with scrolling and input capture

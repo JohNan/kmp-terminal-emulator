@@ -54,10 +54,12 @@ sealed interface TerminalUiState {
  */
 sealed interface ConnectionHealth {
     data object Healthy : ConnectionHealth
+
     data class Lost(
         val reason: String,
         val canReconnect: Boolean = true,
     ) : ConnectionHealth
+
     data class Degraded(
         val reason: String,
     ) : ConnectionHealth

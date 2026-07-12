@@ -9,8 +9,8 @@ import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
-import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 import com.sshclient.presentation.screens.terminal.ArrowDirection
+import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
 /**
  * Custom View to handle soft keyboard input and hardware key events for the terminal.

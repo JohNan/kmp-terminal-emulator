@@ -108,3 +108,8 @@ marketing_site.zip
 **/DerivedData/
 **/derivedData/
 
+
+# Kotlin & Mise
+.kotlin/
+.mise.xml
+.mise.toml.node-version
