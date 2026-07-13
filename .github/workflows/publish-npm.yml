@@ -1,0 +1,72 @@
+name: Publish NPM Package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libatomic1
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build WebAssembly Distribution
+        run: ./gradlew :demo-web:wasmJsBrowserDistribution --no-daemon
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@JohNan'
+
+      - name: Prepare NPM Package
+        run: |
+          mkdir -p npm-package
+          cp -r demo-web/build/dist/wasmJs/productionExecutable/* npm-package/
+          
+          cat <<EOF > npm-package/package.json
+          {
+            "name": "@JohNan/kmp-terminal",
+            "version": "0.1.0",
+            "description": "Kotlin Multiplatform Terminal Emulator compiled to WebAssembly",
+            "main": "demo-web.js",
+            "files": [
+              "demo-web.js",
+              "*.wasm",
+              "composeResources/**/*"
+            ],
+            "publishConfig": {
+              "registry": "https://npm.pkg.github.com"
+            },
+            "repository": {
+              "type": "git",
+              "url": "git@github.com:JohNan/kmp-terminal-emulator.git"
+            }
+          }
+          EOF
+
+      - name: Publish to GitHub Packages
+        run: |
+          cd npm-package
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
