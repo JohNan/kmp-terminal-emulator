@@ -1,6 +1,7 @@
 [tools]
 java = "21"
 android-sdk = "latest"
+node = "20"
 
 [tasks.build]
 description = "Build all targets"
@@ -13,3 +14,7 @@ run = "./gradlew compileKotlinWasmJs"
 [tasks.run-demo]
 description = "Run the WasmJs interactive browser REPL demo"
 run = "./gradlew :demo-web:wasmJsBrowserDevelopmentRun"
+
+[tasks.run-jvm]
+description = "Run the JVM Desktop interactive shell REPL demo"
+run = "./gradlew :demo-jvm:run"

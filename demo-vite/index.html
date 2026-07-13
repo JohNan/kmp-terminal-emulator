@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KMP Wasm Terminal - Vite TypeScript Demo</title>
+    <!-- Load the pre-compiled JS glue code of the Wasm Terminal -->
+    <script src="/demo-web.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <h1>KMP Wasm Terminal (Vite + TS)</h1>
+      <p class="description">
+        A modern TypeScript single-page application built with Vite, importing the precompiled Kotlin Multiplatform WebAssembly terminal component.
+      </p>
+
+      <div class="terminal-card">
+        <!-- Mounting point for the Skia Canvas -->
+        <div id="compose-receiver"></div>
+      </div>
+
+      <div class="controls">
+        <button id="btn-msg">Send Message</button>
+        <button id="btn-rainbow">Print Rainbow</button>
+        <button id="btn-clear">Clear Screen</button>
+        <button id="btn-focus">Focus Cursor</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
