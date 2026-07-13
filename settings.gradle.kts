@@ -16,3 +16,4 @@ rootProject.name = "kmp-terminal"
 include(":terminal-core")
 include(":terminal-ui")
 include(":demo-web")
+include(":demo-jvm")
