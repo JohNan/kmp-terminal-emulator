@@ -1,0 +1,61 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libatomic1
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build WebAssembly Distribution
+        run: ./gradlew :demo-web:wasmJsBrowserDistribution --no-daemon
+
+      - name: Bundle Release Artifacts
+        run: |
+          mkdir -p release-bundle
+          cp demo-web/build/dist/wasmJs/productionExecutable/demo-web.js release-bundle/
+          cp demo-web/build/dist/wasmJs/productionExecutable/demo-web.wasm release-bundle/
+          # Include index.html demo inside the zip for developer convenience
+          cp demo-html/index.html release-bundle/
+          cd release-bundle
+          zip -r ../kmp-terminal-wasm.zip *
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: kmp-terminal-wasm.zip
+          draft: false
+          prerelease: false
+          name: Release ${{ github.ref_name }}
+          body: |
+            Automatic release of KMP Terminal WebAssembly distribution for version ${{ github.ref_name }}.
+            
+            ### Included Pre-compiled Artifacts (kmp-terminal-wasm.zip):
+            * `demo-web.js` - JavaScript binding and DOM mounting glue code
+            * `demo-web.wasm` - WebAssembly binary payload containing Skia canvas renderer and terminal engine
+            * `index.html` - Vanilla JavaScript integration example demonstrating dynamic instantiation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
