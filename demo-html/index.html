@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KMP Wasm Terminal Integration Demo</title>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #58a6ff;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: #8b949e;
+            margin-bottom: 24px;
+            text-align: center;
+            max-width: 600px;
+        }
+
+        #terminal-card {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            width: 100%;
+            max-width: 800px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+
+        #compose-receiver {
+            width: 100%;
+            height: 400px;
+            background-color: #000;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .controls {
+            margin-top: 16px;
+            display: flex;
+            gap: 12px;
+            width: 100%;
+            max-width: 800px;
+            justify-content: center;
+        }
+
+        button {
+            background-color: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #30363d;
+            border-color: #8b949e;
+        }
+
+        button:active {
+            background-color: #282e38;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>KMP Wasm Terminal Demo</h1>
+    <p>
+        This demo showcases the Kotlin Multiplatform terminal emulator compiled to WebAssembly 
+        and integrated into a plain HTML/JavaScript application using global window bindings.
+    </p>
+
+    <div id="terminal-card">
+        <!-- Container where the Compose Terminal canvas will mount -->
+        <div id="compose-receiver"></div>
+    </div>
+
+    <div class="controls">
+        <button id="btn-echo">Print Echo Text</button>
+        <button id="btn-color">Print ANSI Colors</button>
+        <button id="btn-clear">Clear Canvas</button>
+        <button id="btn-focus">Focus Terminal</button>
+    </div>
+
+    <!-- Load the compiled Kotlin WebAssembly JavaScript glue code -->
+    <script src="demo-web.js"></script>
+
+    <script>
+        // Setup input callback globally BEFORE window load completes, so Wasm registers it
+        window.onTerminalInput = (input) => {
+            // Callback triggered when the user types in the terminal.
+            // In a real application, you would send this to your SSH WebSocket connection.
+            console.log("User Input Event:", JSON.stringify(input));
+            
+            // For this local demo, we echo the input back
+            window.writeToTerminal(input);
+        };
+
+        window.addEventListener('load', () => {
+            console.log("Initializing Wasm Terminal...");
+            
+            // Verify our registration functions are loaded from the WebAssembly bundle
+            setTimeout(() => {
+                if (typeof window.writeToTerminal !== 'function') {
+                    console.error("writeToTerminal function not found! Ensure Wasm successfully initialized.");
+                    alert("writeToTerminal not found! Check console logs.");
+                    return;
+                }
+
+                // Write welcome message from JavaScript
+                window.writeToTerminal("\u001B[1;32mTerminal successfully initialized via JavaScript!\u001B[0m\r\n");
+                window.writeToTerminal("Type anything below to see characters echoed back in real-time.\r\n\r\n");
+            }, 200);
+
+            // Setup button event listeners
+            document.getElementById('btn-echo').addEventListener('click', () => {
+                if (typeof window.writeToTerminal === 'function') {
+                    window.writeToTerminal("\r\n[Message sent from parent HTML page]\r\n");
+                }
+            });
+
+            document.getElementById('btn-color').addEventListener('click', () => {
+                if (typeof window.writeToTerminal === 'function') {
+                    window.writeToTerminal("\r\nANSI Colors: \u001B[31mRed\u001B[0m, \u001B[32mGreen\u001B[0m, \u001B[33mYellow\u001B[0m, \u001B[34mBlue\u001B[0m, \u001B[35mMagenta\u001B[0m, \u001B[36mCyan\u001B[0m\r\n");
+                }
+            });
+
+            document.getElementById('btn-clear').addEventListener('click', () => {
+                if (typeof window.writeToTerminal === 'function') {
+                    window.writeToTerminal("\u001B[2J\u001B[H");
+                }
+            });
+
+            document.getElementById('btn-focus').addEventListener('click', () => {
+                if (typeof window.focusTerminal === 'function') {
+                    window.focusTerminal();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
