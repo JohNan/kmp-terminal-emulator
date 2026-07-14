@@ -15,7 +15,7 @@ cp -r demo-web/build/dist/wasmJs/productionExecutable/* npm-package/
 cat <<EOF > npm-package/package.json
 {
   "name": "@JohNan/kmp-terminal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Kotlin Multiplatform Terminal Emulator compiled to WebAssembly",
   "main": "demo-web.js",
   "files": [
