@@ -46,7 +46,7 @@ jobs:
           cat <<EOF > npm-package/package.json
           {
             "name": "@JohNan/kmp-terminal",
-            "version": "0.2.0",
+            "version": "0.3.0",
             "description": "Kotlin Multiplatform Terminal Emulator compiled to WebAssembly",
             "main": "demo-web.js",
             "files": [
