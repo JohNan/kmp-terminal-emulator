@@ -21,6 +21,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -35,25 +36,31 @@ actual fun TerminalInputCapture(
     onLog: (String) -> Unit,
     modifier: Modifier
 ) {
-    var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1)))
+    }
 
     BasicTextField(
         value = textFieldValue,
         onValueChange = { newValue ->
             val newText = newValue.text
-            val oldText = textFieldValue.text
+            val oldText = " "
             if (newText.length > oldText.length) {
-                // Characters added
-                val added = newText.substring(oldText.length)
+                val added = if (newText.startsWith(" ")) {
+                    newText.substring(1)
+                } else if (newText.endsWith(" ")) {
+                    newText.substring(0, newText.length - 1)
+                } else {
+                    newText
+                }
                 onInput(added)
             } else if (newText.length < oldText.length) {
-                // Backspace pressed
-                onInput("\u007f") // send DEL / backspace character
+                onInput("\u007f")
             }
-            // Always keep the text value empty to continuously capture typing
-            textFieldValue = TextFieldValue("")
+            textFieldValue = TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))
         },
         keyboardOptions = KeyboardOptions(
+            capitalization = KeyboardCapitalization.None,
             autoCorrectEnabled = false,
             keyboardType = KeyboardType.Ascii,
             imeAction = ImeAction.None

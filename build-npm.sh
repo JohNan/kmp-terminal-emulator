@@ -15,7 +15,7 @@ cp -r demo-web/build/dist/wasmJs/productionExecutable/* npm-package/
 cat <<EOF > npm-package/package.json
 {
   "name": "@JohNan/kmp-terminal",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Kotlin Multiplatform Terminal Emulator compiled to WebAssembly",
   "main": "demo-web.js",
   "files": [
@@ -31,6 +31,12 @@ cat <<EOF > npm-package/package.json
     "url": "git@github.com:JohNan/kmp-terminal-emulator.git"
   }
 }
+EOF
+
+# Create .npmrc for publishing
+cat <<EOF > npm-package/.npmrc
+@JohNan:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=\${GH_TOKEN_PKG}
 EOF
 
 echo "NPM Package prepared under npm-package/!"
