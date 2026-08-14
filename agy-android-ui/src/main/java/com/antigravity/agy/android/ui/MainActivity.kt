@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.antigravity.agy.android.ui.theme.AgyTheme
+import org.koin.androidx.compose.koinViewModel
 
 /**
  * Main Activity for the Antigravity Android UI.
@@ -14,10 +15,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Uses MockAgyViewModel until the full ViewModel implementation is wired up
-        val viewModel: IAgyViewModel = MockAgyViewModel()
-
         setContent {
+            val viewModel: RealAgyViewModel = koinViewModel()
             AgyTheme {
                 AgyApp(viewModel = viewModel)
             }
