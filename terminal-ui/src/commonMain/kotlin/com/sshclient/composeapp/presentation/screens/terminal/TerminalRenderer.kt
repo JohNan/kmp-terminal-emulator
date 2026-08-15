@@ -84,6 +84,7 @@ fun TerminalRenderer(
     onLongPress: (offset: Offset, row: Int, col: Int) -> Unit = { _, _, _ -> },
     onUrlClick: (String) -> Unit = {},
     onKeyboardToggleAvailable: (() -> Unit) -> Unit = {},
+    showKeyboardSignal: Int = 0,
     onMouseEvent: (com.sshclient.data.terminal.MouseEvent, Int, Int) -> Unit = { _, _, _ -> },
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -220,6 +221,7 @@ fun TerminalRenderer(
             TerminalInputCapture(
                 enabled = enabled,
                 focusRequester = internalFocusRequester,
+                showKeyboardSignal = showKeyboardSignal,
                 onInput = handleSoftInput,
                 onArrowKey = onArrowKey,
                 onLog = onLog,
