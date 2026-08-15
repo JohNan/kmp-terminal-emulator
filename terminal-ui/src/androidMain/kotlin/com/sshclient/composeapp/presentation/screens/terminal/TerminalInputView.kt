@@ -38,6 +38,8 @@ class TerminalInputView(context: Context) : View(context) {
 
     override fun performClick(): Boolean {
         super.performClick()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+        imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
         return true
     }
 
@@ -53,6 +55,10 @@ class TerminalInputView(context: Context) : View(context) {
     ) {
         onLog?.invoke("onFocusChanged: gainFocus=$gainFocus, direction=$direction")
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        if (gainFocus) {
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
