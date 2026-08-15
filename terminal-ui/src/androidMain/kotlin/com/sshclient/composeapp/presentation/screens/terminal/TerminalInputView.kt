@@ -27,6 +27,14 @@ class TerminalInputView(context: Context) : View(context) {
         isFocusableInTouchMode = true
     }
 
+    fun showKeyboard() {
+        post {
+            requestFocus()
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val handled = super.onTouchEvent(event)
         if (event.action == MotionEvent.ACTION_UP) {

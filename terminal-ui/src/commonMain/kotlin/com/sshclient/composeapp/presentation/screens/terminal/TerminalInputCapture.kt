@@ -9,6 +9,7 @@ import com.sshclient.presentation.screens.terminal.ArrowDirection
 expect fun TerminalInputCapture(
     enabled: Boolean,
     focusRequester: FocusRequester,
+    showKeyboardSignal: Int = 0,
     onInput: (String) -> Unit,
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
