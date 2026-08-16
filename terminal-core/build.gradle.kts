@@ -23,13 +23,10 @@ kotlin {
         browser()
     }
 
-    val enableIos = providers.gradleProperty("enableIos").orNull?.toBoolean() ?: false
-    if (enableIos) {
-        listOf(
-            iosArm64(),
-            iosSimulatorArm64()
-        )
-    }
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64()
+    )
 
     sourceSets {
         commonMain.dependencies {
