@@ -6,7 +6,7 @@ plugins {
     `maven-publish`
 }
 
-group = "com.kmp.terminal"
+group = "com.johnan.kmp.terminal"
 version = providers.gradleProperty("version").orNull.takeIf { !it.isNullOrBlank() && it != "unspecified" } ?: "0.1.0"
 
 kotlin {
