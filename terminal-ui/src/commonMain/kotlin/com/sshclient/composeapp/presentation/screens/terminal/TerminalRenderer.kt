@@ -86,7 +86,7 @@ fun TerminalRenderer(
     onKeyboardToggleAvailable: (() -> Unit) -> Unit = {},
     showKeyboardSignal: Int = 0,
     onTerminalResize: (cols: Int, rows: Int) -> Unit = { _, _ -> },
-    onMouseEvent: (com.sshclient.data.terminal.MouseEvent, Int, Int) -> Unit = { _, _, _ -> },
+    onMouseEvent: ((com.sshclient.data.terminal.MouseEvent, Int, Int) -> Unit)? = null,
 ) {
     val textMeasurer = rememberTextMeasurer()
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -242,6 +242,36 @@ fun TerminalRenderer(
             )
         }
 
+        val defaultOnMouseEvent: (com.sshclient.data.terminal.MouseEvent, Int, Int) -> Unit =
+            remember(onInput, terminalState.sgrMouseModeEnabled) {
+                { event, row, col ->
+                    val ansiRow = row + 1
+                    val ansiCol = col + 1
+                    val isSgr = terminalState.sgrMouseModeEnabled
+                    val button =
+                        when (event) {
+                            com.sshclient.data.terminal.MouseEvent.Press -> 0
+                            com.sshclient.data.terminal.MouseEvent.Release -> 3
+                            com.sshclient.data.terminal.MouseEvent.Drag -> 32
+                            com.sshclient.data.terminal.MouseEvent.WheelUp -> 64
+                            com.sshclient.data.terminal.MouseEvent.WheelDown -> 65
+                        }
+
+                    if (isSgr) {
+                        val eventChar = if (event == com.sshclient.data.terminal.MouseEvent.Release) 'm' else 'M'
+                        val sgrButton = if (event == com.sshclient.data.terminal.MouseEvent.Release) 0 else button
+                        onInput("\u001B[<$sgrButton;$ansiCol;${ansiRow}$eventChar")
+                    } else if (ansiCol <= 223 && ansiRow <= 223) {
+                        val cb = (button + 32).toChar()
+                        val cx = (ansiCol + 32).toChar()
+                        val cy = (ansiRow + 32).toChar()
+                        onInput("\u001B[M$cb$cx$cy")
+                    }
+                }
+            }
+
+        val effectiveOnMouseEvent = onMouseEvent ?: defaultOnMouseEvent
+
         TerminalCanvas(
             modifier = Modifier.fillMaxSize(),
             terminalState = terminalState,
@@ -270,7 +300,7 @@ fun TerminalRenderer(
             onExitCopyMode = onExitCopyMode,
             onLongPress = onLongPress,
             onUrlClick = onUrlClick,
-            onMouseEvent = onMouseEvent,
+            onMouseEvent = effectiveOnMouseEvent,
             onLog = onLog,
         )
     }
