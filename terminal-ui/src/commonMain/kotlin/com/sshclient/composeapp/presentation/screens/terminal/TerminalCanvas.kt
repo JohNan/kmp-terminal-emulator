@@ -128,6 +128,7 @@ fun TerminalCanvas(
     // Optimization: Pre-calculate standard ANSI colors to avoid expensive lookup/conversion in the draw loop
     val ansiColors = remember(colorScheme, isDark) {
         calculateAnsiColors(colorScheme, isDark)
+    }
     val verticalOffset = 0f
 
     val isCopyMode = selectionState !is SelectionState.None
