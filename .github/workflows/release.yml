@@ -20,11 +20,16 @@ jobs:
 
       - name: Calculate Version
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
-          VERSION_NAME=${LATEST_TAG#v}
-          # Strip pre-release suffix (e.g. 0.1.0-alpha.1 -> 0.1.0)
-          VERSION_NAME=${VERSION_NAME%%-*}
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            VERSION_NAME="0.1.0"
+          else
+            VERSION_NAME=${LATEST_TAG#v}
+            VERSION_NAME=${VERSION_NAME%%-*}
+          fi
           echo "version_name=$VERSION_NAME" >> $GITHUB_ENV
           echo "Calculated Production Version: $VERSION_NAME"
 
