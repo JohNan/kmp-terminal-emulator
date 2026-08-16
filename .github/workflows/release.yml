@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build-and-release:
@@ -28,6 +29,12 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+
+      - name: Publish Maven Packages to GitHub Packages
+        run: ./gradlew publish --no-daemon
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build WebAssembly Distribution
         run: ./gradlew :demo-web:wasmJsBrowserDistribution --no-daemon
@@ -51,7 +58,7 @@ jobs:
           prerelease: false
           name: Release ${{ github.ref_name }}
           body: |
-            Automatic release of KMP Terminal WebAssembly distribution for version ${{ github.ref_name }}.
+            Automatic release of KMP Terminal WebAssembly distribution and Maven packages for version ${{ github.ref_name }}.
             
             ### Included Pre-compiled Artifacts (kmp-terminal-wasm.zip):
             * `demo-web.js` - JavaScript binding and DOM mounting glue code
