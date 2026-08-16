@@ -285,7 +285,7 @@ private fun KeyItem(
 }
 
 @Composable
-private fun TwoRowKeyItem(
+private fun KeyColumn(
     item1: KeyBarUiItem,
     item2: KeyBarUiItem?,
     modifierState: ModifierKeyState,
