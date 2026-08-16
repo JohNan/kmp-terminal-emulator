@@ -22,12 +22,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_TAG=$(gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "v0.1.0")
-          VERSION_NAME=${LATEST_TAG#v}
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
 
-          IFS='.' read -r major minor patch <<< "$VERSION_NAME"
-          patch=$((patch + 1))
-          VERSION_NAME="$major.$minor.$patch"
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            echo "No existing releases or tags found. Defaulting to initial version v0.1.0."
+            VERSION_NAME="0.1.0"
+          else
+            VERSION_NO_V=${LATEST_TAG#v}
+            VERSION_NO_V=${VERSION_NO_V%%-*}
+            IFS='.' read -r major minor patch <<< "$VERSION_NO_V"
+            major=${major:-0}
+            minor=${minor:-1}
+            patch=${patch:-0}
+            patch=$((patch + 1))
+            VERSION_NAME="$major.$minor.$patch"
+          fi
 
           echo "version_name=$VERSION_NAME" >> $GITHUB_ENV
           echo "previous_tag=$LATEST_TAG" >> $GITHUB_ENV

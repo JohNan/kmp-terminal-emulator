@@ -29,16 +29,22 @@ jobs:
 
       - name: Calculate Version Code and Name
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Automatically resolve version from the latest tag
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
           echo "Latest Tag: $LATEST_TAG"
 
-          # Determine Base Version
-          if [[ "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            echo "No existing releases or tags found. Defaulting to initial version 0.1.0."
+            BASE_VERSION="0.1.0"
+          elif [[ "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Detected Production tag. Bumping patch."
             VERSION_NO_V=${LATEST_TAG#v}
             IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION_NO_V"
+            MAJOR=${MAJOR:-0}
+            MINOR=${MINOR:-1}
+            PATCH=${PATCH:-0}
             NEW_PATCH=$((PATCH + 1))
             BASE_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
           else
