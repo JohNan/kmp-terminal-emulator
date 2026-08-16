@@ -56,7 +56,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.PopupProperties
 import com.sshclient.composeapp.presentation.components.repeatingClickable
 import com.sshclient.presentation.screens.terminal.KeyBarUiItem
 import com.sshclient.presentation.screens.terminal.KeyBehavior
