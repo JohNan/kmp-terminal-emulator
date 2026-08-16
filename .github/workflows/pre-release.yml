@@ -107,9 +107,10 @@ jobs:
       - name: Bundle WebAssembly Release Artifacts
         run: |
           mkdir -p release-bundle
-          cp demo-web/build/dist/wasmJs/productionExecutable/demo-web.js release-bundle/
-          cp demo-web/build/dist/wasmJs/productionExecutable/demo-web.wasm release-bundle/
-          cp demo-html/index.html release-bundle/
+          cp -r demo-web/build/dist/wasmJs/productionExecutable/* release-bundle/
+          if [ -f demo-html/index.html ]; then
+            cp demo-html/index.html release-bundle/demo.html
+          fi
           cd release-bundle
           zip -r ../kmp-terminal-wasm.zip *
 
