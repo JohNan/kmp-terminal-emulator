@@ -7,7 +7,6 @@ package com.sshclient.demoweb
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeViewport
 import com.sshclient.composeapp.presentation.screens.terminal.TerminalRenderer
 import com.sshclient.data.terminal.TerminalEmulator
@@ -47,11 +45,40 @@ external fun createTerminalInstanceJs(
     dispose: () -> Unit
 ): JsAny
 
+@JsFun("(width, height) => { if (window.onTerminalCellMeasured) window.onTerminalCellMeasured(width, height); }")
+external fun notifyCellMeasured(width: Double, height: Double)
+
 @JsFun("(containerId) => { const el = document.getElementById(containerId); if (el) el.innerHTML = ''; }")
 external fun clearContainer(containerId: String)
 
+@JsFun("() => { return document.getElementById('compose-receiver') !== null; }")
+external fun hasDefaultContainer(): Boolean
+
+@JsFun(
+    "() => { " +
+        "return {" +
+        "  containerId: 'compose-receiver'," +
+        "  rows: 24," +
+        "  cols: 80," +
+        "  onInput: (input) => { " +
+        "    if (typeof window.onTerminalInput === 'function') window.onTerminalInput(input); " +
+        "  }" +
+        "};" +
+        "}"
+)
+external fun createDefaultConfig(): TerminalConfig
+
+@JsFun(
+    "(instance) => { " +
+        "window.writeToTerminal = (text) => instance.write(text);" +
+        "window.resizeTerminal = (r, c) => instance.resize(r, c);" +
+        "window.focusTerminal = () => instance.focus();" +
+        "}"
+)
+external fun registerGlobalFunctions(instance: JsAny)
+
 fun main() {
-    registerCreateKmpTerminal { config ->
+    val createFunc: (TerminalConfig) -> JsAny = { config ->
         val containerId = config.containerId
         val rows = config.rows
         val cols = config.cols
@@ -59,6 +86,7 @@ fun main() {
 
         val emulator = TerminalEmulator(rows, cols)
         val focusRequester = FocusRequester()
+        var isFocusRequesterInitialized = false
         val scope = CoroutineScope(Dispatchers.Main)
 
         val isDisposedState = mutableStateOf(false)
@@ -71,7 +99,7 @@ fun main() {
                     Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D1117)) {
                         val terminalState by emulator.screenState.collectAsState()
 
-                        Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                        Box(modifier = Modifier.fillMaxSize()) {
                             TerminalRenderer(
                                 modifier = Modifier.fillMaxSize(),
                                 terminalState = terminalState,
@@ -84,12 +112,27 @@ fun main() {
                                 onLog = {},
                                 focusRequester = focusRequester,
                                 colorScheme = TerminalColorScheme.DEFAULT,
-                                fontSize = 14f
+                                fontSize = 14f,
+                                onCellMeasured = { width, height ->
+                                    notifyCellMeasured(width.toDouble(), height.toDouble())
+                                },
+                                onResize = { r, c ->
+                                    if (!isDisposedState.value) {
+                                        scope.launch {
+                                            emulator.resize(r, c)
+                                        }
+                                    }
+                                }
                             )
                         }
 
                         LaunchedEffect(Unit) {
-                            focusRequester.requestFocus()
+                            isFocusRequesterInitialized = true
+                            try {
+                                focusRequester.requestFocus()
+                            } catch (e: Exception) {
+                                // ignore
+                            }
                         }
                     }
                 }
@@ -113,8 +156,12 @@ fun main() {
         }
 
         val focus: () -> Unit = {
-            if (!isDisposedState.value) {
-                focusRequester.requestFocus()
+            if (!isDisposedState.value && isFocusRequesterInitialized) {
+                try {
+                    focusRequester.requestFocus()
+                } catch (e: Exception) {
+                    // ignore
+                }
             }
         }
 
@@ -125,5 +172,14 @@ fun main() {
         }
 
         createTerminalInstanceJs(write, resize, focus, dispose)
+    }
+
+    registerCreateKmpTerminal(createFunc)
+
+    // Backward compatibility: automatically create instance if #compose-receiver exists
+    if (hasDefaultContainer()) {
+        val config = createDefaultConfig()
+        val instance = createFunc(config)
+        registerGlobalFunctions(instance)
     }
 }

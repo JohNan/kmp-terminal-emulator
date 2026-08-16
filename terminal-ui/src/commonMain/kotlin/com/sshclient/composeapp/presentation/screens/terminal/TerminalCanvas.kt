@@ -16,8 +16,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
@@ -128,10 +128,6 @@ fun TerminalCanvas(
     // Optimization: Pre-calculate standard ANSI colors to avoid expensive lookup/conversion in the draw loop
     val ansiColors = remember(colorScheme, isDark) {
         calculateAnsiColors(colorScheme, isDark)
-    }
-
-    val contentHeight = allRows.size * cellHeight
-    val totalHeightPx = with(LocalDensity.current) { totalHeight.toPx() }
     val verticalOffset = 0f
 
     val isCopyMode = selectionState !is SelectionState.None
@@ -403,42 +399,82 @@ fun TerminalCanvas(
 
                     // Draw Text
                     if (batch.text.isNotEmpty()) {
-                        // Optimization: Cache TextLayoutResult to avoid expensive measurement on every frame
-                        val layoutResult = batch.textLayoutResult ?: run {
-                            // Optimization: Use pre-resolved colors
-                            val textStyle =
-                                if (batch.fgColor === TerminalColor.Default &&
-                                    !batch.bold &&
-                                    !batch.underline &&
-                                    !batch.reverse &&
-                                    !batch.strikethrough &&
-                                    !batch.conceal
-                                ) {
-                                    baseTextStyle
-                                } else {
-                                    val decorations = mutableListOf<TextDecoration>()
-                                    if (batch.underline) decorations.add(TextDecoration.Underline)
-                                    if (batch.strikethrough) decorations.add(TextDecoration.LineThrough)
-                                    val textDecoration =
-                                        if (decorations.isNotEmpty()) TextDecoration.combine(decorations) else null
+                        val textStyle =
+                            if (batch.fgColor === TerminalColor.Default &&
+                                !batch.bold &&
+                                !batch.underline &&
+                                !batch.reverse &&
+                                !batch.strikethrough &&
+                                !batch.conceal
+                            ) {
+                                baseTextStyle
+                            } else {
+                                val decorations = mutableListOf<TextDecoration>()
+                                if (batch.underline) decorations.add(TextDecoration.Underline)
+                                if (batch.strikethrough) decorations.add(TextDecoration.LineThrough)
+                                val textDecoration =
+                                    if (decorations.isNotEmpty()) TextDecoration.combine(decorations) else null
 
-                                    baseTextStyle.copy(
-                                        color = if (batch.conceal) Color.Transparent else batch.resolvedFg,
-                                        fontWeight = if (batch.bold) FontWeight.Bold else FontWeight.Normal,
-                                        textDecoration = textDecoration,
+                                baseTextStyle.copy(
+                                    color = if (batch.conceal) Color.Transparent else batch.resolvedFg,
+                                    fontWeight = if (batch.bold) FontWeight.Bold else FontWeight.Normal,
+                                    textDecoration = textDecoration,
+                                )
+                            }
+
+                        // Optimization: Cache TextLayoutResult for each character to avoid expensive measurement on every frame
+                        val layoutResults = batch.charLayoutResults ?: run {
+                            val results = arrayOfNulls<TextLayoutResult>(batch.text.length)
+                            for (j in 0 until batch.text.length) {
+                                val c = batch.text[j]
+                                val isBox = c.code in 0x2500..0x257F
+                                val isBlock = c.code in 0x2580..0x259F
+                                if (!isBox && !isBlock && c != ' ') {
+                                    results[j] = textMeasurer.measure(
+                                        text = c.toString(),
+                                        style = textStyle
                                     )
                                 }
-
-                            textMeasurer.measure(
-                                text = batch.text,
-                                style = textStyle
-                            ).also { batch.textLayoutResult = it }
+                            }
+                            batch.charLayoutResults = results
+                            results
                         }
 
-                        drawText(
-                            textLayoutResult = layoutResult,
-                            topLeft = Offset(x, y),
-                        )
+                        // Draw each character at its exact grid offset
+                        val textColor = if (batch.conceal) Color.Transparent else batch.resolvedFg
+                        val strokeWidthLight = 1.dp.toPx()
+                        val strokeWidthHeavy = 2.5.dp.toPx()
+
+                        for (j in 0 until batch.text.length) {
+                            val c = batch.text[j]
+                            val charX = x + j * cellWidth
+
+                            val isBox = c.code in 0x2500..0x257F
+                            val isBlock = c.code in 0x2580..0x259F
+
+                            if (isBox) {
+                                drawBoxDrawing(
+                                    c,
+                                    charX,
+                                    y,
+                                    cellWidth,
+                                    cellHeight,
+                                    textColor,
+                                    strokeWidthLight,
+                                    strokeWidthHeavy
+                                )
+                            } else if (isBlock) {
+                                drawBlockElement(c, charX, y, cellWidth, cellHeight, textColor)
+                            } else if (c != ' ') {
+                                val charLayout = layoutResults.getOrNull(j)
+                                if (charLayout != null) {
+                                    drawText(
+                                        textLayoutResult = charLayout,
+                                        topLeft = Offset(charX, y),
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Draw overline
@@ -512,6 +548,7 @@ data class RenderBatch(
     val conceal: Boolean,
 ) {
     var textLayoutResult: TextLayoutResult? = null
+    var charLayoutResults: Array<TextLayoutResult?>? = null
     var resolvedFg: Color = Color.Unspecified
     var resolvedBg: Color = Color.Unspecified
 }
@@ -757,5 +794,748 @@ fun resolveBatchColors(
             isDark,
             isBackground = true,
         )
+    }
+}
+
+private enum class LineType { NONE, LIGHT, HEAVY, DOUBLE }
+
+private fun DrawScope.drawBoxDrawing(
+    c: Char,
+    x: Float,
+    y: Float,
+    cellWidth: Float,
+    cellHeight: Float,
+    color: Color,
+    strokeWidthLight: Float,
+    strokeWidthHeavy: Float
+) {
+    val centerX = x + cellWidth / 2f
+    val centerY = y + cellHeight / 2f
+
+    // Determine Top, Bottom, Left, Right line styles
+    var top = LineType.NONE
+    var bottom = LineType.NONE
+    var left = LineType.NONE
+    var right = LineType.NONE
+
+    when (c) {
+        // Horizontal
+        '\u2500', '─' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u2501', '━' -> {
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+        // Vertical
+        '\u2502', '│' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+        }
+        '\u2503', '┃' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+        }
+        // Dashed horizontal
+        '\u2504', '┄', '\u2508', '┈', '\u254c', '╌' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u2505', '┅', '\u2509', '┉', '\u254d', '╍' -> {
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+        // Dashed vertical
+        '\u2506', '┆', '\u250a', '┊', '\u254e', '╎' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+        }
+        '\u2507', '┇', '\u250a', '┋', '\u254e', '╏' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+        }
+
+        // Corners: Down and Right
+        '\u250c', '┌' -> {
+            bottom = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u250d', '┍' -> {
+            bottom = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u250e', '┎' -> {
+            bottom = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u250f', '┏' -> {
+            bottom = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+
+        // Corners: Down and Left
+        '\u2510', '┐' -> {
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+        }
+        '\u2511', '┑' -> {
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+        }
+        '\u2512', '┒' -> {
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+        }
+        '\u2513', '┓' -> {
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+        }
+
+        // Corners: Up and Right
+        '\u2514', '└' -> {
+            top = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u2515', '┕' -> {
+            top = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u2516', '┖' -> {
+            top = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u2517', '┗' -> {
+            top = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+
+        // Corners: Up and Left
+        '\u2518', '┘' -> {
+            top = LineType.LIGHT
+            left = LineType.LIGHT
+        }
+        '\u2519', '┙' -> {
+            top = LineType.LIGHT
+            left = LineType.HEAVY
+        }
+        '\u251a', '┚' -> {
+            top = LineType.HEAVY
+            left = LineType.LIGHT
+        }
+        '\u251b', '┛' -> {
+            top = LineType.HEAVY
+            left = LineType.HEAVY
+        }
+
+        // Junctions: Vertical and Right
+        '\u251c', '├' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u251d', '┝' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u251e', '┞' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u251f', '┟' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u2520', '┠' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u2521', '┡' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u2522', '┢' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+        '\u2523', '┣' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+
+        // Junctions: Vertical and Left
+        '\u2524', '┤' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+        }
+        '\u2525', '┥' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+        }
+        '\u2526', '┦' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+        }
+        '\u2527', '┧' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+        }
+        '\u2528', '┨' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+        }
+        '\u2529', '┩' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+        }
+        '\u252a', '┪' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+        }
+        '\u252b', '┫' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+        }
+
+        // Junctions: Horizontal and Down
+        '\u252c', '┬' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+            bottom = LineType.LIGHT
+        }
+        '\u252d', '┭' -> {
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+            bottom = LineType.LIGHT
+        }
+        '\u252e', '┮' -> {
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+            bottom = LineType.LIGHT
+        }
+        '\u252f', '┯' -> {
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+            bottom = LineType.LIGHT
+        }
+        '\u2530', '┰' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+            bottom = LineType.HEAVY
+        }
+        '\u2531', '┱' -> {
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+            bottom = LineType.HEAVY
+        }
+        '\u2532', '┲' -> {
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+            bottom = LineType.HEAVY
+        }
+        '\u2533', '┳' -> {
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+            bottom = LineType.HEAVY
+        }
+
+        // Junctions: Horizontal and Up
+        '\u2534', '┴' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+            top = LineType.LIGHT
+        }
+        '\u2535', '┵' -> {
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+            top = LineType.LIGHT
+        }
+        '\u2536', '┶' -> {
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+            top = LineType.LIGHT
+        }
+        '\u2537', '┷' -> {
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+            top = LineType.LIGHT
+        }
+        '\u2538', '┸' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+            top = LineType.HEAVY
+        }
+        '\u2539', '┹' -> {
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+            top = LineType.HEAVY
+        }
+        '\u253a', '┺' -> {
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+            top = LineType.HEAVY
+        }
+        '\u253b', '┻' -> {
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+            top = LineType.HEAVY
+        }
+
+        // Junctions: Vertical and Horizontal
+        '\u253c', '┼' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u253d', '┽' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u253e', '┾' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u253f', '┿' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+        '\u2540', '╀' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u2541', '╁' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u2542', '╂' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u2543', '╃' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u2544', '╄' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u2545', '╅' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u2546', '╆' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u2547', '╇' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u2548', '╈' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u2549', '╉' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+        '\u254a', '╊' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+        '\u254b', '╋' -> {
+            top = LineType.HEAVY
+            bottom = LineType.HEAVY
+            left = LineType.HEAVY
+            right = LineType.HEAVY
+        }
+
+        // Double lines and mixed double/single lines
+        '\u2550', '═' -> {
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+        }
+        '\u2551', '║' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+        }
+        '\u2552', '╒' -> {
+            bottom = LineType.LIGHT
+            right = LineType.DOUBLE
+        }
+        '\u2553', '╓' -> {
+            bottom = LineType.DOUBLE
+            right = LineType.LIGHT
+        }
+        '\u2554', '╔' -> {
+            bottom = LineType.DOUBLE
+            right = LineType.DOUBLE
+        }
+        '\u2555', '╕' -> {
+            bottom = LineType.LIGHT
+            left = LineType.DOUBLE
+        }
+        '\u2556', '╖' -> {
+            bottom = LineType.DOUBLE
+            left = LineType.LIGHT
+        }
+        '\u2557', '╗' -> {
+            bottom = LineType.DOUBLE
+            left = LineType.DOUBLE
+        }
+        '\u2558', '╘' -> {
+            top = LineType.LIGHT
+            right = LineType.DOUBLE
+        }
+        '\u2559', '╙' -> {
+            top = LineType.DOUBLE
+            right = LineType.LIGHT
+        }
+        '\u255a', '╚' -> {
+            top = LineType.DOUBLE
+            right = LineType.DOUBLE
+        }
+        '\u255b', '╛' -> {
+            top = LineType.LIGHT
+            left = LineType.DOUBLE
+        }
+        '\u255c', '╜' -> {
+            top = LineType.DOUBLE
+            left = LineType.LIGHT
+        }
+        '\u255d', '╝' -> {
+            top = LineType.DOUBLE
+            left = LineType.DOUBLE
+        }
+        '\u255e', '╞' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            right = LineType.DOUBLE
+        }
+        '\u255f', '╟' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+            right = LineType.LIGHT
+        }
+        '\u2560', '╠' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+            right = LineType.DOUBLE
+        }
+        '\u2561', '╡' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.DOUBLE
+        }
+        '\u2562', '╢' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+            left = LineType.LIGHT
+        }
+        '\u2563', '╣' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+            left = LineType.DOUBLE
+        }
+        '\u2564', '╤' -> {
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+            bottom = LineType.LIGHT
+        }
+        '\u2565', '╥' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+            bottom = LineType.DOUBLE
+        }
+        '\u2566', '╦' -> {
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+        }
+        '\u2567', '╧' -> {
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+            top = LineType.LIGHT
+        }
+        '\u2568', '╨' -> {
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+            top = LineType.DOUBLE
+        }
+        '\u2569', '╩' -> {
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+            top = LineType.DOUBLE
+        }
+        '\u256a', '╪' -> {
+            top = LineType.LIGHT
+            bottom = LineType.LIGHT
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+        }
+        '\u256b', '╫' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+            left = LineType.LIGHT
+            right = LineType.LIGHT
+        }
+        '\u256c', '╬' -> {
+            top = LineType.DOUBLE
+            bottom = LineType.DOUBLE
+            left = LineType.DOUBLE
+            right = LineType.DOUBLE
+        }
+
+        // Single lines to center
+        '\u2574', '╴' -> {
+            left = LineType.LIGHT
+        }
+        '\u2575', '╵' -> {
+            top = LineType.LIGHT
+        }
+        '\u2576', '╶' -> {
+            right = LineType.LIGHT
+        }
+        '\u2577', '╷' -> {
+            bottom = LineType.LIGHT
+        }
+        '\u2578', '╸' -> {
+            left = LineType.HEAVY
+        }
+        '\u2579', '╹' -> {
+            top = LineType.HEAVY
+        }
+        '\u257a', '╺' -> {
+            right = LineType.HEAVY
+        }
+        '\u257b', '╻' -> {
+            bottom = LineType.HEAVY
+        }
+        '\u257c', '╼' -> {
+            left = LineType.LIGHT
+            right = LineType.HEAVY
+        }
+        '\u257d', '╽' -> {
+            top = LineType.LIGHT
+            bottom = LineType.HEAVY
+        }
+        '\u257e', '╾' -> {
+            left = LineType.HEAVY
+            right = LineType.LIGHT
+        }
+        '\u257f', '╿' -> {
+            top = LineType.HEAVY
+            bottom = LineType.LIGHT
+        }
+    }
+
+    fun drawSegment(direction: String, type: LineType) {
+        if (type == LineType.NONE) return
+
+        val width = when (type) {
+            LineType.LIGHT -> strokeWidthLight
+            LineType.HEAVY -> strokeWidthHeavy
+            LineType.DOUBLE -> strokeWidthLight
+        }
+
+        when (direction) {
+            "top" -> {
+                if (type == LineType.DOUBLE) {
+                    val offset = strokeWidthLight * 1.5f
+                    drawLine(color, Offset(centerX - offset, centerY), Offset(centerX - offset, y), strokeWidthLight)
+                    drawLine(color, Offset(centerX + offset, centerY), Offset(centerX + offset, y), strokeWidthLight)
+                } else {
+                    drawLine(color, Offset(centerX, centerY), Offset(centerX, y), width)
+                }
+            }
+            "bottom" -> {
+                if (type == LineType.DOUBLE) {
+                    val offset = strokeWidthLight * 1.5f
+                    drawLine(
+                        color,
+                        Offset(centerX - offset, centerY),
+                        Offset(centerX - offset, y + cellHeight),
+                        strokeWidthLight
+                    )
+                    drawLine(
+                        color,
+                        Offset(centerX + offset, centerY),
+                        Offset(centerX + offset, y + cellHeight),
+                        strokeWidthLight
+                    )
+                } else {
+                    drawLine(color, Offset(centerX, centerY), Offset(centerX, y + cellHeight), width)
+                }
+            }
+            "left" -> {
+                if (type == LineType.DOUBLE) {
+                    val offset = strokeWidthLight * 1.5f
+                    drawLine(color, Offset(centerX, centerY - offset), Offset(x, centerY - offset), strokeWidthLight)
+                    drawLine(color, Offset(centerX, centerY + offset), Offset(x, centerY + offset), strokeWidthLight)
+                } else {
+                    drawLine(color, Offset(centerX, centerY), Offset(x, centerY), width)
+                }
+            }
+            "right" -> {
+                if (type == LineType.DOUBLE) {
+                    val offset = strokeWidthLight * 1.5f
+                    drawLine(
+                        color,
+                        Offset(centerX, centerY - offset),
+                        Offset(x + cellWidth, centerY - offset),
+                        strokeWidthLight
+                    )
+                    drawLine(
+                        color,
+                        Offset(centerX, centerY + offset),
+                        Offset(x + cellWidth, centerY + offset),
+                        strokeWidthLight
+                    )
+                } else {
+                    drawLine(color, Offset(centerX, centerY), Offset(x + cellWidth, centerY), width)
+                }
+            }
+        }
+    }
+
+    drawSegment("top", top)
+    drawSegment("bottom", bottom)
+    drawSegment("left", left)
+    drawSegment("right", right)
+}
+
+private fun DrawScope.drawBlockElement(
+    c: Char,
+    x: Float,
+    y: Float,
+    cellWidth: Float,
+    cellHeight: Float,
+    color: Color
+) {
+    when (c) {
+        '\u2588', '█' -> {
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(cellWidth, cellHeight))
+        }
+        '\u2581', ' ' -> {
+            val h = cellHeight / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2582', '▂' -> {
+            val h = cellHeight * 2f / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2583', '▃' -> {
+            val h = cellHeight * 3f / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2584', '▄' -> {
+            val h = cellHeight * 4f / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2585', '▅' -> {
+            val h = cellHeight * 5f / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2586', '▆' -> {
+            val h = cellHeight * 6f / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2587', '▇' -> {
+            val h = cellHeight * 7f / 8f
+            drawRect(color, Offset(x, y + cellHeight - h), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u2580', '▀' -> {
+            val h = cellHeight / 2f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(cellWidth, h))
+        }
+        '\u258f', '▏' -> {
+            val w = cellWidth / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u258e', '▎' -> {
+            val w = cellWidth * 2f / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u258d', '▍' -> {
+            val w = cellWidth * 3f / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u258c', '▌' -> {
+            val w = cellWidth * 4f / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u258b', '▋' -> {
+            val w = cellWidth * 5f / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u258a', '▊' -> {
+            val w = cellWidth * 6f / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u2589', '▉' -> {
+            val w = cellWidth * 7f / 8f
+            drawRect(color, Offset(x, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u2595', '▕' -> {
+            val w = cellWidth / 8f
+            drawRect(color, Offset(x + cellWidth - w, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u2590', '▐' -> {
+            val w = cellWidth / 2f
+            drawRect(color, Offset(x + cellWidth - w, y), androidx.compose.ui.geometry.Size(w, cellHeight))
+        }
+        '\u2591', '░' -> {
+            drawRect(color.copy(alpha = 0.25f), Offset(x, y), androidx.compose.ui.geometry.Size(cellWidth, cellHeight))
+        }
+        '\u2592', '▒' -> {
+            drawRect(color.copy(alpha = 0.5f), Offset(x, y), androidx.compose.ui.geometry.Size(cellWidth, cellHeight))
+        }
+        '\u2593', '▓' -> {
+            drawRect(color.copy(alpha = 0.75f), Offset(x, y), androidx.compose.ui.geometry.Size(cellWidth, cellHeight))
+        }
     }
 }

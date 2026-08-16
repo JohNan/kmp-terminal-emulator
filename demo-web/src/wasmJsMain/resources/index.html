@@ -18,6 +18,35 @@
         }
     </style>
     <script type="application/javascript" src="demo-web.js"></script>
+    <script>
+        window.addEventListener('load', () => {
+            console.log("Initializing Wasm Terminal PoC...");
+            setTimeout(() => {
+                if (typeof window.createKmpTerminal !== 'function') {
+                    console.error("createKmpTerminal function not found!");
+                    return;
+                }
+                const term = window.createKmpTerminal({
+                    containerId: "compose-receiver",
+                    rows: 24,
+                    cols: 80,
+                    onInput: (input) => {
+                        console.log("User Input Event:", JSON.stringify(input));
+                        term.write(input);
+                    }
+                });
+                // Expose globally for convenience / compatibility
+                window.writeToTerminal = (text) => term.write(text);
+                window.focusTerminal = () => term.focus();
+                window.resizeTerminal = (r, c) => term.resize(r, c);
+
+                // Write welcome message with colors and some box-drawing symbols
+                term.write("\r\n\u001B[1;36mKMP WebAssembly Terminal - PoC Demo\u001B[0m\r\n");
+                term.write("Box drawing: \u001B[32m┌─┬─┐  █▄▀  │ ┼ │\u001B[0m\r\n");
+                term.write("Ready to echo inputs. Try typing below!\r\n\r\n");
+            }, 300);
+        });
+    </script>
 </head>
 <body>
     <div id="compose-receiver"></div>

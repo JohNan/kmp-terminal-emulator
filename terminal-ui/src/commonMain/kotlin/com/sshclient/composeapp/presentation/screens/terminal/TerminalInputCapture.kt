@@ -13,5 +13,5 @@ expect fun TerminalInputCapture(
     onInput: (String) -> Unit,
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 )

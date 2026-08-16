@@ -2,6 +2,11 @@ package com.sshclient.composeapp.presentation.screens.terminal
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -9,12 +14,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
 import com.sshclient.presentation.screens.terminal.ArrowDirection
-
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 
 @Composable
 actual fun TerminalInputCapture(
@@ -24,21 +23,23 @@ actual fun TerminalInputCapture(
     onInput: (String) -> Unit,
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
 ) {
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
 
     LaunchedEffect(showKeyboardSignal) {
         if (showKeyboardSignal > 0) {
+            focusRequester.requestFocus()
             inputView?.showKeyboard()
         }
     }
 
     AndroidView(
-        modifier = modifier
-            .fillMaxSize()
-            .focusRequester(focusRequester)
-            .semantics { contentDescription = "Terminal input field" },
+        modifier =
+            modifier
+                .fillMaxSize()
+                .focusRequester(focusRequester)
+                .semantics { contentDescription = "Terminal input field" },
         factory = { context ->
             TerminalInputView(context).apply {
                 isFocusable = true
@@ -46,6 +47,7 @@ actual fun TerminalInputCapture(
             }.also { inputView = it }
         },
         update = { view ->
+            inputView = view
             view.onInput = onInput
             view.onArrowKey = onArrowKey
             view.onLog = onLog
@@ -53,6 +55,6 @@ actual fun TerminalInputCapture(
             if (view.isFocusable && !view.isFocused && enabled) {
                 view.requestFocus()
             }
-        }
+        },
     )
 }

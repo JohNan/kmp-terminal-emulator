@@ -3,7 +3,11 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    `maven-publish`
 }
+
+group = "com.kmp.terminal"
+version = "0.1.0"
 
 kotlin {
     androidTarget {
@@ -37,6 +41,11 @@ kotlin {
             implementation(compose.ui)
             implementation(compose.material3)
             implementation(compose.materialIconsExtended)
+        }
+
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

@@ -54,6 +54,10 @@ class AnsiParser(
     // Track the last printable character for CSI b (Repeat Character)
     private var lastPrintableChar: Char? = null
 
+    companion object {
+        const val MAX_OSC52_PAYLOAD_SIZE = 65536
+    }
+
     // Use inline function with lambda for params to avoid String allocation when logging is disabled
     private inline fun log(
         operation: String,
@@ -574,19 +578,24 @@ class AnsiParser(
                                 val pd = parts[1]
                                 if (pd == "?") {
                                     // Read request: silently ignore for security
-                                    log("OSC 52", "Read request ignored for security")
+                                    log("OSC 52") { "Read request ignored for security" }
                                 } else {
-                                    try {
-                                        val decodedBytes = Base64Decoder.decode(pd)
-                                        val decodedString = decodedBytes.decodeToString()
-                                        terminalEmulator.copyToClipboard(decodedString)
-                                        log("OSC 52", "Copied to clipboard")
-                                    } catch (e: Exception) {
-                                        log("OSC 52", "Failed to decode base64 payload: ${e.message}")
+                                    if (pd.length > MAX_OSC52_PAYLOAD_SIZE) {
+                                        log("OSC 52") {
+                                            "Write payload exceeds limit ($MAX_OSC52_PAYLOAD_SIZE bytes)"
+                                        }
+                                    } else {
+                                        try {
+                                            val decodedBytes = Base64Decoder.decode(pd)
+                                            val decodedString = decodedBytes.decodeToString()
+                                            terminalEmulator.handleOsc52Write(decodedString)
+                                        } catch (e: Exception) {
+                                            log("OSC 52") { "Failed to decode base64 payload: ${e.message}" }
+                                        }
                                     }
                                 }
                             } else {
-                                log("OSC 52", "Invalid payload format")
+                                log("OSC 52") { "Invalid payload format" }
                             }
                         }
 
