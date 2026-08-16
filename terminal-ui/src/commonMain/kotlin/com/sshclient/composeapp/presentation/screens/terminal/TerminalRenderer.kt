@@ -85,6 +85,7 @@ fun TerminalRenderer(
     onUrlClick: (String) -> Unit = {},
     onKeyboardToggleAvailable: (() -> Unit) -> Unit = {},
     showKeyboardSignal: Int = 0,
+    onTerminalResize: (cols: Int, rows: Int) -> Unit = { _, _ -> },
     onMouseEvent: (com.sshclient.data.terminal.MouseEvent, Int, Int) -> Unit = { _, _, _ -> },
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -134,6 +135,18 @@ fun TerminalRenderer(
     // and available space (maxHeight) changes.
     @Suppress("UnusedBoxWithConstraintsScope")
     BoxWithConstraints(modifier = modifier) {
+        val availableWidthPx = with(density) { maxWidth.toPx() }
+        val availableHeightPx = with(density) { maxHeight.toPx() }
+
+        val calculatedCols = if (cellWidth > 0) (availableWidthPx / cellWidth).toInt().coerceAtLeast(10) else 80
+        val calculatedRows = if (cellHeight > 0) (availableHeightPx / cellHeight).toInt().coerceAtLeast(5) else 24
+
+        LaunchedEffect(calculatedCols, calculatedRows) {
+            if (calculatedCols > 0 && calculatedRows > 0) {
+                onTerminalResize(calculatedCols, calculatedRows)
+            }
+        }
+
         // Calculate total height needed for the canvas (scrollback + visible rows)
         // Ensure it is at least as tall as the viewport to handle pointer events and background properly.
         val totalHeight =

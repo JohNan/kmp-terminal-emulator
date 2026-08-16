@@ -132,12 +132,7 @@ fun TerminalCanvas(
 
     val contentHeight = allRows.size * cellHeight
     val totalHeightPx = with(LocalDensity.current) { totalHeight.toPx() }
-    val verticalOffset =
-        if (contentHeight < totalHeightPx) {
-            totalHeightPx - contentHeight
-        } else {
-            0f
-        }
+    val verticalOffset = 0f
 
     val isCopyMode = selectionState !is SelectionState.None
 
