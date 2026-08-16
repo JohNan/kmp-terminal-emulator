@@ -175,7 +175,7 @@ fun TerminalKeyBar(
     }
 }
 
-internal fun resolveIcon(name: String?): ImageVector? {
+fun resolveIcon(name: String?): ImageVector? {
     return when (name) {
         "ArrowUpward" -> Icons.Default.KeyboardArrowUp // Consistent with Left/Right
         "ArrowDownward" -> Icons.Default.KeyboardArrowDown
@@ -228,7 +228,7 @@ private fun KeyItem(
     val children = item.children
     if (!children.isNullOrEmpty()) {
         var expanded by remember { mutableStateOf(false) }
-        Box(modifier = modifier) {
+        androidx.compose.foundation.layout.Box(modifier = modifier) {
             TerminalKey(
                 modifier = Modifier.fillMaxWidth(),
                 label = item.label,
@@ -237,6 +237,7 @@ private fun KeyItem(
                 isToggle = item.behavior == KeyBehavior.MODIFIER,
                 isPressed = isPressed,
                 repeatable = item.behavior == KeyBehavior.REPEATABLE,
+                hasSubMenu = true,
                 onClick = {
                     if (item.hasPrimaryAction) {
                         onItemClick(item)
@@ -245,18 +246,15 @@ private fun KeyItem(
                     }
                 },
                 onLongClick = {
-                    if (item.hasPrimaryAction) {
-                        expanded = true
-                    }
+                    expanded = true
                 },
-                hasSubMenu = true,
                 hapticFeedbackEnabled = hapticFeedbackEnabled,
                 onLog = onLog,
             )
+
             DropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false },
-                properties = PopupProperties(focusable = false),
+                onDismissRequest = { expanded = false }
             ) {
                 children.forEach { child ->
                     DropdownMenuItem(
@@ -265,7 +263,7 @@ private fun KeyItem(
                         onClick = {
                             expanded = false
                             onItemClick(child)
-                        },
+                        }
                     )
                 }
             }
@@ -287,16 +285,16 @@ private fun KeyItem(
 }
 
 @Composable
-private fun KeyColumn(
+private fun TwoRowKeyItem(
     item1: KeyBarUiItem,
     item2: KeyBarUiItem?,
     modifierState: ModifierKeyState,
     onItemClick: (KeyBarUiItem) -> Unit,
     hapticFeedbackEnabled: Boolean,
     onLog: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier.width(IntrinsicSize.Max),
     ) {
         KeyItem(
@@ -322,7 +320,7 @@ private fun KeyColumn(
 }
 
 @Composable
-internal fun TerminalKey(
+fun TerminalKey(
     modifier: Modifier = Modifier,
     label: String? = null,
     icon: ImageVector? = null,
