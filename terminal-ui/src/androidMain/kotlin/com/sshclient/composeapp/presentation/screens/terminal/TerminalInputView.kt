@@ -10,7 +10,6 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import com.sshclient.presentation.screens.terminal.ArrowDirection
-import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 
 /**
  * Custom View to handle soft keyboard input and hardware key events for the terminal.
@@ -108,12 +107,8 @@ class TerminalInputView(context: Context) : View(context) {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (event == null) return super.onKeyDown(keyCode, event)
 
-        // Delegate hardware keys to the existing handler
-        var handled = onInput?.let { input ->
-            onArrowKey?.let { arrow ->
-                handleHardwareKeyEvent(ComposeKeyEvent(event), input, arrow)
-            }
-        } ?: false
+        // Delegate hardware keys to the native Android handler
+        var handled = handleAndroidHardwareKeyEvent(event, onInput, onArrowKey)
 
         if (!handled && event.action == KeyEvent.ACTION_DOWN) {
             val unicodeChar = event.unicodeChar
