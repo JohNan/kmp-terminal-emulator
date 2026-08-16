@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.kmp.terminal"
-version = "0.1.0"
+version = providers.gradleProperty("version").orNull.takeIf { !it.isNullOrBlank() && it != "unspecified" } ?: "0.1.0"
 
 kotlin {
     androidTarget {
@@ -23,10 +23,13 @@ kotlin {
         browser()
     }
 
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    )
+    val enableIos = providers.gradleProperty("enableIos").orNull?.toBoolean() ?: false
+    if (enableIos) {
+        listOf(
+            iosArm64(),
+            iosSimulatorArm64()
+        )
+    }
 
     sourceSets {
         commonMain.dependencies {

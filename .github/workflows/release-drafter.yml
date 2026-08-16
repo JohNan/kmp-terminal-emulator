@@ -1,0 +1,46 @@
+name: Release Drafter
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  update_draft_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Next Version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_TAG=$(gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "v0.1.0")
+          VERSION_NAME=${LATEST_TAG#v}
+
+          IFS='.' read -r major minor patch <<< "$VERSION_NAME"
+          patch=$((patch + 1))
+          VERSION_NAME="$major.$minor.$patch"
+
+          echo "version_name=$VERSION_NAME" >> $GITHUB_ENV
+          echo "previous_tag=$LATEST_TAG" >> $GITHUB_ENV
+          echo "Calculated Next Release Version: $VERSION_NAME"
+
+      - name: Create or Update Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.version_name }}
+          name: v${{ env.version_name }}
+          prerelease: false
+          draft: true
+          generate_release_notes: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
