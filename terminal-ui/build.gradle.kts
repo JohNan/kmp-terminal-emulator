@@ -51,7 +51,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kmp.terminal.ui"
+    namespace = "com.johnan.terminal.ui"
     compileSdk = 36
     defaultConfig {
         minSdk = 24

@@ -3,7 +3,7 @@
     kotlin.js.ExperimentalWasmJsInterop::class
 )
 
-package com.sshclient.demoweb
+package com.johnan.terminal.demoweb
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,9 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.window.ComposeViewport
-import com.sshclient.composeapp.presentation.screens.terminal.TerminalRenderer
-import com.sshclient.data.terminal.TerminalEmulator
-import com.sshclient.domain.model.TerminalColorScheme
+import com.johnan.terminal.core.TerminalColorScheme
+import com.johnan.terminal.core.TerminalEmulator
+import com.johnan.terminal.ui.TerminalRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
