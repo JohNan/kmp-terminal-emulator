@@ -47,7 +47,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.kmp.terminal.core"
+    namespace = "com.johnan.terminal.core"
     compileSdk = 36
     defaultConfig {
         minSdk = 24
