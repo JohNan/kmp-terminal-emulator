@@ -30,7 +30,9 @@ class TerminalInputView(context: Context) : View(context) {
     fun showKeyboard() {
         post {
             requestFocus()
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+            val imm = context.getSystemService(
+                Context.INPUT_METHOD_SERVICE
+            ) as? android.view.inputmethod.InputMethodManager
             imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
         }
     }
@@ -46,8 +48,7 @@ class TerminalInputView(context: Context) : View(context) {
 
     override fun performClick(): Boolean {
         super.performClick()
-        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
-        imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        showKeyboard()
         return true
     }
 

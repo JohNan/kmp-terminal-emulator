@@ -105,7 +105,12 @@ fun main() = application {
                         onLog = {},
                         focusRequester = focusRequester,
                         colorScheme = TerminalColorScheme.DEFAULT,
-                        fontSize = 14f
+                        fontSize = 14f,
+                        onResize = { r, c ->
+                            scope.launch {
+                                emulator.resize(r, c)
+                            }
+                        }
                     )
                 }
 

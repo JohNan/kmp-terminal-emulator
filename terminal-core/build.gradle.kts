@@ -3,7 +3,11 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    `maven-publish`
 }
+
+group = "com.kmp.terminal"
+version = "0.1.0"
 
 kotlin {
     androidTarget {
@@ -33,6 +37,11 @@ kotlin {
             // Compose Multiplatform (needed for graphics/Color in TerminalCell)
             implementation(compose.runtime)
             implementation(compose.ui)
+        }
+
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

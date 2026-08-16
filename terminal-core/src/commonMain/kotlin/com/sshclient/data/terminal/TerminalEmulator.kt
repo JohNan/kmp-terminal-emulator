@@ -23,6 +23,8 @@ import kotlinx.coroutines.sync.withLock
 class TerminalEmulator(
     rows: Int = 24,
     cols: Int = 80,
+    val osc52Policy: Osc52Policy = Osc52Policy.ASK,
+    private val onOsc52WriteRequested: ((text: String, onConfirm: () -> Unit) -> Unit)? = null,
     private val logCallback: ((String) -> Unit)? = null,
     private val onTerminalResponse: ((String) -> Unit)? = null,
 ) {
@@ -81,7 +83,7 @@ class TerminalEmulator(
         internal set
 
     // Clipboard events (OSC 52)
-    private val _clipboardEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    private val _clipboardEvents = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
     val clipboardEvents: SharedFlow<String> = _clipboardEvents.asSharedFlow()
 
     /**
@@ -89,6 +91,31 @@ class TerminalEmulator(
      */
     internal fun copyToClipboard(text: String) {
         _clipboardEvents.tryEmit(text)
+    }
+
+    /**
+     * Handle OSC 52 write request according to the active Osc52Policy
+     */
+    internal fun handleOsc52Write(text: String) {
+        when (osc52Policy) {
+            Osc52Policy.ALWAYS_ALLOW -> {
+                copyToClipboard(text)
+                logCallback?.invoke("OSC 52: Copied to clipboard (Policy: ALWAYS_ALLOW)")
+            }
+            Osc52Policy.ALWAYS_DENY -> {
+                logCallback?.invoke("OSC 52: Write request ignored (Policy: ALWAYS_DENY)")
+            }
+            Osc52Policy.ASK -> {
+                if (onOsc52WriteRequested != null) {
+                    onOsc52WriteRequested.invoke(text) {
+                        copyToClipboard(text)
+                    }
+                    logCallback?.invoke("OSC 52: Triggered confirmation prompt for user")
+                } else {
+                    logCallback?.invoke("OSC 52: Write request ignored (Policy: ASK, no listener attached)")
+                }
+            }
+        }
     }
 
     // Terminal bell events

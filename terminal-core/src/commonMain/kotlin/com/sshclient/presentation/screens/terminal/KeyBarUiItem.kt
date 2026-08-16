@@ -12,6 +12,8 @@ data class KeyBarUiItem(
     val iconName: String? = null,
     val behavior: KeyBehavior = KeyBehavior.ONE_SHOT,
     val content: String = "",
+    val hasPrimaryAction: Boolean = true,
+    val children: List<KeyBarUiItem>? = null,
     // Keep generic reference to original for identification if needed
     val originalItem: Any? = null,
 )

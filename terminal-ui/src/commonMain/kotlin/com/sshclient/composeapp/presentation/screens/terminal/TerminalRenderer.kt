@@ -8,7 +8,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -86,7 +85,9 @@ fun TerminalRenderer(
     onKeyboardToggleAvailable: (() -> Unit) -> Unit = {},
     showKeyboardSignal: Int = 0,
     onTerminalResize: (cols: Int, rows: Int) -> Unit = { _, _ -> },
+    onResize: (rows: Int, cols: Int) -> Unit = { _, _ -> },
     onMouseEvent: ((com.sshclient.data.terminal.MouseEvent, Int, Int) -> Unit)? = null,
+    onCellMeasured: (Float, Float) -> Unit = { _, _ -> },
 ) {
     val textMeasurer = rememberTextMeasurer()
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -110,11 +111,18 @@ fun TerminalRenderer(
             color = colorScheme?.foreground ?: (if (isDark) Color(0xFFE0E0E0) else Color(0xFF000000)),
         )
 
-    // Measure cell dimensions for wrapping calculations
-    // Using any character as reference since monospace fonts ensure consistent width
-    val cellMeasure = textMeasurer.measure("W", baseTextStyle)
-    val cellWidth = cellMeasure.size.width.toFloat()
+    // Measure cell dimensions with sub-pixel precision to prevent rounding error accumulation across columns.
+    // Monospace fonts ensure consistent width, so averaging over 80 characters provides the exact float cell width.
+    val measurementString = "0".repeat(80)
+    val cellMeasure = textMeasurer.measure(measurementString, baseTextStyle)
+    val cellWidth = cellMeasure.size.width.toFloat() / 80f
     val cellHeight = cellMeasure.size.height.toFloat()
+
+    // Debug log cell dimensions to browser console
+    LaunchedEffect(cellWidth, cellHeight) {
+        println("[TerminalRenderer] Measured cell dimensions: width=$cellWidth, height=$cellHeight")
+        onCellMeasured(cellWidth, cellHeight)
+    }
 
     // Combine scrollback and visible rows for full terminal history display.
     // Optimization: only recalculate allRows when rows or scrollback change.
@@ -135,15 +143,15 @@ fun TerminalRenderer(
     // and available space (maxHeight) changes.
     @Suppress("UnusedBoxWithConstraintsScope")
     BoxWithConstraints(modifier = modifier) {
-        val availableWidthPx = with(density) { maxWidth.toPx() }
-        val availableHeightPx = with(density) { maxHeight.toPx() }
+        val maxWidthPx = with(density) { if (maxWidth.value.isFinite()) maxWidth.toPx() else 0f }
+        val maxHeightPx = with(density) { if (maxHeight.value.isFinite()) maxHeight.toPx() else 0f }
 
-        val calculatedCols = if (cellWidth > 0) (availableWidthPx / cellWidth).toInt().coerceAtLeast(10) else 80
-        val calculatedRows = if (cellHeight > 0) (availableHeightPx / cellHeight).toInt().coerceAtLeast(5) else 24
-
-        LaunchedEffect(calculatedCols, calculatedRows) {
-            if (calculatedCols > 0 && calculatedRows > 0) {
+        if (cellWidth > 0f && cellHeight > 0f && maxWidthPx > 0f && maxHeightPx > 0f) {
+            val calculatedCols = (maxWidthPx / cellWidth).toInt().coerceAtLeast(10)
+            val calculatedRows = (maxHeightPx / cellHeight).toInt().coerceAtLeast(5)
+            LaunchedEffect(calculatedCols, calculatedRows) {
                 onTerminalResize(calculatedCols, calculatedRows)
+                onResize(calculatedRows, calculatedCols)
             }
         }
 
@@ -180,27 +188,36 @@ fun TerminalRenderer(
         // Track if user recently typed to force scroll to bottom
         var shouldForceScrollToBottom by remember { mutableStateOf(false) }
 
-        // Track the last known max scroll to detect if we were at bottom before an update
-        var lastKnownMaxScroll by remember { mutableIntStateOf(0) }
+        // Auto-scroll to keep cursor in view
+        val cursorRow = terminalState.cursorRow
+        val cursorVisible = terminalState.cursorVisible
 
-        // Auto-scroll logic: triggered whenever maxValue changes (new content or resize)
-        // or when user input forces a scroll to bottom.
-        LaunchedEffect(scrollState.maxValue, shouldForceScrollToBottom) {
-            val currentMax = scrollState.maxValue
-            val threshold = if (cellHeight > 0) 10 * cellHeight else 100f
-
-            // Check if we were at the bottom of the previous content
-            val wasAtBottom = scrollState.value >= lastKnownMaxScroll - threshold || lastKnownMaxScroll == 0
-
-            if (wasAtBottom || shouldForceScrollToBottom) {
-                if (currentMax > 0) {
-                    scrollState.scrollTo(currentMax)
-                }
+        LaunchedEffect(
+            cursorRow,
+            scrollbackLineCount,
+            cellHeight,
+            maxHeightPx,
+            cursorVisible,
+            shouldForceScrollToBottom
+        ) {
+            if (shouldForceScrollToBottom) {
+                scrollState.scrollTo(scrollState.maxValue)
                 shouldForceScrollToBottom = false
+                return@LaunchedEffect
             }
 
-            // Always keep lastKnownMaxScroll in sync with current maxValue
-            lastKnownMaxScroll = currentMax
+            if (!enabled || !cursorVisible) return@LaunchedEffect
+
+            val cursorY = (cursorRow + scrollbackLineCount) * cellHeight
+            val viewportTop = scrollState.value
+            val viewportBottom = viewportTop + maxHeightPx
+
+            if (cursorY < viewportTop) {
+                scrollState.scrollTo(cursorY.toInt().coerceIn(0, scrollState.maxValue))
+            } else if (cursorY + cellHeight > viewportBottom) {
+                val targetScroll = (cursorY + cellHeight - maxHeightPx).toInt()
+                scrollState.scrollTo(targetScroll.coerceIn(0, scrollState.maxValue))
+            }
         }
 
         // Create input handler callback that applies modifier transformations
@@ -238,7 +255,7 @@ fun TerminalRenderer(
                 onInput = handleSoftInput,
                 onArrowKey = onArrowKey,
                 onLog = onLog,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
             )
         }
 

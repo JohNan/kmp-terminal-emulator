@@ -5,6 +5,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,8 +35,14 @@ actual fun TerminalInputCapture(
     onInput: (String) -> Unit,
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
 ) {
+    LaunchedEffect(showKeyboardSignal) {
+        if (showKeyboardSignal > 0) {
+            focusRequester.requestFocus()
+        }
+    }
+
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
 
     BasicTextField(
@@ -54,52 +61,55 @@ actual fun TerminalInputCapture(
             // Always keep the text value empty to continuously capture typing
             textFieldValue = TextFieldValue("")
         },
-        keyboardOptions = KeyboardOptions(
-            autoCorrectEnabled = false,
-            keyboardType = KeyboardType.Ascii,
-            imeAction = ImeAction.None
-        ),
-        keyboardActions = KeyboardActions(
-            onAny = {}
-        ),
+        keyboardOptions =
+            KeyboardOptions(
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Ascii,
+                imeAction = ImeAction.None,
+            ),
+        keyboardActions =
+            KeyboardActions(
+                onAny = {},
+            ),
         // Keep it invisible
         textStyle = TextStyle(color = Color.Transparent),
-        modifier = modifier
-            .size(1.dp) // Make it tiny so it doesn't take layout space
-            .focusRequester(focusRequester)
-            .onKeyEvent { keyEvent ->
-                // Capture hardware keyboard keys (like arrow keys) if any
-                if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.key) {
-                        Key.DirectionLeft -> {
-                            onArrowKey(ArrowDirection.LEFT, keyEvent.isShiftPressed)
-                            true
+        modifier =
+            modifier
+                .size(1.dp) // Make it tiny so it doesn't take layout space
+                .focusRequester(focusRequester)
+                .onKeyEvent { keyEvent ->
+                    // Capture hardware keyboard keys (like arrow keys) if any
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        when (keyEvent.key) {
+                            Key.DirectionLeft -> {
+                                onArrowKey(ArrowDirection.LEFT, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                onArrowKey(ArrowDirection.RIGHT, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.DirectionUp -> {
+                                onArrowKey(ArrowDirection.UP, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.DirectionDown -> {
+                                onArrowKey(ArrowDirection.DOWN, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.Enter -> {
+                                onInput("\n")
+                                true
+                            }
+                            Key.Backspace -> {
+                                onInput("\u007f")
+                                true
+                            }
+                            else -> false
                         }
-                        Key.DirectionRight -> {
-                            onArrowKey(ArrowDirection.RIGHT, keyEvent.isShiftPressed)
-                            true
-                        }
-                        Key.DirectionUp -> {
-                            onArrowKey(ArrowDirection.UP, keyEvent.isShiftPressed)
-                            true
-                        }
-                        Key.DirectionDown -> {
-                            onArrowKey(ArrowDirection.DOWN, keyEvent.isShiftPressed)
-                            true
-                        }
-                        Key.Enter -> {
-                            onInput("\n")
-                            true
-                        }
-                        Key.Backspace -> {
-                            onInput("\u007f")
-                            true
-                        }
-                        else -> false
+                    } else {
+                        false
                     }
-                } else {
-                    false
-                }
-            }
+                },
     )
 }

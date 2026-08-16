@@ -37,6 +37,12 @@ actual fun TerminalInputCapture(
     onLog: (String) -> Unit,
     modifier: Modifier
 ) {
+    androidx.compose.runtime.LaunchedEffect(showKeyboardSignal) {
+        if (showKeyboardSignal > 0) {
+            focusRequester.requestFocus()
+        }
+    }
+
     var textFieldValue by remember {
         mutableStateOf(TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1)))
     }
@@ -46,24 +52,34 @@ actual fun TerminalInputCapture(
         onValueChange = { newValue ->
             val newText = newValue.text
             val oldText = " "
+
             if (newText.length > oldText.length) {
-                val added = if (newText.startsWith(" ")) {
-                    newText.substring(1)
-                } else if (newText.endsWith(" ")) {
-                    newText.substring(0, newText.length - 1)
+                var added = if (newText.startsWith(oldText)) {
+                    newText.substring(oldText.length)
+                } else if (newText.endsWith(oldText)) {
+                    newText.substring(0, newText.length - oldText.length)
                 } else {
                     newText
                 }
+
+                // If a virtual/mobile keyboard automatically appends a space after a typed letter
+                // (e.g. added is "h "), strip the trailing space unless it's only spaces (user typed space)
+                if (added.length > 1 && added.endsWith(" ") && added.trim().isNotEmpty()) {
+                    added = added.substring(0, added.length - 1)
+                }
+
                 onInput(added)
             } else if (newText.length < oldText.length) {
                 onInput("\u007f")
             }
+
+            // Always keep the text value as a single space to continuously and reliably capture backspace and key inputs
             textFieldValue = TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))
         },
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.None,
             autoCorrectEnabled = false,
-            keyboardType = KeyboardType.Ascii,
+            keyboardType = KeyboardType.Password,
             imeAction = ImeAction.None
         ),
         keyboardActions = KeyboardActions(
