@@ -3,5 +3,7 @@ package com.sshclient.data.terminal
 enum class MouseEvent {
     Press,
     Release,
-    Drag
+    Drag,
+    WheelUp,
+    WheelDown,
 }

@@ -172,6 +172,8 @@ fun TerminalCanvas(
                         awaitPointerEventScope {
                             var lastRow = -1
                             var lastCol = -1
+                            var startOffsetY = 0f
+                            var accumulatedDeltaY = 0f
 
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -192,21 +194,45 @@ fun TerminalCanvas(
                                 if (visibleRow in 0 until terminalState.rows.size) {
                                     when (event.type) {
                                         androidx.compose.ui.input.pointer.PointerEventType.Press -> {
+                                            startOffsetY = offset.y
+                                            accumulatedDeltaY = 0f
                                             currentOnMouseEvent(MouseEvent.Press, visibleRow, col)
                                         }
                                         androidx.compose.ui.input.pointer.PointerEventType.Release -> {
                                             lastRow = -1
                                             lastCol = -1
+                                            accumulatedDeltaY = 0f
                                             currentOnMouseEvent(MouseEvent.Release, visibleRow, col)
                                         }
                                         androidx.compose.ui.input.pointer.PointerEventType.Move -> {
-                                            if (change.pressed &&
-                                                terminalState.mouseTrackingMode != MouseTrackingMode.Click
-                                            ) {
-                                                if (visibleRow != lastRow || col != lastCol) {
-                                                    currentOnMouseEvent(MouseEvent.Drag, visibleRow, col)
-                                                    lastRow = visibleRow
-                                                    lastCol = col
+                                            if (change.pressed) {
+                                                val deltaY = offset.y - startOffsetY
+                                                startOffsetY = offset.y
+                                                accumulatedDeltaY += deltaY
+                                                val threshold = currentCellHeight.coerceAtLeast(10f)
+
+                                                if (accumulatedDeltaY >= threshold) {
+                                                    // Scrolled downward -> Wheel Up in terminal apps (e.g. tmux/vim/less)
+                                                    val steps = (accumulatedDeltaY / threshold).toInt()
+                                                    accumulatedDeltaY -= steps * threshold
+                                                    repeat(steps) {
+                                                        currentOnMouseEvent(MouseEvent.WheelUp, visibleRow, col)
+                                                    }
+                                                } else if (accumulatedDeltaY <= -threshold) {
+                                                    // Scrolled upward -> Wheel Down
+                                                    val steps = (-accumulatedDeltaY / threshold).toInt()
+                                                    accumulatedDeltaY += steps * threshold
+                                                    repeat(steps) {
+                                                        currentOnMouseEvent(MouseEvent.WheelDown, visibleRow, col)
+                                                    }
+                                                }
+
+                                                if (terminalState.mouseTrackingMode != MouseTrackingMode.Click) {
+                                                    if (visibleRow != lastRow || col != lastCol) {
+                                                        currentOnMouseEvent(MouseEvent.Drag, visibleRow, col)
+                                                        lastRow = visibleRow
+                                                        lastCol = col
+                                                    }
                                                 }
                                             }
                                         }
@@ -239,9 +265,10 @@ fun TerminalCanvas(
                                 val clickedRowData = allRows.getOrNull(row)
                                 if (clickedRowData != null) {
                                     val ranges = ScreenBuffer.getUrlRanges(clickedRowData)
-                                    val clickedRange = ranges.find { range ->
-                                        col >= range.startCol && col < range.endCol
-                                    }
+                                    val clickedRange =
+                                        ranges.find { range ->
+                                            col >= range.startCol && col < range.endCol
+                                        }
                                     if (clickedRange != null) {
                                         val url = ScreenBuffer.extractUrl(clickedRowData, clickedRange)
                                         currentOnUrlClick(url)
@@ -303,13 +330,7 @@ fun TerminalCanvas(
             val firstVisibleRow = (viewportTop / cellHeight).toInt().coerceIn(0, allRows.size)
             val lastVisibleRow = ((viewportBottom / cellHeight).toInt() + 1).coerceIn(0, allRows.size)
 
-            val contentHeightCanvas = allRows.size * cellHeight
-            val verticalOffsetCanvas =
-                if (contentHeightCanvas < size.height) {
-                    size.height - contentHeightCanvas
-                } else {
-                    0f
-                }
+            val verticalOffsetCanvas = 0f
 
             for (rowIndex in firstVisibleRow until lastVisibleRow) {
                 val row = allRows.getOrNull(rowIndex) ?: continue
