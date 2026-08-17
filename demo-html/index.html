@@ -3,154 +3,536 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KMP Wasm Terminal Integration Demo</title>
+    <title>KMP Wasm Terminal - HTML Integration Showcase</title>
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             background-color: #0d1117;
             color: #c9d1d9;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
             padding: 24px;
             display: flex;
             flex-direction: column;
             align-items: center;
             min-height: 100vh;
-            box-sizing: border-box;
+        }
+
+        .header {
+            text-align: center;
+            max-width: 900px;
+            margin-bottom: 20px;
         }
 
         h1 {
             color: #58a6ff;
-            margin-bottom: 8px;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .badge {
+            background-color: rgba(35, 134, 54, 0.2);
+            border: 1px solid #238636;
+            color: #3fb950;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
         }
 
         p {
             color: #8b949e;
-            margin-bottom: 24px;
-            text-align: center;
-            max-width: 600px;
+            font-size: 14px;
+            line-height: 1.5;
         }
 
         #terminal-card {
             background-color: #161b22;
             border: 1px solid #30363d;
-            border-radius: 6px;
+            border-radius: 8px;
             width: 100%;
-            max-width: 800px;
+            max-width: 920px;
             padding: 16px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-        }
-
-        #compose-receiver {
-            width: 100%;
-            height: 400px;
-            background-color: #000;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .controls {
-            margin-top: 16px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.5);
             display: flex;
+            flex-direction: column;
             gap: 12px;
-            width: 100%;
-            max-width: 800px;
-            justify-content: center;
         }
 
-        button {
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 12px;
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        select, button {
             background-color: #21262d;
             border: 1px solid #30363d;
             color: #c9d1d9;
-            padding: 8px 16px;
+            padding: 6px 12px;
             border-radius: 6px;
-            cursor: pointer;
+            font-size: 12px;
             font-weight: 500;
-            transition: background-color 0.2s, border-color 0.2s;
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
         }
 
-        button:hover {
+        select:hover, button:hover {
             background-color: #30363d;
             border-color: #8b949e;
         }
 
-        button:active {
-            background-color: #282e38;
+        .btn-blue {
+            background-color: rgba(31, 111, 235, 0.15);
+            border-color: rgba(31, 111, 235, 0.4);
+            color: #58a6ff;
+        }
+        .btn-green {
+            background-color: rgba(35, 134, 54, 0.15);
+            border-color: rgba(35, 134, 54, 0.4);
+            color: #3fb950;
+        }
+        .btn-purple {
+            background-color: rgba(137, 87, 229, 0.15);
+            border-color: rgba(137, 87, 229, 0.4);
+            color: #a371f7;
+        }
+        .btn-yellow {
+            background-color: rgba(210, 153, 34, 0.15);
+            border-color: rgba(210, 153, 34, 0.4);
+            color: #d29922;
+        }
+        .btn-red {
+            background-color: rgba(218, 54, 51, 0.15);
+            border-color: rgba(218, 54, 51, 0.4);
+            color: #f85149;
+        }
+
+        #compose-receiver {
+            width: 100%;
+            height: 480px;
+            background-color: #000;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #30363d;
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #8b949e;
+            padding-top: 4px;
         }
     </style>
 </head>
 <body>
 
-    <h1>KMP Wasm Terminal Demo</h1>
-    <p>
-        This demo showcases the Kotlin Multiplatform terminal emulator compiled to WebAssembly 
-        and integrated into a plain HTML/JavaScript application using global window bindings.
-    </p>
-
-    <div id="terminal-card">
-        <!-- Container where the Compose Terminal canvas will mount -->
-        <div id="compose-receiver"></div>
+    <div class="header">
+        <h1>
+            <span>KMP Wasm Terminal</span>
+            <span class="badge">Vanilla HTML / JS Demo</span>
+        </h1>
+        <p>
+            Kotlin Multiplatform Compose Terminal compiled to WebAssembly and mounted in a standard HTML DOM container via JS bindings.
+        </p>
     </div>
 
-    <div class="controls">
-        <button id="btn-echo">Print Echo Text</button>
-        <button id="btn-color">Print ANSI Colors</button>
-        <button id="btn-clear">Clear Canvas</button>
-        <button id="btn-focus">Focus Terminal</button>
+    <div id="terminal-card">
+        <div class="toolbar">
+            <div class="toolbar-group">
+                <select id="select-theme">
+                    <option value="default">Theme: Default</option>
+                    <option value="monokai">Theme: Monokai</option>
+                    <option value="nord">Theme: Nord</option>
+                    <option value="solarized_dark">Theme: Solarized Dark</option>
+                    <option value="solarized_light">Theme: Solarized Light</option>
+                </select>
+
+                <select id="select-cursor">
+                    <option value="BLOCK">Cursor: Block</option>
+                    <option value="BEAM">Cursor: Beam</option>
+                    <option value="UNDERLINE">Cursor: Underline</option>
+                </select>
+            </div>
+
+            <div class="toolbar-group">
+                <button id="btn-colors" class="btn-blue">Colors & 24-bit</button>
+                <button id="btn-styles" class="btn-green">Styles</button>
+                <button id="btn-unicode" class="btn-purple">Unicode & Box</button>
+                <button id="btn-progress" class="btn-yellow">Progress Bar</button>
+                <button id="btn-matrix" class="btn-green">Matrix Rain</button>
+                <button id="btn-htop" class="btn-red">Htop Alt-Buffer</button>
+                <button id="btn-clear">Clear</button>
+                <button id="btn-focus">Focus</button>
+            </div>
+        </div>
+
+        <!-- Container where the Compose Terminal canvas will mount -->
+        <div id="compose-receiver"></div>
+
+        <div class="status-bar">
+            <span>Compose Multiplatform Skia Canvas Renderer</span>
+            <span>OSC 52 • 24-bit TrueColor • DECSTBM • SGR Mouse</span>
+        </div>
     </div>
 
     <!-- Load the compiled Kotlin WebAssembly JavaScript glue code -->
     <script src="demo-web.js"></script>
 
     <script>
-        // Setup input callback globally BEFORE window load completes, so Wasm registers it
-        window.onTerminalInput = (input) => {
-            // Callback triggered when the user types in the terminal.
-            // In a real application, you would send this to your SSH WebSocket connection.
-            console.log("User Input Event:", JSON.stringify(input));
-            
-            // For this local demo, we echo the input back
-            window.writeToTerminal(input);
-        };
+        let termInstance = null;
+        let activeInterval = null;
+        let isInAltScreen = false;
+        let commandBuffer = "";
+
+        function stopActiveAnimation() {
+            if (activeInterval) {
+                clearInterval(activeInterval);
+                activeInterval = null;
+            }
+            if (isInAltScreen) {
+                if (termInstance) termInstance.write("\u001B[?1049l\u001B[?25h");
+                isInAltScreen = false;
+            }
+        }
+
+        function runColorsDemo() {
+            stopActiveAnimation();
+            let out = "\r\n\u001B[1;37m=== 1. Standard 16 ANSI Colors ===\u001B[0m\r\nNormal: ";
+            for (let c = 30; c <= 37; c++) out += `\u001B[${c}m■ Color ${c} \u001B[0m`;
+            out += "\r\nBright: ";
+            for (let c = 90; c <= 97; c++) out += `\u001B[${c}m■ Color ${c} \u001B[0m`;
+            out += "\r\n\r\n\u001B[1;37m=== 2. 256 Indexed Color Palette ===\u001B[0m\r\n";
+            for (let r = 0; r < 6; r++) {
+                for (let g = 0; g < 6; g++) {
+                    for (let b = 0; b < 6; b++) {
+                        let code = 16 + (r * 36) + (g * 6) + b;
+                        out += `\u001B[48;5;${code}m  \u001B[0m`;
+                    }
+                    out += " ";
+                }
+                out += "\r\n";
+            }
+            out += "\r\n\u001B[1;37m=== 3. 24-bit TrueColor RGB Smooth Gradient ===\u001B[0m\r\n";
+            for (let i = 0; i < 70; i++) {
+                let ratio = i / 70.0;
+                let r = Math.floor(Math.sin(ratio * Math.PI) * 255);
+                let g = Math.floor(Math.sin((ratio + 0.33) * Math.PI) * 255);
+                let b = Math.floor(Math.sin((ratio + 0.66) * Math.PI) * 255);
+                out += `\u001B[38;2;${r};${g};${b}m█\u001B[0m`;
+            }
+            out += "\r\n\r\n";
+            if (termInstance) termInstance.write(out);
+        }
+
+        function runStylesDemo() {
+            stopActiveAnimation();
+            let out = "\r\n\u001B[1;37m=== Text Formatting & Attributes ===\u001B[0m\r\n" +
+                "  \u001B[0mNormal text\u001B[0m\r\n" +
+                "  \u001B[1mBold text\u001B[0m\r\n" +
+                "  \u001B[2mDim / Faint text\u001B[0m\r\n" +
+                "  \u001B[3mItalic text\u001B[0m\r\n" +
+                "  \u001B[4mUnderlined text\u001B[0m\r\n" +
+                "  \u001B[21mDouble underlined text\u001B[0m\r\n" +
+                "  \u001B[5mBlinking text\u001B[0m\r\n" +
+                "  \u001B[7mInverse / Reverse video\u001B[0m\r\n" +
+                "  \u001B[9mCrossed out / Strikethrough\u001B[0m\r\n" +
+                "  \u001B[1;3;4;33;44mCombined: Bold + Italic + Underline + Yellow on Blue\u001B[0m\r\n\r\n";
+            if (termInstance) termInstance.write(out);
+        }
+
+        function runUnicodeDemo() {
+            stopActiveAnimation();
+            let out = "\r\n\u001B[1;37m=== Unicode, Box Drawing & Powerline Glyphs ===\u001B[0m\r\n" +
+                "\u001B[36m┌──────────────────────────────────────────────┐\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m  \u001B[1;33m⚡ KMP Multiplatform Monospace Grid\u001B[0m         \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m├──────────────────────┬───────────────────────┤\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m Double Lines: ╔═╦═╗  \u001B[36m│\u001B[0m Rounded: ╭───┬───╮     \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m               ╠═╬═╣  \u001B[36m│\u001B[0m          │   │   │     \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m               ╚═╩═╝  \u001B[36m│\u001B[0m          ╰───┴───╯     \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m├──────────────────────┴───────────────────────┤\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m Blocks & Shades: ░▒▓█ ▌▐ ▄▀ ■ □ ▲ ▼ ◆ ◈       \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m Braille Graph:   ⡀⣀⣄⣤⣦⣶⣷⣿                   \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m Tree Hierarchy:                               \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m   ├── \u001B[34mterminal-core\u001B[0m (zero UI dependencies)   \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m   └── \u001B[32mterminal-ui\u001B[0m   (Compose Multiplatform)   \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m│\u001B[0m Powerline: \u001B[44;30m master \u001B[42;34m\u001B[30m ✓ clean \u001B[49;32m\u001B[0m             \u001B[36m│\u001B[0m\r\n" +
+                "\u001B[36m└──────────────────────────────────────────────┘\u001B[0m\r\n\r\n";
+            if (termInstance) termInstance.write(out);
+        }
+
+        function runProgressDemo() {
+            stopActiveAnimation();
+            if (!termInstance) return;
+            termInstance.write("\r\n\u001B[1;37m=== Dynamic Progress Bars & Spinners ===\u001B[0m\r\n");
+            const spinners = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let pct = 0;
+            activeInterval = setInterval(() => {
+                pct += 2;
+                let sp = spinners[(pct / 2) % spinners.length];
+                let filled = Math.floor(pct / 4);
+                let empty = 25 - filled;
+                let bar = "█".repeat(filled) + "░".repeat(empty);
+                let color = pct < 50 ? "\u001B[33m" : (pct < 80 ? "\u001B[36m" : "\u001B[32m");
+                termInstance.write(`\r\u001B[K\u001B[35m${sp}\u001B[0m Downloading assets: [${color}${bar}\u001B[0m] \u001B[1m${pct}%\u001B[0m`);
+                if (pct >= 100) {
+                    clearInterval(activeInterval);
+                    activeInterval = null;
+                    termInstance.write("\r\n\u001B[32m✔ Download and asset verification complete!\u001B[0m\r\n\r\nkmp-html-shell$ ");
+                }
+            }, 30);
+        }
+
+        function runMatrixDemo() {
+            stopActiveAnimation();
+            if (!termInstance) return;
+            termInstance.write("\u001B[?25l\u001B[2J\u001B[H");
+            const cols = 80;
+            const rows = 24;
+            const drops = new Array(cols).fill(0).map(() => -Math.floor(Math.random() * 20));
+            const chars = "abcdefghijklmnopqrstuvwxyz0123456789@#$%&*+-=~<>{}[]";
+            let frameCount = 0;
+
+            activeInterval = setInterval(() => {
+                let frame = "";
+                for (let c = 0; c < cols; c++) {
+                    let r = drops[c];
+                    if (r >= 1 && r <= rows) {
+                        let ch = chars[Math.floor(Math.random() * chars.length)];
+                        frame += `\u001B[${r};${c + 1}H\u001B[1;37m${ch}`;
+                        if (r > 1) {
+                            let ch2 = chars[Math.floor(Math.random() * chars.length)];
+                            frame += `\u001B[${r - 1};${c + 1}H\u001B[1;32m${ch2}`;
+                        }
+                        if (r > 3) {
+                            let ch3 = chars[Math.floor(Math.random() * chars.length)];
+                            frame += `\u001B[${r - 3};${c + 1}H\u001B[2;32m${ch3}`;
+                        }
+                        if (r > 8) {
+                            frame += `\u001B[${r - 8};${c + 1}H `;
+                        }
+                    }
+                    drops[c]++;
+                    if (drops[c] > rows + 10) {
+                        drops[c] = -Math.floor(Math.random() * 10);
+                    }
+                }
+                termInstance.write(frame);
+                frameCount++;
+                if (frameCount > 200) {
+                    stopActiveAnimation();
+                    termInstance.write("\u001B[?25h\u001B[2J\u001B[H\u001B[32m[Matrix animation completed]\u001B[0m\r\n\r\nkmp-html-shell$ ");
+                }
+            }, 40);
+        }
+
+        function runHtopDemo() {
+            stopActiveAnimation();
+            if (!termInstance) return;
+            isInAltScreen = true;
+            termInstance.write("\u001B[?1049h\u001B[?25l\u001B[2J\u001B[H");
+            let tick = 0;
+
+            activeInterval = setInterval(() => {
+                if (!isInAltScreen) return;
+                let cpu1 = Math.min(98, Math.max(5, Math.floor(40 + 30 * Math.sin(tick * 0.2))));
+                let cpu2 = Math.min(98, Math.max(5, Math.floor(55 + 25 * Math.cos(tick * 0.15))));
+                let cpu3 = Math.min(98, Math.max(5, Math.floor(30 + 40 * Math.sin(tick * 0.3))));
+                let cpu4 = Math.min(98, Math.max(5, Math.floor(70 + 20 * Math.cos(tick * 0.25))));
+                let mem = 3840 + (tick % 50) * 12;
+
+                const makeBar = (pct) => {
+                    let filled = Math.floor(pct / 5);
+                    return "\u001B[32m" + "|".repeat(filled) + "\u001B[0m" + " ".repeat(20 - filled);
+                };
+
+                let sb = "\u001B[H" +
+                    `\u001B[1;36m 1 \u001B[0m[${makeBar(cpu1)}] \u001B[1m${cpu1}%\u001B[0m       \u001B[1;36mTasks:\u001B[0m \u001B[1;32m74 total, 2 running\u001B[0m\r\n` +
+                    `\u001B[1;36m 2 \u001B[0m[${makeBar(cpu2)}] \u001B[1m${cpu2}%\u001B[0m       \u001B[1;36mLoad average:\u001B[0m 0.42 0.38 0.31\r\n` +
+                    `\u001B[1;36m 3 \u001B[0m[${makeBar(cpu3)}] \u001B[1m${cpu3}%\u001B[0m       \u001B[1;36mUptime:\u001B[0m 14 days, 03:22:18\r\n` +
+                    `\u001B[1;36m 4 \u001B[0m[${makeBar(cpu4)}] \u001B[1m${cpu4}%\u001B[0m       \u001B[1;36mBuffer Mode:\u001B[0m \u001B[1;33mAlternate Screen (DECSET 1049)\u001B[0m\r\n` +
+                    `\u001B[1;36mMem\u001B[0m[\u001B[34m` + "|".repeat(12) + `\u001B[0m        ] ${mem}/16384 MB\r\n\r\n` +
+                    "\u001B[7;1m  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command                     \u001B[0m\r\n" +
+                    ` 1024 root       20   0  1.2G  142M   45M S ${(cpu1 * 0.4).toFixed(1).padStart(4)}  1.2  02:14.2 compose-skia-render       \r\n` +
+                    ` 1432 johan      20   0  850M   98M   32M S ${(cpu2 * 0.3).toFixed(1).padStart(4)}  0.8  00:45.1 kotlin-wasm-daemon         \r\n` +
+                    ` 2048 johan      20   0  420M   64M   20M R ${(cpu3 * 0.5).toFixed(1).padStart(4)}  0.5  01:12.8 kmp-terminal-core          \r\n` +
+                    " 3012 system     20   0  310M   28M   14M S  0.0  0.2  00:03.0 pty-subsystem              \r\n" +
+                    " 4096 johan      20   0  180M   16M    8M S  0.0  0.1  00:00.4 htop-simulator             \r\n\r\n" +
+                    "\u001B[1;33m[Press 'q' or click Clear to return to normal buffer without losing history]\u001B[0m";
+
+                termInstance.write(sb);
+                tick++;
+            }, 500);
+        }
+
+        function handleShellCommand(rawCmd) {
+            let cmd = rawCmd.trim();
+            termInstance.write("\r\n");
+            let parts = cmd.split(" ");
+            let action = (parts[0] || "").toLowerCase();
+
+            switch (action) {
+                case "help":
+                    termInstance.write(
+                        "\u001B[1;36mKMP Terminal Emulator Showcase - Commands Catalog\u001B[0m\r\n" +
+                        "  \u001B[1;33mcolors\u001B[0m   - Showcase 16 ANSI colors, 256 colors & 24-bit TrueColor\r\n" +
+                        "  \u001B[1;33mstyles\u001B[0m   - Test bold, italic, underline, strikethrough, inverse\r\n" +
+                        "  \u001B[1;33municode\u001B[0m  - Display box drawing, trees, braille & powerline symbols\r\n" +
+                        "  \u001B[1;33mprogress\u001B[0m - Run animated progress bars and live spinners\r\n" +
+                        "  \u001B[1;33mmatrix\u001B[0m   - Digital rain animation with real-time cursor positioning\r\n" +
+                        "  \u001B[1;33mhtop\u001B[0m     - Live system monitor in Alternate Screen Buffer (press 'q')\r\n" +
+                        "  \u001B[1;33mclear\u001B[0m    - Clear screen buffer\r\n" +
+                        "  \u001B[1;33mecho\u001B[0m     - Echo text back to terminal\r\n" +
+                        "  \u001B[1;33mping\u001B[0m     - Respond with pong\r\n"
+                    );
+                    break;
+                case "colors":
+                    runColorsDemo();
+                    break;
+                case "styles":
+                    runStylesDemo();
+                    break;
+                case "unicode":
+                case "box":
+                    runUnicodeDemo();
+                    break;
+                case "progress":
+                    runProgressDemo();
+                    return;
+                case "matrix":
+                    runMatrixDemo();
+                    return;
+                case "htop":
+                case "top":
+                    runHtopDemo();
+                    return;
+                case "clear":
+                    termInstance.write("\u001B[2J\u001B[H");
+                    break;
+                case "ping":
+                    termInstance.write("pong!\r\n");
+                    break;
+                case "echo":
+                    termInstance.write(parts.slice(1).join(" ") + "\r\n");
+                    break;
+                case "":
+                    break;
+                default:
+                    termInstance.write(`Unknown command: '${cmd}'. Type '\u001B[33mhelp\u001B[0m' for available commands.\r\n`);
+                    break;
+            }
+            termInstance.write("kmp-html-shell$ ");
+        }
 
         window.addEventListener('load', () => {
-            console.log("Initializing Wasm Terminal...");
-            
-            // Verify our registration functions are loaded from the WebAssembly bundle
             setTimeout(() => {
-                if (typeof window.writeToTerminal !== 'function') {
-                    console.error("writeToTerminal function not found! Ensure Wasm successfully initialized.");
-                    alert("writeToTerminal not found! Check console logs.");
+                if (typeof window.createKmpTerminal !== 'function') {
+                    console.error("createKmpTerminal function not found!");
                     return;
                 }
 
-                // Write welcome message from JavaScript
-                window.writeToTerminal("\u001B[1;32mTerminal successfully initialized via JavaScript!\u001B[0m\r\n");
-                window.writeToTerminal("Type anything below to see characters echoed back in real-time.\r\n\r\n");
-            }, 200);
+                termInstance = window.createKmpTerminal({
+                    containerId: "compose-receiver",
+                    rows: 24,
+                    cols: 80,
+                    onInput: (input) => {
+                        if (isInAltScreen || activeInterval) {
+                            if (input.includes("q") || input.includes("\x03")) {
+                                stopActiveAnimation();
+                                termInstance.write("\r\nkmp-html-shell$ ");
+                            }
+                            return;
+                        }
 
-            // Setup button event listeners
-            document.getElementById('btn-echo').addEventListener('click', () => {
-                if (typeof window.writeToTerminal === 'function') {
-                    window.writeToTerminal("\r\n[Message sent from parent HTML page]\r\n");
-                }
+                        for (let i = 0; i < input.length; i++) {
+                            let char = input[i];
+                            if (char === "\r" || char === "\n") {
+                                let cmd = commandBuffer;
+                                commandBuffer = "";
+                                handleShellCommand(cmd);
+                            } else if (char === "\x7f" || char === "\b") {
+                                if (commandBuffer.length > 0) {
+                                    commandBuffer = commandBuffer.slice(0, -1);
+                                    termInstance.write("\b \b");
+                                }
+                            } else if (char === "\x03") {
+                                commandBuffer = "";
+                                termInstance.write("^C\r\nkmp-html-shell$ ");
+                            } else if (char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126) {
+                                commandBuffer += char;
+                                termInstance.write(char);
+                            }
+                        }
+                    }
+                });
+
+                // Welcome message
+                termInstance.write("\u001B[1;36m╭─────────────────────────────────────────────────────────────────────────────╮\u001B[0m\r\n");
+                termInstance.write("\u001B[1;36m│\u001B[0m  \u001B[1;32m⚡ KMP Terminal Emulator (Vanilla HTML / JS Integration)\u001B[0m                   \u001B[1;36m│\u001B[0m\r\n");
+                termInstance.write("\u001B[1;36m│\u001B[0m  Features: 24-bit TrueColor, DECSTBM margins, Alt-Buffer, Unicode, Matrix     \u001B[1;36m│\u001B[0m\r\n");
+                termInstance.write("\u001B[1;36m│\u001B[0m  Try toolbar buttons above or type '\u001B[33mhelp\u001B[0m', '\u001B[33mcolors\u001B[0m', '\u001B[33mhtop\u001B[0m', '\u001B[33mmatrix\u001B[0m'.      \u001B[1;36m│\u001B[0m\r\n");
+                termInstance.write("\u001B[1;36m╰─────────────────────────────────────────────────────────────────────────────╯\u001B[0m\r\n\r\n");
+                termInstance.write("kmp-html-shell$ ");
+            }, 250);
+
+            // Button listeners
+            document.getElementById('select-theme').addEventListener('change', (e) => {
+                if (termInstance && termInstance.setTheme) termInstance.setTheme(e.target.value);
             });
 
-            document.getElementById('btn-color').addEventListener('click', () => {
-                if (typeof window.writeToTerminal === 'function') {
-                    window.writeToTerminal("\r\nANSI Colors: \u001B[31mRed\u001B[0m, \u001B[32mGreen\u001B[0m, \u001B[33mYellow\u001B[0m, \u001B[34mBlue\u001B[0m, \u001B[35mMagenta\u001B[0m, \u001B[36mCyan\u001B[0m\r\n");
-                }
+            document.getElementById('select-cursor').addEventListener('change', (e) => {
+                if (termInstance && termInstance.setCursorStyle) termInstance.setCursorStyle(e.target.value);
             });
+
+            document.getElementById('btn-colors').addEventListener('click', () => {
+                runColorsDemo();
+                if (termInstance) termInstance.write("kmp-html-shell$ ");
+            });
+
+            document.getElementById('btn-styles').addEventListener('click', () => {
+                runStylesDemo();
+                if (termInstance) termInstance.write("kmp-html-shell$ ");
+            });
+
+            document.getElementById('btn-unicode').addEventListener('click', () => {
+                runUnicodeDemo();
+                if (termInstance) termInstance.write("kmp-html-shell$ ");
+            });
+
+            document.getElementById('btn-progress').addEventListener('click', runProgressDemo);
+            document.getElementById('btn-matrix').addEventListener('click', runMatrixDemo);
+            document.getElementById('btn-htop').addEventListener('click', runHtopDemo);
 
             document.getElementById('btn-clear').addEventListener('click', () => {
-                if (typeof window.writeToTerminal === 'function') {
-                    window.writeToTerminal("\u001B[2J\u001B[H");
-                }
+                stopActiveAnimation();
+                if (termInstance) termInstance.write("\u001B[2J\u001B[Hkmp-html-shell$ ");
             });
 
             document.getElementById('btn-focus').addEventListener('click', () => {
-                if (typeof window.focusTerminal === 'function') {
-                    window.focusTerminal();
-                }
+                if (termInstance) termInstance.focus();
             });
         });
     </script>

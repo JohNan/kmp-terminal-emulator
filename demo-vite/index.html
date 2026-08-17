@@ -3,28 +3,68 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KMP Wasm Terminal - Vite TypeScript Demo</title>
+    <title>KMP Wasm Terminal - Vite TypeScript Demo & Showcase</title>
     <!-- Load the pre-compiled JS glue code of the Wasm Terminal -->
     <script src="/demo-web.js"></script>
   </head>
   <body>
     <div id="app">
-      <h1>KMP Wasm Terminal (Vite + TS)</h1>
-      <p class="description">
-        A modern TypeScript single-page application built with Vite, importing the precompiled Kotlin Multiplatform WebAssembly terminal component.
-      </p>
+      <header class="app-header">
+        <div class="header-left">
+          <h1>KMP Wasm Terminal</h1>
+          <span class="badge">Vite + TypeScript</span>
+          <span class="badge badge-accent">Compose Skia Canvas</span>
+        </div>
+        <p class="description">
+          A high-performance Kotlin Multiplatform terminal emulator compiled to WebAssembly, rendered on Skia canvas via Compose Multiplatform.
+        </p>
+      </header>
 
-      <div class="terminal-card">
-        <!-- Mounting point for the Skia Canvas -->
+      <main class="terminal-card">
+        <div class="card-toolbar">
+          <div class="toolbar-controls">
+            <select id="select-theme" class="ctrl-select" title="Color Scheme">
+              <option value="default">Theme: Default Dark</option>
+              <option value="monokai">Theme: Monokai</option>
+              <option value="nord">Theme: Nord</option>
+              <option value="solarized_dark">Theme: Solarized Dark</option>
+              <option value="solarized_light">Theme: Solarized Light</option>
+            </select>
+
+            <select id="select-cursor" class="ctrl-select" title="Cursor Style">
+              <option value="BLOCK">Cursor: Block</option>
+              <option value="BEAM">Cursor: Beam</option>
+              <option value="UNDERLINE">Cursor: Underline</option>
+            </select>
+
+            <div class="font-stepper">
+              <button id="btn-font-dec" class="stepper-btn" title="Decrease font size">-</button>
+              <span id="label-font" class="stepper-label">14px</span>
+              <button id="btn-font-inc" class="stepper-btn" title="Increase font size">+</button>
+            </div>
+          </div>
+
+          <div class="toolbar-actions">
+            <button id="btn-colors" class="btn btn-primary">Colors & 24-bit</button>
+            <button id="btn-styles" class="btn btn-success">Styles</button>
+            <button id="btn-unicode" class="btn btn-purple">Unicode & Box</button>
+            <button id="btn-progress" class="btn btn-warning">Progress Bar</button>
+            <button id="btn-matrix" class="btn btn-success">Matrix Rain</button>
+            <button id="btn-htop" class="btn btn-danger">Htop Alt-Buffer</button>
+            <button id="btn-clear" class="btn btn-secondary">Clear</button>
+            <button id="btn-focus" class="btn btn-secondary">Focus</button>
+          </div>
+        </div>
+
+        <!-- Mounting point for the Compose Canvas -->
         <div id="compose-receiver"></div>
-      </div>
 
-      <div class="controls">
-        <button id="btn-msg">Send Message</button>
-        <button id="btn-rainbow">Print Rainbow</button>
-        <button id="btn-clear">Clear Screen</button>
-        <button id="btn-focus">Focus Cursor</button>
-      </div>
+        <footer class="card-footer">
+          <span class="footer-item">⚡ Pure KMP Emulation Engine (:terminal-core)</span>
+          <span class="footer-item">🎨 Compose Multiplatform UI (:terminal-ui)</span>
+          <span class="footer-item">📐 Sub-pixel Monospace Measurement</span>
+        </footer>
+      </main>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

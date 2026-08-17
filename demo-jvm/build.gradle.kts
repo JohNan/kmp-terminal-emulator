@@ -27,6 +27,6 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "com.sshclient.demojvm.MainKt"
+        mainClass = "com.johnan.terminal.demojvm.MainKt"
     }
 }
