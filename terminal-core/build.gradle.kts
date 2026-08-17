@@ -11,6 +11,7 @@ version = providers.gradleProperty("version").orNull.takeIf { !it.isNullOrBlank(
 
 kotlin {
     androidTarget {
+        publishLibraryVariants("release")
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
         }
