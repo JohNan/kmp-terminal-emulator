@@ -56,6 +56,7 @@ fun TerminalCanvas(
     totalHeight: androidx.compose.ui.unit.Dp,
     isDark: Boolean,
     cursorColor: Color,
+    cursorStyle: TerminalCursorStyle = TerminalCursorStyle.BLOCK,
     baseTextStyle: TextStyle,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     enabled: Boolean,
@@ -496,11 +497,31 @@ fun TerminalCanvas(
                 val cursorX = terminalState.cursorCol * cellWidth
                 val cursorY = (terminalState.cursorRow + scrollbackLineCount) * cellHeight + verticalOffsetCanvas
 
-                drawRect(
-                    color = cursorColor,
-                    topLeft = Offset(cursorX, cursorY),
-                    size = androidx.compose.ui.geometry.Size(cellWidth, cellHeight),
-                )
+                when (cursorStyle) {
+                    TerminalCursorStyle.BLOCK -> {
+                        drawRect(
+                            color = cursorColor,
+                            topLeft = Offset(cursorX, cursorY),
+                            size = androidx.compose.ui.geometry.Size(cellWidth, cellHeight),
+                        )
+                    }
+                    TerminalCursorStyle.UNDERLINE -> {
+                        val underlineHeight = 2.dp.toPx().coerceAtLeast(1f)
+                        drawRect(
+                            color = cursorColor,
+                            topLeft = Offset(cursorX, cursorY + cellHeight - underlineHeight),
+                            size = androidx.compose.ui.geometry.Size(cellWidth, underlineHeight),
+                        )
+                    }
+                    TerminalCursorStyle.BEAM -> {
+                        val beamWidth = 2.dp.toPx().coerceAtLeast(1f)
+                        drawRect(
+                            color = cursorColor,
+                            topLeft = Offset(cursorX, cursorY),
+                            size = androidx.compose.ui.geometry.Size(beamWidth, cellHeight),
+                        )
+                    }
+                }
             }
         }
 

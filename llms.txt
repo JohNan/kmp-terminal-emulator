@@ -1,0 +1,19 @@
+# KMP Terminal Emulator
+
+> Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform GPU-accelerated canvas renderer.
+
+## Architecture
+- `terminal-core`: Pure Kotlin Multiplatform emulation state machine, screen buffer, ANSI parser, and text selection models. Zero UI dependencies.
+- `terminal-ui`: Compose Multiplatform canvas renderer, gesture detectors, platform native input capture, and selection overlays.
+
+## Core API References
+- [Core Configuration](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalConfig.kt): `TerminalConfig`, `terminalConfig { ... }`, `BellBehavior`
+- [UI Configuration](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalUiConfig.kt): `TerminalUiConfig`, `terminalUiConfig { ... }`, `LocalTerminalUiConfig`, `TerminalCursorStyle`
+- [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `copyToClipboard`
+- [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable
+- [Text Selection](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalSelection.kt): `TerminalSelection`, `SelectionState`
+
+## Guides & Documentation
+- [README.md](README.md): Project overview, getting started, and feature index.
+- [MIGRATION.md](MIGRATION.md): Recipe-driven migration guide for consumers and AI agents.
+- [AGENTS.md](AGENTS.md): Coding rules, architecture constraints, and documentation maintenance requirements.
