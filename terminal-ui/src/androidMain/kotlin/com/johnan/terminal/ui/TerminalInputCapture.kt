@@ -27,7 +27,7 @@ actual fun TerminalInputCapture(
 ) {
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
 
-    LaunchedEffect(showKeyboardSignal) {
+    LaunchedEffect(showKeyboardSignal, inputView) {
         if (showKeyboardSignal > 0) {
             focusRequester.requestFocus()
             inputView?.showKeyboard()
