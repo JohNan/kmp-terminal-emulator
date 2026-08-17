@@ -163,3 +163,11 @@ mise run run-demo
 # Execute all multiplatform unit tests
 mise exec -- ./gradlew allTests
 ```
+
+---
+
+## License
+
+Distributed under the [Apache License, Version 2.0](file:///workspace/kmp-terminal/LICENSE). Free for commercial and private use with attribution required and express patent grant.
+
+
