@@ -17,3 +17,11 @@ When developing or refactoring files in this codebase, ensure the following styl
    mise run compile-wasm
    mise run run-demo
    ```
+
+## Mandatory Documentation & Agent Invariants
+1. **Synchronized Documentation on PRs**: Whenever public APIs, configuration structures, or capabilities change, it is **mandatory** to update:
+   - `README.md`: Updated feature descriptions and Compose / Kotlin code samples.
+   - `MIGRATION.md`: Recipe-driven before/after migration diffs for consumer applications and AI agents.
+   - `llms.txt`: Root machine-readable LLM sitemap and API index.
+2. **High Test Coverage**: Maintain near 80% or greater unit test coverage on all core terminal state manipulation, coordinate transformations, and configuration models.
+3. **Deprecation Path**: Use `@Deprecated(replaceWith = ReplaceWith(...))` on legacy parameters and constructors to enable automated toolchain and agent refactoring.

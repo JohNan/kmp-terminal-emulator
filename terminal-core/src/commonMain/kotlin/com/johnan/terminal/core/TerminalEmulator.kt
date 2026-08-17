@@ -26,6 +26,14 @@ class TerminalEmulator(
     private val logCallback: ((String) -> Unit)? = null,
     private val onTerminalResponse: ((String) -> Unit)? = null,
 ) {
+    @Deprecated(
+        message = "Use primary constructor with TerminalConfig",
+        replaceWith =
+            ReplaceWith(
+                "TerminalEmulator(TerminalConfig(initialRows = rows, initialCols = cols, osc52Policy = osc52Policy), onOsc52WriteRequested, logCallback, onTerminalResponse)",
+                "com.johnan.terminal.core.TerminalConfig",
+            ),
+    )
     constructor(
         rows: Int = 24,
         cols: Int = 80,
