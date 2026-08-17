@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -38,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,6 +45,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.johnan.terminal.core.TerminalColorScheme
 import com.johnan.terminal.core.TerminalEmulator
+import com.johnan.terminal.core.terminalConfig
 import com.johnan.terminal.ui.TerminalCursorStyle
 import com.johnan.terminal.ui.TerminalRenderer
 import com.johnan.terminal.ui.terminalUiConfig
@@ -60,14 +59,14 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "KMP Terminal - JVM Desktop Demo & Capability Showcase",
-        state = rememberWindowState(width = 1000.dp, height = 700.dp)
+        state = rememberWindowState(width = 1000.dp, height = 700.dp),
     ) {
         val emulator = remember {
             TerminalEmulator(
-                config = com.johnan.terminal.core.terminalConfig {
+                config = terminalConfig {
                     initialRows = 28
                     initialCols = 90
-                }
+                },
             )
         }
         val focusRequester = remember { FocusRequester() }
@@ -101,12 +100,16 @@ fun main() = application {
             val sb = StringBuilder()
             sb.append("\r\n\u001B[1;37m=== 1. Standard 16 ANSI Colors (Normal & Bright) ===\u001B[0m\r\n")
             sb.append("Normal: ")
-            for (c in 30..37) sb.append("\u001B[${c}m■ Color $c \u001B[0m")
+            for (c in 30..37) {
+                sb.append("\u001B[${c}m■ Color $c \u001B[0m")
+            }
             sb.append("\r\nBright: ")
-            for (c in 90..97) sb.append("\u001B[${c}m■ Color $c \u001B[0m")
+            for (c in 90..97) {
+                sb.append("\u001B[${c}m■ Color $c \u001B[0m")
+            }
             sb.append("\r\n\r\n")
 
-            sb.append("\u001B[1;37m=== 2. 256 Indexed Color Palette (6x6x6 Color Cube & Grayscale) ===\u001B[0m\r\n")
+            sb.append("\u001B[1;37m=== 2. 256 Indexed Color Palette ===\u001B[0m\r\n")
             for (r in 0 until 6) {
                 for (g in 0 until 6) {
                     for (b in 0 until 6) {
@@ -148,7 +151,10 @@ fun main() = application {
             sb.append("  \u001B[5mBlinking text\u001B[0m\r\n")
             sb.append("  \u001B[7mInverse / Reverse video\u001B[0m\r\n")
             sb.append("  \u001B[9mCrossed out / Strikethrough\u001B[0m\r\n")
-            sb.append("  \u001B[1;3;4;33;44mCombined: Bold + Italic + Underline + Yellow on Blue\u001B[0m\r\n\r\n")
+            sb.append(
+                "  \u001B[1;3;4;33;44mCombined: Bold + Italic + Underline + " +
+                    "Yellow on Blue\u001B[0m\r\n\r\n",
+            )
             writeToTerminal(sb.toString())
         }
 
@@ -157,18 +163,39 @@ fun main() = application {
             val sb = StringBuilder()
             sb.append("\r\n\u001B[1;37m=== Unicode, Box Drawing & Powerline Glyphs ===\u001B[0m\r\n")
             sb.append("\u001B[36m┌──────────────────────────────────────────────┐\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m  \u001B[1;33m⚡ KMP Multiplatform Monospace Grid\u001B[0m         \u001B[36m│\u001B[0m\r\n")
+            sb.append(
+                "\u001B[36m│\u001B[0m  \u001B[1;33m⚡ KMP Multiplatform Monospace Grid\u001B[0m" +
+                    "         \u001B[36m│\u001B[0m\r\n",
+            )
             sb.append("\u001B[36m├──────────────────────┬───────────────────────┤\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m Double Lines: ╔═╦═╗  \u001B[36m│\u001B[0m Rounded: ╭───┬───╮     \u001B[36m│\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m               ╠═╬═╣  \u001B[36m│\u001B[0m          │   │   │     \u001B[36m│\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m               ╚═╩═╝  \u001B[36m│\u001B[0m          ╰───┴───╯     \u001B[36m│\u001B[0m\r\n")
+            sb.append(
+                "\u001B[36m│\u001B[0m Double Lines: ╔═╦═╗  " +
+                    "\u001B[36m│\u001B[0m Rounded: ╭───┬───╮     \u001B[36m│\u001B[0m\r\n",
+            )
+            sb.append(
+                "\u001B[36m│\u001B[0m               ╠═╬═╣  " +
+                    "\u001B[36m│\u001B[0m          │   │   │     \u001B[36m│\u001B[0m\r\n",
+            )
+            sb.append(
+                "\u001B[36m│\u001B[0m               ╚═╩═╝  " +
+                    "\u001B[36m│\u001B[0m          ╰───┴───╯     \u001B[36m│\u001B[0m\r\n",
+            )
             sb.append("\u001B[36m├──────────────────────┴───────────────────────┤\u001B[0m\r\n")
             sb.append("\u001B[36m│\u001B[0m Blocks & Shades: ░▒▓█ ▌▐ ▄▀ ■ □ ▲ ▼ ◆ ◈       \u001B[36m│\u001B[0m\r\n")
             sb.append("\u001B[36m│\u001B[0m Braille Graph:   ⡀⣀⣄⣤⣦⣶⣷⣿                   \u001B[36m│\u001B[0m\r\n")
             sb.append("\u001B[36m│\u001B[0m Tree Hierarchy:                               \u001B[36m│\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m   ├── \u001B[34mterminal-core\u001B[0m (zero UI dependencies)   \u001B[36m│\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m   └── \u001B[32mterminal-ui\u001B[0m   (Compose Multiplatform)   \u001B[36m│\u001B[0m\r\n")
-            sb.append("\u001B[36m│\u001B[0m Powerline: \u001B[44;30m master \u001B[42;34m\u001B[30m ✓ clean \u001B[49;32m\u001B[0m             \u001B[36m│\u001B[0m\r\n")
+            sb.append(
+                "\u001B[36m│\u001B[0m   ├── \u001B[34mterminal-core\u001B[0m " +
+                    "(zero UI dependencies)   \u001B[36m│\u001B[0m\r\n",
+            )
+            sb.append(
+                "\u001B[36m│\u001B[0m   └── \u001B[32mterminal-ui\u001B[0m   " +
+                    "(Compose Multiplatform)   \u001B[36m│\u001B[0m\r\n",
+            )
+            sb.append(
+                "\u001B[36m│\u001B[0m Powerline: \u001B[44;30m master \u001B[42;34m" +
+                    "\u001B[30m ✓ clean \u001B[49;32m\u001B[0m             \u001B[36m│\u001B[0m\r\n",
+            )
             sb.append("\u001B[36m└──────────────────────────────────────────────┘\u001B[0m\r\n\r\n")
             writeToTerminal(sb.toString())
         }
@@ -184,11 +211,20 @@ fun main() = application {
                     val filled = percent / 4
                     val empty = 25 - filled
                     val bar = "█".repeat(filled) + "░".repeat(empty)
-                    val color = if (percent < 50) "\u001B[33m" else if (percent < 80) "\u001B[36m" else "\u001B[32m"
-                    writeToTerminal("\r\u001B[K\u001B[35m$sp\u001B[0m Downloading assets: [$color$bar\u001B[0m] \u001B[1m$percent%\u001B[0m")
+                    val color = if (percent < 50) {
+                        "\u001B[33m"
+                    } else if (percent < 80) {
+                        "\u001B[36m"
+                    } else {
+                        "\u001B[32m"
+                    }
+                    writeToTerminal(
+                        "\r\u001B[K\u001B[35m$sp\u001B[0m Downloading assets: " +
+                            "[$color$bar\u001B[0m] \u001B[1m$percent%\u001B[0m",
+                    )
                     delay(30)
                 }
-                writeToTerminal("\r\n\u001B[32m✔ Download and asset verification complete!\u001B[0m\r\n\r\nkmp-jvm-shell$ ")
+                writeToTerminal("\r\n\u001B[32m✔ Download complete!\u001B[0m\r\n\r\nkmp-jvm-shell$ ")
                 activeJob = null
             }
         }
@@ -209,7 +245,7 @@ fun main() = application {
                         val row = drops[c]
                         if (row in 1..rows) {
                             val ch = chars[Random.nextInt(chars.size)]
-                            frame.append("\u001B[${row};${c + 1}H\u001B[1;37m$ch")
+                            frame.append("\u001B[$row;${c + 1}H\u001B[1;37m$ch")
                             if (row > 1) {
                                 val ch2 = chars[Random.nextInt(chars.size)]
                                 frame.append("\u001B[${row - 1};${c + 1}H\u001B[1;32m$ch2")
@@ -230,7 +266,10 @@ fun main() = application {
                     writeToTerminal(frame.toString())
                     delay(40)
                 }
-                writeToTerminal("\u001B[?25h\u001B[2J\u001B[H\u001B[32m[Matrix animation ended. Press Enter for prompt]\u001B[0m\r\n\r\nkmp-jvm-shell$ ")
+                writeToTerminal(
+                    "\u001B[?25h\u001B[2J\u001B[H\u001B[32m" +
+                        "[Matrix animation ended. Press Enter]\u001B[0m\r\n\r\nkmp-jvm-shell$ ",
+                )
                 activeJob = null
             }
         }
@@ -257,19 +296,68 @@ fun main() = application {
                         return "\u001B[32m" + "|".repeat(filled) + "\u001B[0m" + " ".repeat(empty)
                     }
 
-                    sb.append("\u001B[1;36m 1 \u001B[0m[${makeBar(cpu1)}] \u001B[1m${cpu1}%\u001B[0m       \u001B[1;36mTasks:\u001B[0m \u001B[1;32m74 total, 2 running\u001B[0m\r\n")
-                    sb.append("\u001B[1;36m 2 \u001B[0m[${makeBar(cpu2)}] \u001B[1m${cpu2}%\u001B[0m       \u001B[1;36mLoad average:\u001B[0m 0.42 0.38 0.31\r\n")
-                    sb.append("\u001B[1;36m 3 \u001B[0m[${makeBar(cpu3)}] \u001B[1m${cpu3}%\u001B[0m       \u001B[1;36mUptime:\u001B[0m 14 days, 03:22:18\r\n")
-                    sb.append("\u001B[1;36m 4 \u001B[0m[${makeBar(cpu4)}] \u001B[1m${cpu4}%\u001B[0m       \u001B[1;36mBuffer Mode:\u001B[0m \u001B[1;33mAlternate Screen (DECSET 1049)\u001B[0m\r\n")
-                    sb.append("\u001B[1;36mMem\u001B[0m[\u001B[34m" + "|".repeat(12) + "\u001B[0m" + " ".repeat(8) + "] $mem/16384 MB\r\n\r\n")
+                    sb.append(
+                        "\u001B[1;36m 1 \u001B[0m[${makeBar(cpu1)}] \u001B[1m$cpu1%\u001B[0m       " +
+                            "\u001B[1;36mTasks:\u001B[0m \u001B[1;32m74 total, 2 running\u001B[0m\r\n",
+                    )
+                    sb.append(
+                        "\u001B[1;36m 2 \u001B[0m[${makeBar(cpu2)}] \u001B[1m$cpu2%\u001B[0m       " +
+                            "\u001B[1;36mLoad average:\u001B[0m 0.42 0.38 0.31\r\n",
+                    )
+                    sb.append(
+                        "\u001B[1;36m 3 \u001B[0m[${makeBar(cpu3)}] \u001B[1m$cpu3%\u001B[0m       " +
+                            "\u001B[1;36mUptime:\u001B[0m 14 days, 03:22:18\r\n",
+                    )
+                    sb.append(
+                        "\u001B[1;36m 4 \u001B[0m[${makeBar(cpu4)}] \u001B[1m$cpu4%\u001B[0m       " +
+                            "\u001B[1;36mBuffer Mode:\u001B[0m \u001B[1;33mAlternate Screen\u001B[0m\r\n",
+                    )
+                    sb.append(
+                        "\u001B[1;36mMem\u001B[0m[\u001B[34m" + "|".repeat(12) + "\u001B[0m" +
+                            " ".repeat(8) + "] $mem/16384 MB\r\n\r\n",
+                    )
 
-                    sb.append("\u001B[7;1m  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command                     \u001B[0m\r\n")
-                    sb.append(String.format(" %4d root       20   0  1.2G  142M   45M S %4.1f  1.2  02:14.2 compose-skia-render       \r\n", 1024, cpu1 * 0.4))
-                    sb.append(String.format(" %4d johan      20   0  850M   98M   32M S %4.1f  0.8  00:45.1 kotlin-wasm-daemon         \r\n", 1432, cpu2 * 0.3))
-                    sb.append(String.format(" %4d johan      20   0  420M   64M   20M R %4.1f  0.5  01:12.8 kmp-terminal-core          \r\n", 2048, cpu3 * 0.5))
-                    sb.append(String.format(" %4d system     20   0  310M   28M   14M S  0.0  0.2  00:03.0 pty-subsystem              \r\n", 3012))
-                    sb.append(String.format(" %4d johan      20   0  180M   16M    8M S  0.0  0.1  00:00.4 htop-simulator             \r\n", 4096))
-                    sb.append("\r\n\u001B[1;33m[Press 'q' or click 'Exit Htop' to return to normal buffer without losing history]\u001B[0m")
+                    sb.append(
+                        "\u001B[7;1m  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   " +
+                            "TIME+  Command                     \u001B[0m\r\n",
+                    )
+                    sb.append(
+                        String.format(
+                            " %4d root       20   0  1.2G  142M   45M S %4.1f  1.2  02:14.2 compose-render\r\n",
+                            1024,
+                            cpu1 * 0.4,
+                        ),
+                    )
+                    sb.append(
+                        String.format(
+                            " %4d johan      20   0  850M   98M   32M S %4.1f  0.8  00:45.1 kotlin-wasm   \r\n",
+                            1432,
+                            cpu2 * 0.3,
+                        ),
+                    )
+                    sb.append(
+                        String.format(
+                            " %4d johan      20   0  420M   64M   20M R %4.1f  0.5  01:12.8 kmp-terminal  \r\n",
+                            2048,
+                            cpu3 * 0.5,
+                        ),
+                    )
+                    sb.append(
+                        String.format(
+                            " %4d system     20   0  310M   28M   14M S  0.0  0.2  00:03.0 pty-subsystem \r\n",
+                            3012,
+                        ),
+                    )
+                    sb.append(
+                        String.format(
+                            " %4d johan      20   0  180M   16M    8M S  0.0  0.1  00:00.4 htop-sim      \r\n",
+                            4096,
+                        ),
+                    )
+                    sb.append(
+                        "\r\n\u001B[1;33m[Press 'q' or click 'Exit Htop' to return to normal buffer " +
+                            "without losing history]\u001B[0m",
+                    )
 
                     writeToTerminal(sb.toString())
                     tick++
@@ -292,12 +380,12 @@ fun main() = application {
                 "help" -> {
                     val sb = StringBuilder()
                     sb.append("\u001B[1;36mKMP Terminal Emulator Showcase - Commands Catalog\u001B[0m\r\n")
-                    sb.append("  \u001B[1;33mcolors\u001B[0m   - Showcase 16 ANSI colors, 256 colors & 24-bit TrueColor\r\n")
-                    sb.append("  \u001B[1;33mstyles\u001B[0m   - Test bold, italic, underline, strikethrough, inverse\r\n")
-                    sb.append("  \u001B[1;33municode\u001B[0m  - Display box drawing, trees, braille & powerline symbols\r\n")
-                    sb.append("  \u001B[1;33mprogress\u001B[0m - Run animated progress bars and live spinners\r\n")
-                    sb.append("  \u001B[1;33mmatrix\u001B[0m   - Digital rain animation with real-time cursor positioning\r\n")
-                    sb.append("  \u001B[1;33mhtop\u001B[0m     - Live system monitor in Alternate Screen Buffer (press 'q')\r\n")
+                    sb.append("  \u001B[1;33mcolors\u001B[0m   - 16 ANSI colors, 256 colors & 24-bit TrueColor\r\n")
+                    sb.append("  \u001B[1;33mstyles\u001B[0m   - Bold, italic, underline, strikethrough, inverse\r\n")
+                    sb.append("  \u001B[1;33municode\u001B[0m  - Box drawing, trees, braille & powerline symbols\r\n")
+                    sb.append("  \u001B[1;33mprogress\u001B[0m - Animated progress bars and live spinners\r\n")
+                    sb.append("  \u001B[1;33mmatrix\u001B[0m   - Digital rain animation with cursor positioning\r\n")
+                    sb.append("  \u001B[1;33mhtop\u001B[0m     - Live system monitor in Alternate Screen Buffer\r\n")
                     sb.append("  \u001B[1;33mclear\u001B[0m    - Clear screen buffer\r\n")
                     sb.append("  \u001B[1;33mecho\u001B[0m     - Echo text back to terminal\r\n")
                     sb.append("  \u001B[1;33mping\u001B[0m     - Respond with pong\r\n")
@@ -325,7 +413,11 @@ fun main() = application {
                     writeToTerminal("$echoText\r\n")
                 }
                 "" -> {}
-                else -> writeToTerminal("Unknown command: '$cmd'. Type '\u001B[33mhelp\u001B[0m' for available commands.\r\n")
+                else -> {
+                    writeToTerminal(
+                        "Unknown command: '$cmd'. Type '\u001B[33mhelp\u001B[0m' for available commands.\r\n",
+                    )
+                }
             }
             writeToTerminal("kmp-jvm-shell$ ")
         }
@@ -352,8 +444,8 @@ fun main() = application {
             colorScheme = darkColorScheme(
                 background = Color(0xFF0D1117),
                 surface = Color(0xFF161B22),
-                primary = Color(0xFF58A6FF)
-            )
+                primary = Color(0xFF58A6FF),
+            ),
         ) {
             Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0D1117)) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -366,14 +458,26 @@ fun main() = application {
                         fontSize = terminalFontSize,
                         onFontSizeChange = { terminalFontSize = it.coerceIn(10f, 24f) },
                         isInAltScreen = isInAltScreen,
-                        onExitAltScreen = { stopActiveAnimation(); writeToTerminal("kmp-jvm-shell$ ") },
-                        onRunColors = { runColorsDemo(); writeToTerminal("kmp-jvm-shell$ ") },
-                        onRunStyles = { runStylesDemo(); writeToTerminal("kmp-jvm-shell$ ") },
-                        onRunUnicode = { runUnicodeDemo(); writeToTerminal("kmp-jvm-shell$ ") },
+                        onExitAltScreen = {
+                            stopActiveAnimation()
+                            writeToTerminal("kmp-jvm-shell$ ")
+                        },
+                        onRunColors = {
+                            runColorsDemo()
+                            writeToTerminal("kmp-jvm-shell$ ")
+                        },
+                        onRunStyles = {
+                            runStylesDemo()
+                            writeToTerminal("kmp-jvm-shell$ ")
+                        },
+                        onRunUnicode = {
+                            runUnicodeDemo()
+                            writeToTerminal("kmp-jvm-shell$ ")
+                        },
                         onRunProgress = { runProgressDemo() },
                         onRunMatrix = { runMatrixDemo() },
                         onRunHtop = { runHtopDemo() },
-                        onClear = { writeToTerminal("\u001B[2J\u001B[Hkmp-jvm-shell$ ") }
+                        onClear = { writeToTerminal("\u001B[2J\u001B[Hkmp-jvm-shell$ ") },
                     )
 
                     // Terminal Canvas Container
@@ -384,7 +488,7 @@ fun main() = application {
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(selectedColorScheme.background)
-                            .border(1.dp, Color(0xFF30363D), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF30363D), RoundedCornerShape(8.dp)),
                     ) {
                         val terminalState by emulator.screenState.collectAsState()
 
@@ -463,18 +567,32 @@ fun main() = application {
                             focusRequester = focusRequester,
                             onResize = { r, c ->
                                 scope.launch { emulator.resize(r, c) }
-                            }
+                            },
                         )
                     }
                 }
 
                 LaunchedEffect(Unit) {
                     focusRequester.requestFocus()
-                    writeToTerminal("\u001B[1;36m╭─────────────────────────────────────────────────────────────────────────────╮\u001B[0m\r\n")
-                    writeToTerminal("\u001B[1;36m│\u001B[0m  \u001B[1;32m⚡ KMP Terminal Emulator (Compose Multiplatform Desktop Demo)\u001B[0m              \u001B[1;36m│\u001B[0m\r\n")
-                    writeToTerminal("\u001B[1;36m│\u001B[0m  Features: 24-bit TrueColor, DECSTBM margins, Alt-Buffer, Unicode, Matrix     \u001B[1;36m│\u001B[0m\r\n")
-                    writeToTerminal("\u001B[1;36m│\u001B[0m  Try toolbar demo buttons above or type '\u001B[33mhelp\u001B[0m', '\u001B[33mcolors\u001B[0m', '\u001B[33mhtop\u001B[0m', '\u001B[33mmatrix\u001B[0m'.  \u001B[1;36m│\u001B[0m\r\n")
-                    writeToTerminal("\u001B[1;36m╰─────────────────────────────────────────────────────────────────────────────╯\u001B[0m\r\n\r\n")
+                    writeToTerminal(
+                        "\u001B[1;36m╭────────────────────────────────────────────────────────────╮\u001B[0m\r\n",
+                    )
+                    writeToTerminal(
+                        "\u001B[1;36m│\u001B[0m  \u001B[1;32m⚡ KMP Terminal Emulator (Compose Desktop Demo)" +
+                            "\u001B[0m           \u001B[1;36m│\u001B[0m\r\n",
+                    )
+                    writeToTerminal(
+                        "\u001B[1;36m│\u001B[0m  Features: 24-bit TrueColor, Alt-Buffer, Unicode, Matrix    " +
+                            "\u001B[1;36m│\u001B[0m\r\n",
+                    )
+                    writeToTerminal(
+                        "\u001B[1;36m│\u001B[0m  Try buttons above or type '\u001B[33mhelp\u001B[0m', " +
+                            "'\u001B[33mcolors\u001B[0m', " +
+                            "'\u001B[33mhtop\u001B[0m'.         \u001B[1;36m│\u001B[0m\r\n",
+                    )
+                    writeToTerminal(
+                        "\u001B[1;36m╰────────────────────────────────────────────────────────────╯\u001B[0m\r\n\r\n",
+                    )
                     writeToTerminal("kmp-jvm-shell$ ")
                 }
             }
@@ -505,13 +623,13 @@ fun TopToolbar(
 
     Surface(
         color = Color(0xFF161B22),
-        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF30363D))
+        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFF30363D)),
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Title and badges
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -519,32 +637,40 @@ fun TopToolbar(
                         text = "KMP Terminal",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF58A6FF)
+                        color = Color(0xFF58A6FF),
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Box(
                         modifier = Modifier
                             .background(Color(0xFF238636).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
                             .border(1.dp, Color(0xFF238636), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
-                        Text("JVM Desktop", color = Color(0xFF3FB950), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "JVM Desktop",
+                            color = Color(0xFF3FB950),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 }
 
                 // Configuration dropdowns & font scaling
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     // Theme selector
                     Box {
                         OutlinedButton(
                             onClick = { themeDropdownExpanded = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC9D1D9))
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC9D1D9)),
                         ) {
                             Text("Theme: ${selectedColorScheme.name}", fontSize = 12.sp)
                         }
                         DropdownMenu(
                             expanded = themeDropdownExpanded,
-                            onDismissRequest = { themeDropdownExpanded = false }
+                            onDismissRequest = { themeDropdownExpanded = false },
                         ) {
                             TerminalColorScheme.PRESETS.forEach { scheme ->
                                 DropdownMenuItem(
@@ -552,7 +678,7 @@ fun TopToolbar(
                                     onClick = {
                                         onColorSchemeChange(scheme)
                                         themeDropdownExpanded = false
-                                    }
+                                    },
                                 )
                             }
                         }
@@ -562,13 +688,13 @@ fun TopToolbar(
                     Box {
                         OutlinedButton(
                             onClick = { cursorDropdownExpanded = true },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC9D1D9))
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC9D1D9)),
                         ) {
                             Text("Cursor: ${selectedCursorStyle.name}", fontSize = 12.sp)
                         }
                         DropdownMenu(
                             expanded = cursorDropdownExpanded,
-                            onDismissRequest = { cursorDropdownExpanded = false }
+                            onDismissRequest = { cursorDropdownExpanded = false },
                         ) {
                             TerminalCursorStyle.entries.forEach { style ->
                                 DropdownMenuItem(
@@ -576,7 +702,7 @@ fun TopToolbar(
                                     onClick = {
                                         onCursorStyleChange(style)
                                         cursorDropdownExpanded = false
-                                    }
+                                    },
                                 )
                             }
                         }
@@ -587,7 +713,7 @@ fun TopToolbar(
                         modifier = Modifier
                             .border(1.dp, Color(0xFF30363D), RoundedCornerShape(4.dp))
                             .padding(2.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             "-",
@@ -595,16 +721,21 @@ fun TopToolbar(
                                 .clickable { onFontSizeChange(fontSize - 1f) }
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                             color = Color(0xFFC9D1D9),
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
-                        Text("${fontSize.toInt()}sp", fontSize = 12.sp, color = Color(0xFF8B949E), modifier = Modifier.padding(horizontal = 4.dp))
+                        Text(
+                            "${fontSize.toInt()}sp",
+                            fontSize = 12.sp,
+                            color = Color(0xFF8B949E),
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
                         Text(
                             "+",
                             modifier = Modifier
                                 .clickable { onFontSizeChange(fontSize + 1f) }
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                             color = Color(0xFFC9D1D9),
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -616,14 +747,19 @@ fun TopToolbar(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Showcase:", fontSize = 12.sp, color = Color(0xFF8B949E), fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Showcase:",
+                    fontSize = 12.sp,
+                    color = Color(0xFF8B949E),
+                    fontWeight = FontWeight.SemiBold,
+                )
 
                 if (isInAltScreen) {
                     Button(
                         onClick = onExitAltScreen,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDA3633))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDA3633)),
                     ) {
                         Text("Exit Alternate Screen ('q')", fontSize = 11.sp)
                     }
@@ -640,7 +776,7 @@ fun TopToolbar(
 
                 OutlinedButton(
                     onClick = onClear,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF8B949E))
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF8B949E)),
                 ) {
                     Text("Clear", fontSize = 11.sp)
                 }
@@ -657,7 +793,7 @@ fun DemoChip(label: String, color: Color, onClick: () -> Unit) {
             .background(color.copy(alpha = 0.15f))
             .border(1.dp, color.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
         Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Medium)
     }

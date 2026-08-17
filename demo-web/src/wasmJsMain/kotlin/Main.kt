@@ -18,7 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeViewport
 import com.johnan.terminal.core.TerminalColorScheme
@@ -43,7 +42,10 @@ external interface TerminalConfig : JsAny {
 @JsFun("(func) => { window.createKmpTerminal = (config) => func(config); }")
 external fun registerCreateKmpTerminal(func: (TerminalConfig) -> JsAny)
 
-@JsFun("(write, resize, focus, dispose, setTheme, setCursorStyle, setFontSize) => ({ write, resize, focus, dispose, setTheme, setCursorStyle, setFontSize })")
+@JsFun(
+    "(write, resize, focus, dispose, setTheme, setCursorStyle, setFontSize) => " +
+        "({ write, resize, focus, dispose, setTheme, setCursorStyle, setFontSize })"
+)
 external fun createTerminalInstanceJs(
     write: (String) -> Unit,
     resize: (Int, Int) -> Unit,
