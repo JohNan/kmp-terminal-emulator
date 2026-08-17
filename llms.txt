@@ -15,7 +15,9 @@
 
 ## Guides & Documentation
 - [README.md](README.md): Project overview, getting started, and feature index.
+- [CONTRIBUTING.md](CONTRIBUTING.md): Contribution guidelines, toolchain setup, testing, and pull request invariants.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): Contributor Covenant v2.1 code of conduct.
+- [SECURITY.md](SECURITY.md): Security policy and responsible vulnerability disclosure process.
 - [MIGRATION.md](MIGRATION.md): Recipe-driven migration guide for consumers and AI agents.
 - [AGENTS.md](AGENTS.md): Coding rules, architecture constraints, and documentation maintenance requirements.
 - [LICENSE](LICENSE): Apache License, Version 2.0 (free to use with attribution and express patent grant).
-
