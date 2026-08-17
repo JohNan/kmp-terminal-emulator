@@ -21,15 +21,35 @@ import kotlinx.coroutines.sync.withLock
  * Thread-safe: Uses mutex to protect terminal state
  */
 class TerminalEmulator(
-    rows: Int = 24,
-    cols: Int = 80,
-    val osc52Policy: Osc52Policy = Osc52Policy.ASK,
+    val config: TerminalConfig = TerminalConfig.DEFAULT,
     private val onOsc52WriteRequested: ((text: String, onConfirm: () -> Unit) -> Unit)? = null,
     private val logCallback: ((String) -> Unit)? = null,
     private val onTerminalResponse: ((String) -> Unit)? = null,
 ) {
+    constructor(
+        rows: Int = 24,
+        cols: Int = 80,
+        osc52Policy: Osc52Policy = Osc52Policy.ASK,
+        onOsc52WriteRequested: ((text: String, onConfirm: () -> Unit) -> Unit)? = null,
+        logCallback: ((String) -> Unit)? = null,
+        onTerminalResponse: ((String) -> Unit)? = null,
+    ) : this(
+        config =
+            TerminalConfig(
+                initialRows = rows,
+                initialCols = cols,
+                osc52Policy = osc52Policy,
+            ),
+        onOsc52WriteRequested = onOsc52WriteRequested,
+        logCallback = logCallback,
+        onTerminalResponse = onTerminalResponse,
+    )
+
+    val osc52Policy: Osc52Policy
+        get() = config.osc52Policy
+
     // Screen buffer
-    private val screenBuffer = ScreenBuffer(rows, cols)
+    private val screenBuffer = ScreenBuffer(config.initialRows, config.initialCols, config.maxScrollback)
 
     // State for Application Cursor Keys mode
     var applicationCursorKeysEnabled = false
