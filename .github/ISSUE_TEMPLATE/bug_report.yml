@@ -1,0 +1,50 @@
+name: Bug Report
+description: Report an issue or unexpected behavior in kmp-terminal
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug report! Please provide as much context as possible.
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: Affected Platform(s)
+      description: Which target platforms exhibit this bug?
+      options:
+        - label: Android
+        - label: iOS (ARM64 / Simulator)
+        - label: JVM Desktop (Compose Multiplatform)
+        - label: WebAssembly (WasmJs)
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed reproduction steps, input ANSI escape sequences, or sample code.
+      placeholder: |
+        1. Initialize emulator with config ...
+        2. Feed ANSI escape code: \e[...
+        3. Observe rendering state ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Stacktrace / Screenshots
+      description: Please paste any relevant stacktraces, terminal log output, or screenshots.
+      render: shell
