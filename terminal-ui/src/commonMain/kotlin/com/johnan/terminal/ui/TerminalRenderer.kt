@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,11 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import com.johnan.terminal.core.ArrowDirection
@@ -63,6 +60,7 @@ fun TerminalRenderer(
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
     modifier: Modifier = Modifier,
+    config: TerminalUiConfig = LocalTerminalUiConfig.current,
     enabled: Boolean = true,
     modifierKeyState: ModifierKeyState = ModifierKeyState(),
     onModifierStateChange: (ModifierKeyState) -> Unit = {},
@@ -92,23 +90,26 @@ fun TerminalRenderer(
     val textMeasurer = rememberTextMeasurer()
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
-    // Use color scheme for cursor or fall back to MaterialTheme
+    val effectiveColorScheme = colorScheme ?: config.colorScheme
+
+    // Use color scheme or override for cursor or fall back to MaterialTheme
     val cursorColor =
-        colorScheme?.cursor?.copy(alpha = 0.5f)
-            ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+        config.cursor.overrideColor
+            ?: effectiveColorScheme.cursor.copy(alpha = 0.5f)
 
     val density = LocalDensity.current
 
     // Software keyboard controller for explicit keyboard show/hide
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Base terminal styling - using monospace font for proper alignment
-    val baseFontSize = fontSize.sp
+    // Base terminal styling - using configured typography
+    val baseFontSize = if (fontSize != 14f) fontSize.sp else config.typography.fontSize
     val baseTextStyle =
         TextStyle(
-            fontFamily = FontFamily.Monospace,
+            fontFamily = config.typography.fontFamily,
             fontSize = baseFontSize,
-            color = colorScheme?.foreground ?: (if (isDark) Color(0xFFE0E0E0) else Color(0xFF000000)),
+            letterSpacing = config.typography.letterSpacing,
+            color = effectiveColorScheme.foreground,
         )
 
     // Measure cell dimensions with sub-pixel precision to prevent rounding error accumulation across columns.
@@ -300,11 +301,12 @@ fun TerminalRenderer(
             totalHeight = totalHeight,
             isDark = isDark,
             cursorColor = cursorColor,
+            cursorStyle = config.cursor.style,
             baseTextStyle = baseTextStyle,
             textMeasurer = textMeasurer,
             enabled = enabled,
             onRequestFocus = onRequestFocus,
-            colorScheme = colorScheme,
+            colorScheme = effectiveColorScheme,
             selectionState = selectionState,
             searchState = searchState,
             onSingleTap = onSingleTap,
