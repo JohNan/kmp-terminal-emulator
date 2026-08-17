@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -168,9 +169,13 @@ fun TerminalRenderer(
 
         val keyboardController = LocalSoftwareKeyboardController.current
 
+        var localShowKeyboardSignal by remember { mutableIntStateOf(0) }
+        val effectiveShowKeyboardSignal = showKeyboardSignal + localShowKeyboardSignal
+
         val onRequestFocus = {
             internalFocusRequester.requestFocus()
             keyboardController?.show()
+            localShowKeyboardSignal++
             Unit
         }
 
@@ -252,7 +257,7 @@ fun TerminalRenderer(
             TerminalInputCapture(
                 enabled = enabled,
                 focusRequester = internalFocusRequester,
-                showKeyboardSignal = showKeyboardSignal,
+                showKeyboardSignal = effectiveShowKeyboardSignal,
                 onInput = handleSoftInput,
                 onArrowKey = onArrowKey,
                 onLog = onLog,
