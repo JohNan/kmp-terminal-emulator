@@ -60,6 +60,31 @@ android {
 }
 
 publishing {
+    publications.withType<MavenPublication> {
+        pom {
+            name.set("kmp-terminal-core")
+            description.set("Pure Kotlin Multiplatform Terminal Emulator Core (Decoupled, zero UI dependencies)")
+            url.set("https://github.com/JohNan/kmp-terminal-emulator")
+            licenses {
+                license {
+                    name.set("The Apache License, Version 2.0")
+                    url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                }
+            }
+            developers {
+                developer {
+                    id.set("JohNan")
+                    name.set("Johan")
+                    url.set("https://github.com/JohNan")
+                }
+            }
+            scm {
+                connection.set("scm:git:git://github.com/JohNan/kmp-terminal-emulator.git")
+                developerConnection.set("scm:git:ssh://github.com:JohNan/kmp-terminal-emulator.git")
+                url.set("https://github.com/JohNan/kmp-terminal-emulator")
+            }
+        }
+    }
     repositories {
         maven {
             name = "GitHubPackages"

@@ -1,6 +1,14 @@
 # KMP Terminal Emulator
 
-A Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform rendering library. This library provides a standalone, reusable, GPU-accelerated terminal emulator designed to replace standard terminal integrations with fully-customizable Compose Multiplatform UI components.
+[![CI](https://github.com/JohNan/kmp-terminal-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/JohNan/kmp-terminal-emulator/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin_Multiplatform-2.1.0-purple.svg)](https://kotlinlang.org/docs/multiplatform.html)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose_Multiplatform-1.7.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![WebAssembly](https://img.shields.io/badge/Target-WasmJs-orange.svg)](https://webassembly.org/)
+
+A modern Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform rendering library. This library provides a standalone, high-performance, GPU-accelerated terminal emulator designed for mobile, desktop, and web applications.
+
+👉 **[🚀 Try Live Interactive WebAssembly Demo](https://johnan.github.io/kmp-terminal-emulator/)**
 
 ---
 
@@ -166,8 +174,16 @@ mise exec -- ./gradlew allTests
 
 ---
 
+## Contributing & Community
+
+Contributions are welcome! Please read through our community guides:
+- [Contributing Guidelines](CONTRIBUTING.md) — Toolchain setup, testing, and architecture invariants.
+- [Code of Conduct](CODE_OF_CONDUCT.md) — Contributor pledge and standards.
+- [Security Policy](SECURITY.md) — Responsible vulnerability reporting.
+- [Migration Guide](MIGRATION.md) — Before/after recipes and upgrade paths.
+
+---
+
 ## License
 
-Distributed under the [Apache License, Version 2.0](file:///workspace/kmp-terminal/LICENSE). Free for commercial and private use with attribution required and express patent grant.
-
-
+Distributed under the [Apache License, Version 2.0](LICENSE). Free for commercial and private use with attribution required and express patent grant.

@@ -1,0 +1,59 @@
+name: Deploy Interactive Web Demo to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'demo-web/**'
+      - 'terminal-core/**'
+      - 'terminal-ui/**'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install libatomic
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libatomic1
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build WebAssembly Distribution
+        run: ./gradlew :demo-web:wasmJsBrowserDistribution --no-daemon
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo-web/build/dist/wasmJs/productionExecutable
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
