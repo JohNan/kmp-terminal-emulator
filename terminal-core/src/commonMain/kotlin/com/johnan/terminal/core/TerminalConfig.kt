@@ -6,8 +6,10 @@ package com.johnan.terminal.core
 enum class BellBehavior {
     /** Ignore bell signals completely */
     IGNORE,
+
     /** Trigger visual bell feedback */
     VISUAL,
+
     /** Notify custom listener callback */
     CALLBACK,
 }

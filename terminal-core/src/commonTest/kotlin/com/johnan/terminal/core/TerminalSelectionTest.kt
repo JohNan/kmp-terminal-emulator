@@ -7,7 +7,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TerminalSelectionTest {
-
     private fun writeStringToBuffer(buffer: ScreenBuffer, row: Int, col: Int, text: String) {
         buffer.setCursorPosition(row, col)
         text.forEach { buffer.writeChar(it) }

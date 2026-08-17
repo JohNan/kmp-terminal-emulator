@@ -30,8 +30,11 @@ class TerminalEmulator(
         message = "Use primary constructor with TerminalConfig",
         replaceWith =
             ReplaceWith(
-                "TerminalEmulator(TerminalConfig(initialRows = rows, initialCols = cols, osc52Policy = osc52Policy), onOsc52WriteRequested, logCallback, onTerminalResponse)",
-                "com.johnan.terminal.core.TerminalConfig",
+                expression =
+                    "TerminalEmulator(" +
+                        "TerminalConfig(initialRows = rows, initialCols = cols, osc52Policy = osc52Policy), " +
+                        "onOsc52WriteRequested, logCallback, onTerminalResponse)",
+                imports = ["com.johnan.terminal.core.TerminalConfig"],
             ),
     )
     constructor(

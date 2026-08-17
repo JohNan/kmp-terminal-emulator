@@ -18,8 +18,10 @@ import com.johnan.terminal.core.TerminalColorScheme
 enum class TerminalCursorStyle {
     /** Solid / hollow rectangular block */
     BLOCK,
+
     /** Horizontal line at the bottom of cell */
     UNDERLINE,
+
     /** Vertical bar (I-beam) at the left of cell */
     BEAM,
 }
@@ -199,7 +201,13 @@ class TerminalGestureConfigBuilder {
     var wheelScrollMultiplier: Float = 1.0f
     var longPressTimeoutMs: Long = 400L
 
-    fun build() = TerminalGestureConfig(enableTouchToFocus, enableSelection, enableUrlClick, wheelScrollMultiplier, longPressTimeoutMs)
+    fun build() = TerminalGestureConfig(
+        enableTouchToFocus,
+        enableSelection,
+        enableUrlClick,
+        wheelScrollMultiplier,
+        longPressTimeoutMs
+    )
 }
 
 class TerminalKeyBarConfigBuilder {
