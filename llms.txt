@@ -17,3 +17,5 @@
 - [README.md](README.md): Project overview, getting started, and feature index.
 - [MIGRATION.md](MIGRATION.md): Recipe-driven migration guide for consumers and AI agents.
 - [AGENTS.md](AGENTS.md): Coding rules, architecture constraints, and documentation maintenance requirements.
+- [LICENSE](LICENSE): Apache License, Version 2.0 (free to use with attribution and express patent grant).
+
