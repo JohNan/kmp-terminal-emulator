@@ -12,34 +12,25 @@ import com.johnan.terminal.core.SearchState
 import com.johnan.terminal.core.TerminalMatch
 
 /**
- * Renders search highlights on top of the terminal
+ * Highlights find-in-terminal query matches and active match index across terminal cells.
  */
 @Composable
 fun SearchOverlay(
     searchState: SearchState,
     cellWidth: Float,
     cellHeight: Float,
-    // Not strictly needed if matches use absolute indices, but kept for consistency
     scrollbackLineCount: Int,
     totalRows: Int,
     modifier: Modifier = Modifier,
-    // Semi-transparent yellow
     matchColor: Color = Color(0x80FFFF00),
-    // Semi-transparent orange
     currentMatchColor: Color = Color(0x80FF8000),
 ) {
     if (!searchState.isVisible || searchState.matches.isEmpty()) return
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val contentHeight = totalRows * cellHeight
-        val verticalOffset =
-            if (contentHeight < size.height) {
-                size.height - contentHeight
-            } else {
-                0f
-            }
+        val verticalOffset = if (contentHeight < size.height) size.height - contentHeight else 0f
 
-        // Bolt: Use indexed loop to avoid Iterator allocations on the hot path.
         val matchesSize = searchState.matches.size
         for (index in 0 until matchesSize) {
             val match = searchState.matches[index]
@@ -63,10 +54,9 @@ private fun DrawScope.drawMatch(
     color: Color,
     verticalOffset: Float,
 ) {
-    // Matches are single-line based on ScreenBuffer implementation
     val row = match.startRow
     val startCol = match.startCol
-    val endCol = match.endCol // endCol is exclusive
+    val endCol = match.endCol
 
     val x = startCol * cellWidth
     val y = row * cellHeight + verticalOffset

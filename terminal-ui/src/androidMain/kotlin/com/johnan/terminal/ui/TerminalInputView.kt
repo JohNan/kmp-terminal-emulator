@@ -12,9 +12,7 @@ import android.view.inputmethod.InputConnection
 import com.johnan.terminal.core.ArrowDirection
 
 /**
- * Custom View to handle soft keyboard input and hardware key events for the terminal.
- * This replaces BasicTextField to provide lower-level control over the InputConnection,
- * ensuring Backspace works reliably even when the local buffer is empty.
+ * Native Android View managing [InputConnection] and soft keyboard interactions.
  */
 class TerminalInputView(context: Context) : View(context) {
     var onInput: ((String) -> Unit)? = null
@@ -30,7 +28,7 @@ class TerminalInputView(context: Context) : View(context) {
         post {
             requestFocus()
             val imm = context.getSystemService(
-                Context.INPUT_METHOD_SERVICE
+                Context.INPUT_METHOD_SERVICE,
             ) as? android.view.inputmethod.InputMethodManager
             imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
         }
@@ -51,10 +49,7 @@ class TerminalInputView(context: Context) : View(context) {
         return true
     }
 
-    override fun onCheckIsTextEditor(): Boolean {
-        onLog?.invoke("onCheckIsTextEditor called, returning true")
-        return true
-    }
+    override fun onCheckIsTextEditor(): Boolean = true
 
     override fun onFocusChanged(
         gainFocus: Boolean,
@@ -66,21 +61,15 @@ class TerminalInputView(context: Context) : View(context) {
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        onLog?.invoke("onCreateInputConnection called")
-        // Use visible password type to disable auto-correct and suggestions
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
         outAttrs.imeOptions =
             EditorInfo.IME_ACTION_NONE or
             EditorInfo.IME_FLAG_NO_FULLSCREEN or
             EditorInfo.IME_FLAG_NO_EXTRACT_UI
 
-        onLog?.invoke("outAttrs: inputType=${outAttrs.inputType}, imeOptions=${outAttrs.imeOptions}")
         return object : BaseInputConnection(this, false) {
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
                 if (beforeLength > 0) {
-                    // Always send backspace to the terminal, regardless of local buffer state.
-                    // This fixes the "Dead Backspace" issue where the keyboard thinks the field
-                    // is empty and ignores the delete command.
                     onInput?.invoke(DELETE_CHAR)
                     return true
                 }
@@ -107,7 +96,6 @@ class TerminalInputView(context: Context) : View(context) {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (event == null) return super.onKeyDown(keyCode, event)
 
-        // Delegate hardware keys to the native Android handler
         var handled = handleAndroidHardwareKeyEvent(event, onInput, onArrowKey)
 
         if (!handled && event.action == KeyEvent.ACTION_DOWN) {

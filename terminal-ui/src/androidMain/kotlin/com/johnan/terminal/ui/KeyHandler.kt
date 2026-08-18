@@ -4,18 +4,13 @@ import android.view.KeyEvent
 import com.johnan.terminal.core.ArrowDirection
 
 /**
- * Handles hardware keyboard events with native Android KeyEvents to minimize object allocations.
- * This intercepts modifier combinations (Ctrl, Alt) and maps them to ANSI control characters:
- * - Ctrl + [A-Z] -> \u0001 to \u001A
- * - Alt + [A-Z] -> \u001B + character
- * Also maps hardware D-pad/Arrow keys and special keys (Tab, Esc, Backspace, Delete, Enter).
+ * Handles Android native hardware [KeyEvent] actions for modifier chords, function keys, and D-pad arrows.
  */
 fun handleAndroidHardwareKeyEvent(
     event: KeyEvent,
     onInput: ((String) -> Unit)?,
-    onArrowKey: ((ArrowDirection, Boolean) -> Unit)?
+    onArrowKey: ((ArrowDirection, Boolean) -> Unit)?,
 ): Boolean {
-    // Only handle KEY DOWN events
     if (event.action != KeyEvent.ACTION_DOWN) return false
 
     val keyCode = event.keyCode
@@ -23,7 +18,6 @@ fun handleAndroidHardwareKeyEvent(
     val isAlt = event.isAltPressed
     val isShift = event.isShiftPressed
 
-    // Handle Arrow Keys
     when (keyCode) {
         KeyEvent.KEYCODE_DPAD_UP -> {
             onArrowKey?.invoke(ArrowDirection.UP, isShift)
@@ -45,7 +39,6 @@ fun handleAndroidHardwareKeyEvent(
 
     if (onInput == null) return false
 
-    // Handle Ctrl+Key combinations
     if (isCtrl && !isAlt) {
         if (keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {
             val charCode = keyCode - KeyEvent.KEYCODE_A + 1
@@ -57,34 +50,32 @@ fun handleAndroidHardwareKeyEvent(
             KeyEvent.KEYCODE_LEFT_BRACKET -> {
                 onInput.invoke("\u001B")
                 return true
-            } // ESC
+            }
             KeyEvent.KEYCODE_BACKSLASH -> {
                 onInput.invoke("\u001C")
                 return true
-            } // FS
+            }
             KeyEvent.KEYCODE_RIGHT_BRACKET -> {
                 onInput.invoke("\u001D")
                 return true
-            } // GS
+            }
             KeyEvent.KEYCODE_6 -> {
                 onInput.invoke("\u001E")
                 return true
-            } // RS (Ctrl+6)
+            }
             KeyEvent.KEYCODE_MINUS -> {
                 onInput.invoke("\u001F")
                 return true
-            } // US (Ctrl+-)
+            }
             KeyEvent.KEYCODE_DEL -> {
                 onInput.invoke("\u0017")
                 return true
-            } // Ctrl+Backspace -> Ctrl+W
+            }
         }
     }
 
-    // Handle Alt+Key combinations (ESC prefix method)
     if (isAlt && !isCtrl) {
         if (keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {
-            // Using lowercase for standard Alt combinations
             val char = (keyCode - KeyEvent.KEYCODE_A + 'a'.code).toChar()
             onInput.invoke("\u001B$char")
             return true
@@ -97,11 +88,10 @@ fun handleAndroidHardwareKeyEvent(
             KeyEvent.KEYCODE_DEL -> {
                 onInput.invoke("\u001B\u007F")
                 return true
-            } // Alt+Backspace
+            }
         }
     }
 
-    // Function keys F1-F12
     when (keyCode) {
         KeyEvent.KEYCODE_F1 -> {
             onInput.invoke("\u001BOP")
@@ -153,28 +143,27 @@ fun handleAndroidHardwareKeyEvent(
         }
     }
 
-    // Handle special keys without modifiers (or ignoring modifiers where appropriate)
     when (keyCode) {
         KeyEvent.KEYCODE_ENTER -> {
             onInput.invoke("\r")
             return true
-        } // \r is CARRIAGE_RETURN
+        }
         KeyEvent.KEYCODE_DEL -> {
             onInput.invoke("\u007F")
             return true
-        } // \u007F is DELETE_CHAR
+        }
         KeyEvent.KEYCODE_TAB -> {
             onInput.invoke("\t")
             return true
-        } // \t is TAB_CHAR
+        }
         KeyEvent.KEYCODE_ESCAPE -> {
             onInput.invoke("\u001B")
             return true
-        } // \u001B is ESCAPE_CHAR
+        }
         KeyEvent.KEYCODE_FORWARD_DEL -> {
             onInput.invoke("\u001B[3~")
             return true
-        } // Delete key
+        }
         KeyEvent.KEYCODE_INSERT -> {
             onInput.invoke("\u001B[2~")
             return true

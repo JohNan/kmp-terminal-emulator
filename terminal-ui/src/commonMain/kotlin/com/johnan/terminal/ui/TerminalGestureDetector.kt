@@ -7,18 +7,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import com.johnan.terminal.core.SelectionState
 import com.johnan.terminal.core.TerminalCell
 import kotlin.math.roundToInt
 
 /**
- * Modifier that handles terminal gestures for copy mode.
- *
- * Supports:
- * - Single tap to place start cursor or move end cursor (depending on state)
- * - Long press & drag to refine start cursor position (relative movement)
- * - Long press & drag to refine end cursor position (relative movement)
+ * Attaches pointer gesture recognizers for touch selection placement and long-press handle dragging.
  */
 @Composable
 fun Modifier.terminalGestures(
@@ -38,9 +32,6 @@ fun Modifier.terminalGestures(
     onFinalizeEndCursor: () -> Unit,
     onExitCopyMode: () -> Unit,
 ): Modifier {
-    val density = LocalDensity.current
-
-    // Remember callbacks to avoid recomposition issues within the gesture detector
     val currentOnSingleTap = rememberUpdatedState(onSingleTap)
     val currentOnStartDraggingStartCursor = rememberUpdatedState(onStartDraggingStartCursor)
     val currentOnUpdateStartCursor = rememberUpdatedState(onUpdateStartCursor)
@@ -48,11 +39,9 @@ fun Modifier.terminalGestures(
     val currentOnStartDraggingEndCursor = rememberUpdatedState(onStartDraggingEndCursor)
     val currentOnUpdateEndCursor = rememberUpdatedState(onUpdateEndCursor)
     val currentOnFinalizeEndCursor = rememberUpdatedState(onFinalizeEndCursor)
-    val currentOnExitCopyMode = rememberUpdatedState(onExitCopyMode)
     val currentSelectionState = rememberUpdatedState(selectionState)
     val currentAllRows = rememberUpdatedState(allRows)
 
-    // Remember dynamic parameters
     val currentTerminalCols = rememberUpdatedState(terminalCols)
     val currentCellWidth = rememberUpdatedState(cellWidth)
     val currentCellHeight = rememberUpdatedState(cellHeight)
@@ -60,7 +49,6 @@ fun Modifier.terminalGestures(
     val currentVerticalOffset = rememberUpdatedState(verticalOffset)
 
     return this
-        // Tap handler
         .pointerInput(Unit) {
             detectTapGestures(
                 onTap = { offset ->
@@ -78,46 +66,35 @@ fun Modifier.terminalGestures(
                 },
             )
         }
-        // Long press and drag handler (Relative Movement)
         .pointerInput(Unit) {
             var isDraggingStart = false
             var isDraggingEnd = false
 
-            // State for relative dragging
             var initialCursorRow = 0
             var initialCursorCol = 0
             var totalDragDistance = Offset.Zero
 
             detectDragGesturesAfterLongPress(
-                onDragStart = { offset ->
+                onDragStart = { _ ->
                     val state = currentSelectionState.value
                     totalDragDistance = Offset.Zero
 
-                    // Determine which cursor to drag based on PHASE
                     when (state) {
                         is SelectionState.StartCursorPlaced -> {
                             isDraggingStart = true
                             isDraggingEnd = false
                             initialCursorRow = state.startRow
                             initialCursorCol = state.startCol
-
-                            // Notify start of drag (this keeps the state consistent, though we won't snap to touch)
                             currentOnStartDraggingStartCursor.value(initialCursorRow, initialCursorCol)
                         }
                         is SelectionState.SelectionComplete -> {
-                            // "End Placed" -> Refine End Cursor
                             isDraggingStart = false
                             isDraggingEnd = true
                             initialCursorRow = state.selection.endRow
                             initialCursorCol = state.selection.endCol
-
-                            // Notify start of drag
                             currentOnStartDraggingEndCursor.value(initialCursorRow, initialCursorCol)
                         }
                         else -> {
-                            // Other states (CopyModeActive, or already dragging)
-                            // If we are already dragging, we shouldn't be here (new gesture).
-                            // If CopyModeActive, long press does nothing.
                             isDraggingStart = false
                             isDraggingEnd = false
                         }
@@ -127,14 +104,11 @@ fun Modifier.terminalGestures(
                     if (isDraggingStart || isDraggingEnd) {
                         change.consume()
 
-                        // Accumulate drag distance
                         totalDragDistance += dragAmount
 
-                        // Calculate delta in rows/cols
                         val rowDelta = (totalDragDistance.y / currentCellHeight.value).roundToInt()
                         val colDelta = (totalDragDistance.x / currentCellWidth.value).roundToInt()
 
-                        // Apply delta to initial position
                         val newRow = (initialCursorRow + rowDelta).coerceIn(0, currentAllRows.value.size - 1)
                         val newCol = (initialCursorCol + colDelta).coerceIn(0, currentTerminalCols.value - 1)
 

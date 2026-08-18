@@ -13,21 +13,16 @@ import com.johnan.terminal.core.KeyBarUiItem
 import com.johnan.terminal.core.TerminalColorScheme
 
 /**
- * Cursor display style.
+ * Visual cursor rendering style.
  */
 enum class TerminalCursorStyle {
-    /** Solid / hollow rectangular block */
     BLOCK,
-
-    /** Horizontal line at the bottom of cell */
     UNDERLINE,
-
-    /** Vertical bar (I-beam) at the left of cell */
     BEAM,
 }
 
 /**
- * Typography and font styling configuration.
+ * Font, size, and character spacing configuration.
  */
 @Immutable
 data class TerminalTypographyConfig(
@@ -38,7 +33,7 @@ data class TerminalTypographyConfig(
 )
 
 /**
- * Cursor appearance and animation configuration.
+ * Cursor shape, animation, and color customization.
  */
 @Immutable
 data class TerminalCursorConfig(
@@ -49,7 +44,7 @@ data class TerminalCursorConfig(
 )
 
 /**
- * Touch, gesture, and interaction configuration.
+ * Touch, gesture, and mouse interaction configuration.
  */
 @Immutable
 data class TerminalGestureConfig(
@@ -61,7 +56,7 @@ data class TerminalGestureConfig(
 )
 
 /**
- * Key bar toolbar configuration.
+ * Virtual soft key toolbar appearance and item list.
  */
 @Immutable
 data class TerminalKeyBarConfig(
@@ -71,7 +66,7 @@ data class TerminalKeyBarConfig(
 )
 
 /**
- * Rendering pipeline and caching optimization configuration.
+ * Rendering pipeline cache and layout padding options.
  */
 @Immutable
 data class TerminalRenderOptimizationConfig(
@@ -80,7 +75,7 @@ data class TerminalRenderOptimizationConfig(
 )
 
 /**
- * Top-level UI & Rendering configuration for terminal Compose components.
+ * Composite UI and rendering configuration for terminal Compose components.
  */
 @Immutable
 data class TerminalUiConfig(
@@ -97,12 +92,12 @@ data class TerminalUiConfig(
 }
 
 /**
- * Ambient Compose CompositionLocal providing [TerminalUiConfig].
+ * Ambient CompositionLocal providing active [TerminalUiConfig].
  */
 val LocalTerminalUiConfig = staticCompositionLocalOf { TerminalUiConfig.DEFAULT }
 
 /**
- * Type-safe DSL builder for [TerminalUiConfig].
+ * DSL builder for constructing [TerminalUiConfig].
  */
 class TerminalUiConfigBuilder {
     var typography: TerminalTypographyConfig = TerminalTypographyConfig()
@@ -206,7 +201,7 @@ class TerminalGestureConfigBuilder {
         enableSelection,
         enableUrlClick,
         wheelScrollMultiplier,
-        longPressTimeoutMs
+        longPressTimeoutMs,
     )
 }
 
@@ -226,7 +221,7 @@ class TerminalRenderOptimizationConfigBuilder {
 }
 
 /**
- * Creates a [TerminalUiConfig] using DSL configuration syntax.
+ * Creates a [TerminalUiConfig] instance using DSL syntax.
  */
 inline fun terminalUiConfig(init: TerminalUiConfigBuilder.() -> Unit): TerminalUiConfig {
     val builder = TerminalUiConfigBuilder()

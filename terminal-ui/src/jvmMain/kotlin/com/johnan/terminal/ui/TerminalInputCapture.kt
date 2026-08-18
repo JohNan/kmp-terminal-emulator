@@ -51,14 +51,11 @@ actual fun TerminalInputCapture(
             val newText = newValue.text
             val oldText = textFieldValue.text
             if (newText.length > oldText.length) {
-                // Characters added
                 val added = newText.substring(oldText.length)
                 onInput(added)
             } else if (newText.length < oldText.length) {
-                // Backspace pressed
-                onInput("\u007f") // send DEL / backspace character
+                onInput("\u007f")
             }
-            // Always keep the text value empty to continuously capture typing
             textFieldValue = TextFieldValue("")
         },
         keyboardOptions =
@@ -71,14 +68,12 @@ actual fun TerminalInputCapture(
             KeyboardActions(
                 onAny = {},
             ),
-        // Keep it invisible
         textStyle = TextStyle(color = Color.Transparent),
         modifier =
             modifier
-                .size(1.dp) // Make it tiny so it doesn't take layout space
+                .size(1.dp)
                 .focusRequester(focusRequester)
                 .onKeyEvent { keyEvent ->
-                    // Capture hardware keyboard keys (like arrow keys) if any
                     if (keyEvent.type == KeyEventType.KeyDown) {
                         when (keyEvent.key) {
                             Key.DirectionLeft -> {

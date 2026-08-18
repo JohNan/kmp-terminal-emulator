@@ -6,59 +6,41 @@ import kotlin.math.min
 import kotlin.time.Clock
 
 /**
- * ANSI escape sequence parser
- *
- * Parses VT100/ANSI escape sequences and applies them to a screen buffer.
- * Supports:
- * - CSI sequences (Control Sequence Introducer): ESC [ ...
- * - SGR (Select Graphic Rendition): colors and text attributes
- * - Cursor movement
- * - Screen clearing
- * - Bracketed paste mode
+ * ANSI / VT100 / xterm escape sequence parser that executes control codes and SGR attributes on [ScreenBuffer].
  */
 class AnsiParser(
     private val terminalEmulator: TerminalEmulator,
     private val screenBuffer: ScreenBuffer,
     private val logCallback: ((String) -> Unit)? = null,
 ) {
-    // Parser state
     private enum class State {
-        NORMAL, // Normal character processing
-        ESC, // Just received ESC
-        CSI, // In CSI sequence (ESC [)
-        OSC, // Operating System Command (ESC ])
-        CHARSET, // Charset selection (ESC ( or ESC ))
+        NORMAL,
+        ESC,
+        CSI,
+        OSC,
+        CHARSET,
     }
 
     private var state = State.NORMAL
     private val paramBuffer = StringBuilder()
-
-    // Leftover bytes from previous chunk for UTF-8 decoding
     private var leftoverBytes = ByteArray(0)
 
-    // Reusable buffers for parameters to avoid allocation
-    // Standard sequences usually have few params, but 256-color or custom sequences can have more.
     private val paramValues = IntArray(64)
     private var paramCount = 0
     private var paramsParsed = false
 
-    // Charset selection state
-    private var g0Charset = 'B' // Default to ASCII
-    private var g1Charset = 'B' // Default to ASCII
-    private var activeCharset = 0 // 0 for G0, 1 for G1
-    private var charsetTarget = 0 // Used during parsing ESC ( or ESC )
+    private var g0Charset = 'B'
+    private var g1Charset = 'B'
+    private var activeCharset = 0
+    private var charsetTarget = 0
 
-    // Current active charset character
     private val currentCharset: Char get() = if (activeCharset == 0) g0Charset else g1Charset
-
-    // Track the last printable character for CSI b (Repeat Character)
     private var lastPrintableChar: Char? = null
 
     companion object {
         const val MAX_OSC52_PAYLOAD_SIZE = 65536
     }
 
-    // Use inline function with lambda for params to avoid String allocation when logging is disabled
     private inline fun log(
         operation: String,
         crossinline params: () -> String,
@@ -66,7 +48,6 @@ class AnsiParser(
         if (logCallback != null) {
             val now = Clock.System.now()
             val dt = now.toLocalDateTime(TimeZone.currentSystemDefault())
-            // Pad to format HH:mm:ss.SSS
             val h = dt.hour.toString().padStart(2, '0')
             val m = dt.minute.toString().padStart(2, '0')
             val s = dt.second.toString().padStart(2, '0')
@@ -77,7 +58,6 @@ class AnsiParser(
         }
     }
 
-    // Overload for simple strings to maintain cleaner call sites for static messages
     private fun log(
         operation: String,
         params: String = "",
@@ -88,12 +68,11 @@ class AnsiParser(
     }
 
     /**
-     * Process bytes as UTF-8 encoded text
+     * Decodes and parses incoming UTF-8 byte stream, buffering incomplete multi-byte sequences across chunks.
      */
     fun processBytes(bytes: ByteArray) {
         if (bytes.isEmpty()) return
 
-        // Prepend leftover bytes from previous chunk
         val combinedBytes = if (leftoverBytes.isNotEmpty()) {
             val combined = ByteArray(leftoverBytes.size + bytes.size)
             leftoverBytes.copyInto(combined, 0)
@@ -104,21 +83,17 @@ class AnsiParser(
             bytes
         }
 
-        // Find complete UTF-8 sequence length
         var validLen = combinedBytes.size
-        // A UTF-8 character can be up to 4 bytes long. Check the last up to 3 bytes to see if they are part of an incomplete character.
         for (i in 1..min(3, combinedBytes.size)) {
             val byte = combinedBytes[combinedBytes.size - i].toInt()
-            // If it's a leading byte and it indicates more bytes than are present
             if ((byte and 0xC0) == 0xC0) {
                 val expectedLen = when {
                     (byte and 0xE0) == 0xC0 -> 2
                     (byte and 0xF0) == 0xE0 -> 3
                     (byte and 0xF8) == 0xF0 -> 4
-                    else -> 1 // Invalid, let it be handled by decodeToString (which replaces with replacement char)
+                    else -> 1
                 }
                 if (expectedLen > i) {
-                    // Incomplete sequence found
                     validLen = combinedBytes.size - i
                     leftoverBytes = combinedBytes.copyOfRange(validLen, combinedBytes.size)
                 }
@@ -128,17 +103,13 @@ class AnsiParser(
 
         if (validLen == 0) return
 
-        // Decode valid bytes
         val text = combinedBytes.decodeToString(endIndex = validLen)
-
-        // Process decoded characters
         var charIndex = 0
         while (charIndex < text.length) {
             if (state == State.NORMAL) {
                 var count = 0
                 val charset = currentCharset
 
-                // Look ahead for printable characters
                 while ((charIndex + count) < text.length) {
                     val c = text[charIndex + count]
                     if (isPrintable(c)) {
@@ -151,7 +122,6 @@ class AnsiParser(
                 if (count > 0) {
                     val substring = text.substring(charIndex, charIndex + count)
                     if (charset == '0') {
-                        // Apply DEC Special Graphics mapping
                         val mapped = CharArray(substring.length)
                         for (i in substring.indices) {
                             mapped[i] = mapCharset(substring[i], charset)
@@ -173,24 +143,21 @@ class AnsiParser(
         }
     }
 
-    /**
-     * Map a character to line drawing character if applicable
-     */
     private fun mapCharset(char: Char, charset: Char): Char {
-        if (charset != '0') return char // Only map for DEC Special Graphics
+        if (charset != '0') return char
         return when (char) {
-            'j' -> '┘' // lower right corner
-            'k' -> '┐' // upper right corner
-            'l' -> '┌' // upper left corner
-            'm' -> '└' // lower left corner
-            'n' -> '┼' // crossing lines
-            'q' -> '─' // horizontal line
-            't' -> '├' // left T
-            'u' -> '┤' // right T
-            'v' -> '┴' // bottom T
-            'w' -> '┬' // top T
-            'x' -> '│' // vertical line
-            'a' -> '▒' // checkerboard
+            'j' -> '┘'
+            'k' -> '┐'
+            'l' -> '┌'
+            'm' -> '└'
+            'n' -> '┼'
+            'q' -> '─'
+            't' -> '├'
+            'u' -> '┤'
+            'v' -> '┴'
+            'w' -> '┬'
+            'x' -> '│'
+            'a' -> '▒'
             else -> char
         }
     }
@@ -199,9 +166,6 @@ class AnsiParser(
         return (char in '\u0020'..'\u007E') || (char in '\u00A0'..'\uFFFF')
     }
 
-    /**
-     * Process a single character
-     */
     private fun processChar(char: Char) {
         when (state) {
             State.NORMAL -> processNormal(char)
@@ -212,47 +176,30 @@ class AnsiParser(
         }
     }
 
-    /**
-     * Process normal character
-     */
     private fun processNormal(char: Char) {
         when (char) {
-            '\u001B' -> { // ESC
+            '\u001B' -> {
                 state = State.ESC
                 paramBuffer.clear()
                 paramsParsed = false
             }
             '\r' -> screenBuffer.carriageReturn()
             '\n' -> screenBuffer.lineFeed()
-            '\b' -> screenBuffer.moveCursor(0, -1) // Backspace
+            '\b' -> screenBuffer.moveCursor(0, -1)
             '\t' -> {
-                // Tab: move to next tab stop (every 8 columns)
                 val nextTab = ((screenBuffer.cursorCol / 8) + 1) * 8
                 screenBuffer.setCursorPosition(screenBuffer.cursorRow, nextTab, terminalEmulator.originModeEnabled)
             }
-            '\u000E' -> {
-                // Shift Out (LS1) -> invoke G1
-                activeCharset = 1
-            }
-            '\u000F' -> {
-                // Shift In (LS0) -> invoke G0
-                activeCharset = 0
-            }
-            '\u0007' -> { // Bell
-                terminalEmulator.triggerBell()
-            }
+            '\u000E' -> activeCharset = 1
+            '\u000F' -> activeCharset = 0
+            '\u0007' -> terminalEmulator.triggerBell()
             in '\u0020'..'\u007E', in '\u00A0'..'\uFFFF' -> {
-                // Printable characters (ASCII + extended Unicode)
                 lastPrintableChar = mapCharset(char, currentCharset)
                 screenBuffer.writeChar(lastPrintableChar!!)
             }
-            // Ignore other control characters
         }
     }
 
-    /**
-     * Process escape sequence
-     */
     private fun processEscape(char: Char) {
         when (char) {
             '[' -> {
@@ -278,153 +225,127 @@ class AnsiParser(
                 charsetTarget = 1
             }
             'M' -> {
-                // Reverse index (move up, scroll if at top)
                 log("RI", "Reverse Index")
                 screenBuffer.cursorUp()
                 state = State.NORMAL
             }
             'D' -> {
-                // Index (move down, scroll if at bottom)
                 log("IND", "Index")
                 screenBuffer.lineFeed()
                 state = State.NORMAL
             }
             'E' -> {
-                // Next line
                 log("NEL", "Next Line")
                 screenBuffer.carriageReturn()
                 screenBuffer.lineFeed()
                 state = State.NORMAL
             }
             '7' -> {
-                // Save cursor position
                 log("DECSC", "Save Cursor")
                 screenBuffer.saveCursor()
                 state = State.NORMAL
             }
             '8' -> {
-                // Restore cursor position
                 log("DECRC", "Restore Cursor")
                 screenBuffer.restoreCursor()
                 state = State.NORMAL
             }
             'c' -> {
-                // Reset terminal
                 log("RIS", "Reset Initial State")
                 screenBuffer.clearScreen()
                 screenBuffer.setCursorPosition(0, 0)
                 screenBuffer.resetTextAttributes()
                 state = State.NORMAL
             }
-            '=' -> { // Application Keypad Mode
+            '=' -> {
                 log("DECKPAM", "Enabled")
                 terminalEmulator.applicationKeypadModeEnabled = true
                 state = State.NORMAL
             }
-            '>' -> { // Normal Keypad Mode
+            '>' -> {
                 log("DECKPNM", "Disabled (Normal)")
                 terminalEmulator.applicationKeypadModeEnabled = false
                 state = State.NORMAL
             }
             else -> {
-                // Unknown escape sequence, return to normal
                 log("UNKNOWN_ESC") { "char=$char" }
                 state = State.NORMAL
             }
         }
     }
 
-    /**
-     * Process CSI sequence (ESC [)
-     */
     private fun processCsi(char: Char) {
         when (char) {
             in '0'..'9', ';', '?' -> {
-                // Accumulate parameters
                 paramBuffer.append(char)
             }
-            'd' -> { // VPA - Vertical Line Position Absolute
+            'd' -> {
                 val row = parseParam(0, 1) - 1
                 log("VPA", "row=${row + 1}")
-                // Set row, keep current col
                 screenBuffer.setCursorPosition(row, screenBuffer.cursorCol, terminalEmulator.originModeEnabled)
                 state = State.NORMAL
             }
-            'G' -> { // CHA - Cursor Horizontal Absolute
+            'G' -> {
                 val col = parseParam(0, 1) - 1
                 log("CHA", "col=${col + 1}")
-                // Keep current row, set col
                 screenBuffer.setCursorPosition(screenBuffer.cursorRow, col, terminalEmulator.originModeEnabled)
                 state = State.NORMAL
             }
-            't' -> { // Window manipulation
+            't' -> {
                 val mode = parseParam(0, 0)
                 log("WindowManipulation") { "mode=$mode" }
                 when (mode) {
-                    14 -> { // Report text area size in pixels
-                        // We don't have exact pixel sizes easily available in TerminalEmulator without Compose context.
-                        // Standard terminal fallback is reporting character size multiplied by a typical font size,
-                        // or just returning empty/ignored. Let's send a basic response if requested.
-                        // Format: CSI 4 ; height ; width t
-                        terminalEmulator.sendResponse("\u001B[4;${screenBuffer.rows * 16};${screenBuffer.cols * 8}t")
-                    }
-                    18 -> { // Report text area size in characters
-                        // Format: CSI 8 ; rows ; cols t
-                        terminalEmulator.sendResponse("\u001B[8;${screenBuffer.rows};${screenBuffer.cols}t")
-                    }
-                    22 -> { // Save window title
-                        terminalEmulator.pushWindowTitle()
-                    }
-                    23 -> { // Restore window title
-                        terminalEmulator.popWindowTitle()
-                    }
+                    14 -> terminalEmulator.sendResponse("\u001B[4;${screenBuffer.rows * 16};${screenBuffer.cols * 8}t")
+                    18 -> terminalEmulator.sendResponse("\u001B[8;${screenBuffer.rows};${screenBuffer.cols}t")
+                    22 -> terminalEmulator.pushWindowTitle()
+                    23 -> terminalEmulator.popWindowTitle()
                 }
                 state = State.NORMAL
             }
-            'A' -> { // Cursor up
+            'A' -> {
                 val count = parseParam(0, 1)
                 log("CUU") { "count=$count" }
                 screenBuffer.cursorUp(count)
                 state = State.NORMAL
             }
-            'B' -> { // Cursor down
+            'B' -> {
                 val count = parseParam(0, 1)
                 log("CUD") { "count=$count" }
                 screenBuffer.cursorDown(count)
                 state = State.NORMAL
             }
-            'C' -> { // Cursor forward (right)
+            'C' -> {
                 val count = parseParam(0, 1)
                 log("CUF") { "count=$count" }
                 screenBuffer.cursorForward(count)
                 state = State.NORMAL
             }
-            'D' -> { // Cursor backward (left)
+            'D' -> {
                 val count = parseParam(0, 1)
                 log("CUB") { "count=$count" }
                 screenBuffer.cursorBackward(count)
                 state = State.NORMAL
             }
-            'S' -> { // Scroll Up
+            'S' -> {
                 val lines = parseParam(0, 1)
                 log("SU") { "lines=$lines" }
                 screenBuffer.scrollUp(lines)
                 state = State.NORMAL
             }
-            'T' -> { // Scroll Down
+            'T' -> {
                 val lines = parseParam(0, 1)
                 log("SD") { "lines=$lines" }
                 screenBuffer.scrollDown(lines)
                 state = State.NORMAL
             }
-            'b' -> { // Repeat Character
+            'b' -> {
                 val count = parseParam(0, 1)
                 val charToRepeat = lastPrintableChar ?: ' '
                 log("REP") { "char='$charToRepeat', count=$count" }
                 repeat(count) { screenBuffer.writeChar(charToRepeat) }
                 state = State.NORMAL
             }
-            'H', 'f' -> { // Cursor position (row;col)
+            'H', 'f' -> {
                 parseParamsToBuffer()
                 val row = (if (paramCount > 0) paramValues[0] else 1) - 1
                 val col = (if (paramCount > 1) paramValues[1] else 1) - 1
@@ -432,28 +353,25 @@ class AnsiParser(
                 screenBuffer.setCursorPosition(row, col, terminalEmulator.originModeEnabled)
                 state = State.NORMAL
             }
-            'c' -> { // DA - Primary Device Attributes
+            'c' -> {
                 val param = parseParam(0, 0)
                 log("DA") { "param=$param" }
                 if (param == 0) {
-                    // Respond with VT100/VT220 terminal capability
                     terminalEmulator.sendResponse("\u001B[?1;0c")
                 }
                 state = State.NORMAL
             }
-            'n' -> { // DSR - Device Status Report
+            'n' -> {
                 val param = parseParam(0, 0)
                 log("DSR") { "param=$param" }
                 if (param == 6) {
-                    // Cursor Position Report (CPR)
-                    // Terminal responds with CSI row ; col R (1-based indices)
                     val row = screenBuffer.cursorRow + 1
                     val col = screenBuffer.cursorCol + 1
                     terminalEmulator.sendResponse("\u001B[$row;${col}R")
                 }
                 state = State.NORMAL
             }
-            'J' -> { // Erase in display
+            'J' -> {
                 val mode = parseParam(0, 0)
                 log("ED") { "mode=$mode, cursor=${screenBuffer.cursorRow + 1}:${screenBuffer.cursorCol + 1}" }
                 when (mode) {
@@ -463,7 +381,7 @@ class AnsiParser(
                 }
                 state = State.NORMAL
             }
-            'K' -> { // Erase in line
+            'K' -> {
                 val mode = parseParam(0, 0)
                 log("EL") { "mode=$mode, cursor=${screenBuffer.cursorRow + 1}:${screenBuffer.cursorCol + 1}" }
                 when (mode) {
@@ -473,97 +391,86 @@ class AnsiParser(
                 }
                 state = State.NORMAL
             }
-            'm' -> { // SGR - Select Graphic Rendition
+            'm' -> {
                 parseParamsToBuffer()
-                // SGR is very frequent, maybe don't log every single one unless debugging
-                // processSgr(paramCount)
-                // log("SGR") { "params=${formatParams(paramCount)}" }
                 processSgr(paramCount)
                 state = State.NORMAL
             }
-            'h' -> { // Set mode
+            'h' -> {
                 parseParamsToBuffer()
                 setMode(paramCount)
                 state = State.NORMAL
             }
-            'l' -> { // Reset mode
+            'l' -> {
                 parseParamsToBuffer()
                 resetMode(paramCount)
                 state = State.NORMAL
             }
-            's' -> { // Save cursor position
+            's' -> {
                 log("SCOSC", "Save Cursor")
                 screenBuffer.saveCursor()
                 state = State.NORMAL
             }
-            'u' -> { // Restore cursor position
+            'u' -> {
                 log("SCORC", "Restore Cursor")
                 screenBuffer.restoreCursor()
                 state = State.NORMAL
             }
-            'r' -> { // DECSTBM - Set scrolling region (top;bottom)
+            'r' -> {
                 parseParamsToBuffer()
-                val top = (if (paramCount > 0) paramValues[0] else 1) - 1 // Convert to 0-indexed
+                val top = (if (paramCount > 0) paramValues[0] else 1) - 1
                 val bottom = (if (paramCount > 1) paramValues[1] else screenBuffer.rows) - 1
 
                 log("DECSTBM") { "top=${top + 1}, bottom=${bottom + 1}, bufferRows=${screenBuffer.rows}" }
 
-                // Validate parameters: top must be less than bottom
                 if (top >= 0 && bottom < screenBuffer.rows && top < bottom) {
                     screenBuffer.setScrollingRegion(top, bottom)
-                    // DECSTBM also moves cursor to 1,1
                     screenBuffer.setCursorPosition(0, 0, terminalEmulator.originModeEnabled)
                 } else {
-                    // Invalid parameters: reset to full screen
                     screenBuffer.resetScrollingRegion()
                 }
                 state = State.NORMAL
             }
-            'L' -> { // IL - Insert lines
+            'L' -> {
                 val count = parseParam(0, 1)
                 log("IL") { "count=$count" }
                 screenBuffer.insertLines(count)
                 state = State.NORMAL
             }
-            'M' -> { // DL - Delete lines
+            'M' -> {
                 val count = parseParam(0, 1)
                 log("DL") { "count=$count" }
                 screenBuffer.deleteLines(count)
                 state = State.NORMAL
             }
-            'P' -> { // DCH - Delete Character
+            'P' -> {
                 val count = parseParam(0, 1)
                 log("DCH") { "count=$count" }
                 screenBuffer.deleteCharacters(count)
                 state = State.NORMAL
             }
-            '@' -> { // ICH - Insert Character
+            '@' -> {
                 val count = parseParam(0, 1)
                 log("ICH") { "count=$count" }
                 screenBuffer.insertCharacters(count)
                 state = State.NORMAL
             }
-            'X' -> { // ECH - Erase Character
+            'X' -> {
                 val count = parseParam(0, 1)
                 log("ECH") { "count=$count" }
                 screenBuffer.eraseCharacters(count)
                 state = State.NORMAL
             }
             else -> {
-                // Unknown CSI sequence, return to normal
                 log("UNKNOWN_CSI") { "char=$char, params=$paramBuffer" }
                 state = State.NORMAL
             }
         }
     }
 
-    /**
-     * Process OSC (Operating System Command) sequence
-     */
     private fun processOsc(char: Char) {
         when (char) {
-            '\u0007', '\u001B' -> { // BEL or ESC terminates OSC
-                // Note: ESC \ is the ST (String Terminator), but we just trigger on ESC for simplicity
+            '\u0007', '\u001B' -> {
                 val oscData = paramBuffer.toString()
                 val semicolonIndex = oscData.indexOf(';')
 
@@ -572,12 +479,11 @@ class AnsiParser(
                     val value = oscData.substring(semicolonIndex + 1)
 
                     when (command) {
-                        "52" -> { // OSC 52: Manipulate Selection Data (Clipboard)
+                        "52" -> {
                             val parts = value.split(";")
                             if (parts.size == 2) {
                                 val pd = parts[1]
                                 if (pd == "?") {
-                                    // Read request: silently ignore for security
                                     log("OSC 52") { "Read request ignored for security" }
                                 } else {
                                     if (pd.length > MAX_OSC52_PAYLOAD_SIZE) {
@@ -599,16 +505,13 @@ class AnsiParser(
                             }
                         }
 
-                        "0", "2" -> { // Set window title
+                        "0", "2" -> {
                             terminalEmulator.setWindowTitle(value)
                             log("OSC", "Set window title: $value")
                         }
                     }
                 }
 
-                // If it was ESC, we might be expecting a '\' next, but we just return to NORMAL
-                // and the next '\' will be processed as a normal char (or ignored if we handled it properly).
-                // Usually ST is ESC \. If we just saw ESC, we should transition to ESC state, not NORMAL.
                 if (char == '\u001B') {
                     state = State.ESC
                     paramBuffer.clear()
@@ -618,17 +521,12 @@ class AnsiParser(
                 }
             }
             else -> {
-                // Accumulate OSC data
                 paramBuffer.append(char)
             }
         }
     }
 
-    /**
-     * Process charset selection
-     */
     private fun processCharset(char: Char) {
-        // Charset selection (ESC ( or ESC ))
         if (charsetTarget == 0) {
             g0Charset = char
         } else {
@@ -637,10 +535,6 @@ class AnsiParser(
         state = State.NORMAL
     }
 
-    /**
-     * Parse parameters from buffer into internal array to avoid allocation.
-     * @return Number of parameters parsed
-     */
     private fun parseParamsToBuffer(): Int {
         if (paramsParsed) return paramCount
         paramsParsed = true
@@ -651,7 +545,6 @@ class AnsiParser(
         var hasDigit = false
         var i = 0
 
-        // Skip private mode prefix if present
         if (paramBuffer.isNotEmpty() && paramBuffer[0] == '?') {
             i++
         }
@@ -667,14 +560,12 @@ class AnsiParser(
                         paramValues[paramCount++] = currentVal
                     }
                 }
-                // Reset for next parameter
                 currentVal = 0
                 hasDigit = false
             }
             i++
         }
 
-        // Add the last value if it exists
         if (hasDigit) {
             if (paramCount < paramValues.size) {
                 paramValues[paramCount++] = currentVal
@@ -684,9 +575,6 @@ class AnsiParser(
         return paramCount
     }
 
-    /**
-     * Parse a single parameter at index, with default value
-     */
     private fun parseParam(
         index: Int,
         default: Int,
@@ -695,27 +583,8 @@ class AnsiParser(
         return if (index < paramCount) paramValues[index] else default
     }
 
-    /**
-     * Helper to format parameters for logging without creating a list
-     */
-    private fun formatParams(count: Int): String {
-        if (count == 0) return "[]"
-        val sb = StringBuilder("[")
-        for (i in 0 until count) {
-            if (i > 0) sb.append(", ")
-            sb.append(paramValues[i])
-        }
-        sb.append("]")
-        return sb.toString()
-    }
-
-    /**
-     * Process SGR (Select Graphic Rendition) parameters
-     * These control text colors and attributes
-     */
     private fun processSgr(count: Int) {
         if (count == 0) {
-            // Empty SGR resets all attributes
             screenBuffer.resetTextAttributes()
             return
         }
@@ -742,7 +611,6 @@ class AnsiParser(
                 53 -> screenBuffer.setTextAttributes(overline = true)
                 55 -> screenBuffer.setTextAttributes(overline = false)
 
-                // Foreground colors (30-37: standard, 90-97: bright)
                 in 30..37 ->
                     screenBuffer.setTextAttributes(
                         foreground = TerminalColor.buildStandard(code - 30),
@@ -753,7 +621,6 @@ class AnsiParser(
                     )
                 39 -> screenBuffer.setTextAttributes(foreground = TerminalColor.Default)
 
-                // Background colors (40-47: standard, 100-107: bright)
                 in 40..47 ->
                     screenBuffer.setTextAttributes(
                         background = TerminalColor.buildStandard(code - 40),
@@ -764,9 +631,7 @@ class AnsiParser(
                     )
                 49 -> screenBuffer.setTextAttributes(background = TerminalColor.Default)
 
-                // 256-color mode
                 38 -> {
-                    // Foreground 256-color: 38;5;N or 38;2;R;G;B
                     val result = parseColor(i, count)
                     if (result != null) {
                         screenBuffer.setTextAttributes(foreground = result.first)
@@ -774,7 +639,6 @@ class AnsiParser(
                     }
                 }
                 48 -> {
-                    // Background 256-color: 48;5;N or 48;2;R;G;B
                     val result = parseColor(i, count)
                     if (result != null) {
                         screenBuffer.setTextAttributes(background = result.first)
@@ -786,15 +650,10 @@ class AnsiParser(
         }
     }
 
-    /**
-     * Parse color from SGR parameters (256-color or RGB)
-     * @return Pair of TerminalColor and number of parameters consumed, or null if invalid
-     */
     private fun parseColor(
         i: Int,
         count: Int,
     ): Pair<TerminalColor, Int>? {
-        // 256-color palette: 5;N
         if (i + 2 < count && paramValues[i + 1] == 5) {
             val colorCode = paramValues[i + 2]
             val color =
@@ -805,7 +664,6 @@ class AnsiParser(
                 }
             return color to 2
         }
-        // True color RGB: 2;R;G;B
         if (i + 4 < count && paramValues[i + 1] == 2) {
             val r = paramValues[i + 2]
             val g = paramValues[i + 3]
@@ -815,23 +673,18 @@ class AnsiParser(
         return null
     }
 
-    /**
-     * Set terminal mode
-     */
     private fun setMode(count: Int) {
-        // Check if this is a private mode (starts with ?)
         val isPrivate = paramBuffer.isNotEmpty() && paramBuffer[0] == '?'
 
         if (isPrivate) {
-            // Private modes (DEC modes)
             for (i in 0 until count) {
                 when (val mode = paramValues[i]) {
                     1 -> {
                         log("DECCKM", "Enabled")
                         terminalEmulator.applicationCursorKeysEnabled = true
                     }
-                    3 -> log("DECCOLM", "132 column mode ignored") // 132 column mode (DECCOLM) - ignore
-                    4 -> log("DECSCLM", "Smooth scroll mode ignored") // Smooth scroll (DECSCLM) - ignore
+                    3 -> log("DECCOLM", "132 column mode ignored")
+                    4 -> log("DECSCLM", "Smooth scroll mode ignored")
                     5 -> {
                         log("DECSCNM", "Enabled (Reverse Video)")
                         terminalEmulator.invertScreenColors = true
@@ -853,17 +706,8 @@ class AnsiParser(
                         log("DECTCEM", "Show Cursor")
                         screenBuffer.cursorVisible = true
                     }
-                    47 -> {
-                        log("Screen", "Use Alternate Buffer (47)")
-                        screenBuffer.useAlternateScreen()
-                    }
-                    1047 -> {
-                        log("Screen", "Use Alternate Buffer (1047)")
-                        screenBuffer.useAlternateScreen()
-                    }
-                    1049 -> {
-                        log("Screen", "Use Alternate Buffer + Save Cursor (1049)")
-                        // Switch to alternate screen (which internally saves cursor)
+                    47, 1047, 1049 -> {
+                        log("Screen", "Use Alternate Buffer ($mode)")
                         screenBuffer.useAlternateScreen()
                     }
                     1000 -> {
@@ -890,7 +734,6 @@ class AnsiParser(
                 }
             }
         } else {
-            // Standard ANSI modes
             for (i in 0 until count) {
                 when (val mode = paramValues[i]) {
                     4 -> log("IRM", "Insert Mode")
@@ -901,23 +744,18 @@ class AnsiParser(
         }
     }
 
-    /**
-     * Reset terminal mode
-     */
     private fun resetMode(count: Int) {
-        // Check if this is a private mode (starts with ?)
         val isPrivate = paramBuffer.isNotEmpty() && paramBuffer[0] == '?'
 
         if (isPrivate) {
-            // Private modes (DEC modes)
             for (i in 0 until count) {
                 when (val mode = paramValues[i]) {
                     1 -> {
                         log("DECCKM", "Disabled")
                         terminalEmulator.applicationCursorKeysEnabled = false
                     }
-                    3 -> log("DECCOLM", "80 column mode ignored") // 80 column mode - ignore
-                    4 -> log("DECSCLM", "Jump scroll mode ignored") // Jump scroll - ignore
+                    3 -> log("DECCOLM", "80 column mode ignored")
+                    4 -> log("DECSCLM", "Jump scroll mode ignored")
                     5 -> {
                         log("DECSCNM", "Disabled (Normal Video)")
                         terminalEmulator.invertScreenColors = false
@@ -939,20 +777,9 @@ class AnsiParser(
                         log("DECTCEM", "Hide Cursor")
                         screenBuffer.cursorVisible = false
                     }
-                    47 -> {
-                        log("Screen", "Use Primary Buffer (47)")
+                    47, 1047, 1049 -> {
+                        log("Screen", "Use Primary Buffer ($mode)")
                         screenBuffer.usePrimaryScreen()
-                    }
-                    1047 -> {
-                        log("Screen", "Use Primary Buffer (1047)")
-                        screenBuffer.usePrimaryScreen()
-                    }
-                    1049 -> {
-                        log("Screen", "Use Primary Buffer + Restore Cursor (1049)")
-                        // Switch to primary screen and restore cursor
-                        screenBuffer.usePrimaryScreen()
-                        // screenBuffer.restoreCursor() // ScreenBuffer.usePrimaryScreen already restores cursor if it was saved by useAlternateScreen?
-                        // ScreenBuffer.useAlternateScreen saves cursor. usePrimaryScreen restores it.
                     }
                     1000, 1002, 1003 -> {
                         log("MouseTracking", "Disabled")
@@ -970,7 +797,6 @@ class AnsiParser(
                 }
             }
         } else {
-            // Standard ANSI modes
             for (i in 0 until count) {
                 when (val mode = paramValues[i]) {
                     4 -> log("IRM", "Replace Mode")
