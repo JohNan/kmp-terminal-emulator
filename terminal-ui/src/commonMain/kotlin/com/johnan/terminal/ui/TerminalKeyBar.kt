@@ -61,8 +61,7 @@ import com.johnan.terminal.core.KeyBehavior
 import com.johnan.terminal.ui.components.repeatingClickable
 
 /**
- * Modifier key state data class
- * Tracks which modifier keys are currently active
+ * Modifier key tracking state for Ctrl, Alt, and Shift.
  */
 data class ModifierKeyState(
     val ctrlPressed: Boolean = false,
@@ -71,7 +70,7 @@ data class ModifierKeyState(
 )
 
 /**
- * Customizable Terminal Key Bar
+ * Customizable mobile toolbar for terminal shortcuts, modifiers, and navigation keys.
  */
 @Composable
 fun TerminalKeyBar(
@@ -96,7 +95,6 @@ fun TerminalKeyBar(
                     .height(84.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Split items into left and right groups without allocating an Iterator
             val (leftItems, rightItems) = remember(items) {
                 val left = ArrayList<KeyBarUiItem>(items.size)
                 val right = ArrayList<KeyBarUiItem>(items.size)
@@ -148,7 +146,6 @@ fun TerminalKeyBar(
                 },
             )
 
-            // Fixed Right: Configuration & Keyboard Toggle
             Column(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier
@@ -176,10 +173,10 @@ fun TerminalKeyBar(
 
 fun resolveIcon(name: String?): ImageVector? {
     return when (name) {
-        "ArrowUpward" -> Icons.Default.KeyboardArrowUp // Consistent with Left/Right
+        "ArrowUpward" -> Icons.Default.KeyboardArrowUp
         "ArrowDownward" -> Icons.Default.KeyboardArrowDown
-        "ArrowBack" -> Icons.AutoMirrored.Filled.KeyboardArrowLeft // Mapped from LEFT
-        "ArrowForward" -> Icons.AutoMirrored.Filled.KeyboardArrowRight // Mapped from RIGHT
+        "ArrowBack" -> Icons.AutoMirrored.Filled.KeyboardArrowLeft
+        "ArrowForward" -> Icons.AutoMirrored.Filled.KeyboardArrowRight
         "Keyboard" -> Icons.Default.Keyboard
         "Search" -> Icons.Default.Search
         "Home" -> Icons.Default.Home
@@ -227,7 +224,7 @@ private fun KeyItem(
     val children = item.children
     if (!children.isNullOrEmpty()) {
         var expanded by remember { mutableStateOf(false) }
-        androidx.compose.foundation.layout.Box(modifier = modifier) {
+        Box(modifier = modifier) {
             TerminalKey(
                 modifier = Modifier.fillMaxWidth(),
                 label = item.label,
@@ -253,7 +250,7 @@ private fun KeyItem(
 
             DropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false }
+                onDismissRequest = { expanded = false },
             ) {
                 children.forEach { child ->
                     DropdownMenuItem(
@@ -262,7 +259,7 @@ private fun KeyItem(
                         onClick = {
                             expanded = false
                             onItemClick(child)
-                        }
+                        },
                     )
                 }
             }
@@ -318,6 +315,9 @@ private fun KeyColumn(
     }
 }
 
+/**
+ * Individual terminal key button rendering icon, label, sticky modifier indicator, or submenu dot.
+ */
 @Composable
 fun TerminalKey(
     modifier: Modifier = Modifier,
@@ -390,7 +390,7 @@ fun TerminalKey(
             modifier = Modifier.fillMaxSize()
                 .then(
                     if (repeatable) {
-                        Modifier // handled by repeatingClickable
+                        Modifier
                     } else {
                         Modifier.combinedClickable(
                             interactionSource = interactionSource,
@@ -405,7 +405,7 @@ fun TerminalKey(
                                 }
                             },
                         )
-                    }
+                    },
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -438,17 +438,4 @@ fun TerminalKey(
             }
         }
     }
-}
-
-private fun previewKeyBarItems(): List<KeyBarUiItem> {
-    return listOf(
-        KeyBarUiItem(id = "ctrl", label = "Ctrl", behavior = KeyBehavior.MODIFIER),
-        KeyBarUiItem(id = "alt", label = "Alt", behavior = KeyBehavior.MODIFIER),
-        KeyBarUiItem(id = "esc", label = "Esc", behavior = KeyBehavior.ONE_SHOT),
-        KeyBarUiItem(id = "tab", label = "Tab", behavior = KeyBehavior.ONE_SHOT),
-        KeyBarUiItem(id = "up", label = "Up", behavior = KeyBehavior.REPEATABLE),
-        KeyBarUiItem(id = "down", label = "Down", behavior = KeyBehavior.REPEATABLE),
-        KeyBarUiItem(id = "left", label = "Left", behavior = KeyBehavior.REPEATABLE),
-        KeyBarUiItem(id = "right", label = "Right", behavior = KeyBehavior.REPEATABLE),
-    )
 }

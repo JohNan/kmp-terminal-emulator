@@ -1,23 +1,16 @@
 package com.johnan.terminal.core
 
 /**
- * Behavior when the terminal receives a bell (BEL / ASCII 7) control character.
+ * Behavior when the terminal receives a bell (BEL / ASCII 7) signal.
  */
 enum class BellBehavior {
-    /** Ignore bell signals completely */
     IGNORE,
-
-    /** Trigger visual bell feedback */
     VISUAL,
-
-    /** Notify custom listener callback */
     CALLBACK,
 }
 
 /**
- * Configuration parameters for the core terminal engine and screen buffer.
- *
- * Fully decoupled from UI/Compose dependencies, immutable, and thread-safe.
+ * Immutable configuration for terminal emulation engine and screen buffer dimensions.
  */
 data class TerminalConfig(
     val initialRows: Int = 24,
@@ -44,7 +37,7 @@ data class TerminalConfig(
 }
 
 /**
- * Builder class for creating [TerminalConfig] instances with a type-safe DSL.
+ * Builder for configuring [TerminalConfig] via DSL.
  */
 class TerminalConfigBuilder {
     var initialRows: Int = 24
@@ -74,7 +67,7 @@ class TerminalConfigBuilder {
 }
 
 /**
- * Creates a [TerminalConfig] using DSL configuration syntax.
+ * Creates a [TerminalConfig] instance using DSL configuration syntax.
  */
 inline fun terminalConfig(init: TerminalConfigBuilder.() -> Unit): TerminalConfig {
     val builder = TerminalConfigBuilder()

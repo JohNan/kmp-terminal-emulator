@@ -35,7 +35,7 @@ actual fun TerminalInputCapture(
     onInput: (String) -> Unit,
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
-    modifier: Modifier
+    modifier: Modifier,
 ) {
     androidx.compose.runtime.LaunchedEffect(showKeyboardSignal) {
         if (showKeyboardSignal > 0) {
@@ -62,8 +62,6 @@ actual fun TerminalInputCapture(
                     newText
                 }
 
-                // If a virtual/mobile keyboard automatically appends a space after a typed letter
-                // (e.g. added is "h "), strip the trailing space unless it's only spaces (user typed space)
                 if (added.length > 1 && added.endsWith(" ") && added.trim().isNotEmpty()) {
                     added = added.substring(0, added.length - 1)
                 }
@@ -73,25 +71,22 @@ actual fun TerminalInputCapture(
                 onInput("\u007f")
             }
 
-            // Always keep the text value as a single space to continuously and reliably capture backspace and key inputs
             textFieldValue = TextFieldValue(" ", selection = androidx.compose.ui.text.TextRange(1))
         },
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.None,
             autoCorrectEnabled = false,
             keyboardType = KeyboardType.Password,
-            imeAction = ImeAction.None
+            imeAction = ImeAction.None,
         ),
         keyboardActions = KeyboardActions(
-            onAny = {}
+            onAny = {},
         ),
-        // Keep it invisible
         textStyle = TextStyle(color = Color.Transparent),
         modifier = modifier
-            .size(1.dp) // Make it tiny so it doesn't take layout space
+            .size(1.dp)
             .focusRequester(focusRequester)
             .onKeyEvent { keyEvent ->
-                // Capture hardware keyboard keys (like arrow keys) if any
                 if (keyEvent.type == KeyEventType.KeyDown) {
                     when (keyEvent.key) {
                         Key.DirectionLeft -> {
@@ -123,6 +118,6 @@ actual fun TerminalInputCapture(
                 } else {
                     false
                 }
-            }
+            },
     )
 }

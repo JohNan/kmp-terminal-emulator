@@ -1,9 +1,7 @@
 package com.johnan.terminal.core
 
 /**
- * Represents a search match in the terminal buffer.
- * Coordinates are 0-indexed.
- * For `ScreenBuffer.search`, rows are relative to the start of scrollback + buffer.
+ * Text match coordinate boundaries within the terminal buffer (0-indexed).
  */
 data class TerminalMatch(
     val startRow: Int,

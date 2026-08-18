@@ -1,27 +1,22 @@
 package com.johnan.terminal.core
 
-// Redefine LogEntry locally to decouple from the main SSH app
 data class LogEntry(
     val id: String,
     val message: String,
     val timestamp: kotlinx.datetime.Instant,
-    val type: String = "info"
+    val type: String = "info",
 )
 
-// Redefine VerificationResult locally to decouple from the main SSH app
 enum class VerificationResult {
     MATCHED,
     MISMATCH,
-    NOT_FOUND
+    NOT_FOUND,
 }
 
 /**
- * UI state for the terminal screen
+ * Top-level reactive UI state model for terminal view and session dialogs.
  */
 sealed interface TerminalUiState {
-    /**
-     * Terminal is active and showing output
-     */
     data class Active(
         val hostId: String?,
         val hostName: String,
@@ -40,15 +35,9 @@ sealed interface TerminalUiState {
         val pasteConfirmation: PasteConfirmationState? = null,
     ) : TerminalUiState
 
-    /**
-     * Disconnected
-     */
     data object Disconnected : TerminalUiState
 }
 
-/**
- * Connection health status
- */
 sealed interface ConnectionHealth {
     data object Healthy : ConnectionHealth
 
@@ -62,9 +51,6 @@ sealed interface ConnectionHealth {
     ) : ConnectionHealth
 }
 
-/**
- * State for passphrase dialog
- */
 data class PassphraseState(
     val keyName: String,
     val keyId: String,
@@ -73,9 +59,6 @@ data class PassphraseState(
     val rememberPassphrase: Boolean = false,
 )
 
-/**
- * State for password dialog
- */
 data class PasswordState(
     val username: String,
     val error: String? = null,
@@ -83,15 +66,12 @@ data class PasswordState(
     val savePassword: Boolean = false,
 )
 
-/**
- * State for host key verification dialog
- */
 data class HostKeyVerificationState(
     val verificationResult: VerificationResult,
 )
 
 /**
- * State for Find in Terminal feature
+ * Search highlight and query state for find-in-terminal.
  */
 data class SearchState(
     val isVisible: Boolean = false,
@@ -100,9 +80,6 @@ data class SearchState(
     val currentMatchIndex: Int = -1,
 )
 
-/**
- * State for paste confirmation dialog
- */
 data class PasteConfirmationState(
     val textToPaste: String,
 )
