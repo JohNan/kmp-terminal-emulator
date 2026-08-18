@@ -6,7 +6,7 @@ plugins {
     `maven-publish`
 }
 
-group = "com.johnan.terminal.emulator"
+group = "io.github.johnan"
 version = providers.gradleProperty("version").orNull.takeIf { !it.isNullOrBlank() && it != "unspecified" } ?: "0.1.0"
 
 kotlin {

@@ -69,6 +69,26 @@ kmp-terminal/
 
 ---
 
+## Installation
+
+Add the dependencies to your multiplatform `build.gradle.kts`:
+
+```kotlin
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            // Core ANSI engine, scrollback buffer, and text selection (zero UI dependencies)
+            implementation("io.github.johnan:terminal-core:0.3.0")
+
+            // Optional: Compose Multiplatform canvas renderer & gestures
+            implementation("io.github.johnan:terminal-ui:0.3.0")
+        }
+    }
+}
+```
+
+---
+
 ## Usage Guide
 
 ### 1. Core Engine Setup (`terminal-core`)
