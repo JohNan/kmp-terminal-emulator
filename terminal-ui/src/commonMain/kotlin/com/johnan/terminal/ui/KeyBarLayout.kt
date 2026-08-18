@@ -8,6 +8,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 
+/**
+ * Split scrollable layout aligning leading items to the left and trailing items to the right.
+ */
 @Composable
 fun KeyBarLayout(
     modifier: Modifier = Modifier,
@@ -16,16 +19,14 @@ fun KeyBarLayout(
 ) {
     val scrollState = rememberScrollState()
 
-    // Use BoxWithConstraints to capture the actual available width before horizontalScroll removes constraints.
     @Suppress("UnusedBoxWithConstraintsScope")
     BoxWithConstraints(modifier = modifier) {
         val availableWidth = constraints.maxWidth
 
         Layout(
             contents = listOf(leftContent, rightContent),
-            modifier = Modifier.horizontalScroll(scrollState)
+            modifier = Modifier.horizontalScroll(scrollState),
         ) { (leftMeasurables, rightMeasurables), layoutConstraints ->
-            // Use infinite width for children to let them take their natural size.
             val infiniteConstraints = layoutConstraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
 
             val leftPlaceables = ArrayList<androidx.compose.ui.layout.Placeable>(leftMeasurables.size)
@@ -54,9 +55,6 @@ fun KeyBarLayout(
             }
 
             val totalContentWidth = leftWidth + rightWidth
-
-            // Layout width expands to available screen width (if content is smaller) to allow right alignment.
-            // If content is larger, layout width is the total content width, enabling scrolling.
             val computedLayoutWidth = maxOf(totalContentWidth, availableWidth)
 
             layout(computedLayoutWidth, maxHeight) {
@@ -67,7 +65,6 @@ fun KeyBarLayout(
                     xPosition += placeable.width
                 }
 
-                // If content is smaller than available width, push right items to the far edge.
                 var rightXPosition = maxOf(xPosition, computedLayoutWidth - rightWidth)
                 for (i in 0 until rightPlaceables.size) {
                     val placeable = rightPlaceables[i]

@@ -2,10 +2,13 @@ package com.johnan.terminal.core
 
 enum class KeyBehavior {
     ONE_SHOT,
-    MODIFIER, // Sticky (toggle)
+    MODIFIER,
     REPEATABLE,
 }
 
+/**
+ * Visual key item descriptor displayed in the terminal virtual key bar.
+ */
 data class KeyBarUiItem(
     val id: String,
     val label: String,
@@ -14,6 +17,5 @@ data class KeyBarUiItem(
     val content: String = "",
     val hasPrimaryAction: Boolean = true,
     val children: List<KeyBarUiItem>? = null,
-    // Keep generic reference to original for identification if needed
     val originalItem: Any? = null,
 )

@@ -1,33 +1,31 @@
 package com.johnan.terminal.core
 
+/**
+ * State transition reducer for touch selection and cursor dragging workflows.
+ */
 object TerminalSelectionLogic {
     fun onSingleTap(
         state: TerminalUiState.Active,
         row: Int,
-        col: Int
+        col: Int,
     ): TerminalUiState.Active {
         return when (val selState = state.selectionState) {
             is SelectionState.CopyModeActive -> {
-                // Step 2: Tap places start cursor
                 state.copy(selectionState = SelectionState.StartCursorPlaced(row, col))
             }
             is SelectionState.StartCursorPlaced -> {
-                // Step 4 (Tap variant): Tap places end cursor and finalizes selection
                 val selection = TerminalSelection(
                     startRow = selState.startRow,
                     startCol = selState.startCol,
                     endRow = row,
                     endCol = col,
                 )
-                // Transition to SelectionComplete state
                 state.copy(selectionState = SelectionState.SelectionComplete(selection))
             }
             is SelectionState.SelectionComplete -> {
-                // Tap on completed selection exits copy mode
                 state.copy(selectionState = SelectionState.None)
             }
             else -> {
-                // In other copy mode states (dragging), tap exits copy mode
                 state.copy(selectionState = SelectionState.None)
             }
         }
@@ -36,7 +34,7 @@ object TerminalSelectionLogic {
     fun placeStartCursor(
         state: TerminalUiState.Active,
         row: Int,
-        col: Int
+        col: Int,
     ): TerminalUiState.Active {
         return if (state.selectionState is SelectionState.CopyModeActive) {
             state.copy(selectionState = SelectionState.StartCursorPlaced(row, col))
@@ -48,9 +46,9 @@ object TerminalSelectionLogic {
     fun startDraggingStartCursor(
         state: TerminalUiState.Active,
         row: Int,
-        col: Int
+        col: Int,
     ): TerminalUiState.Active {
-        return when (val selState = state.selectionState) {
+        return when (state.selectionState) {
             is SelectionState.StartCursorPlaced -> {
                 state.copy(selectionState = SelectionState.StartCursorDragging(row, col))
             }
@@ -64,7 +62,7 @@ object TerminalSelectionLogic {
     fun updateStartCursor(
         state: TerminalUiState.Active,
         row: Int,
-        col: Int
+        col: Int,
     ): TerminalUiState.Active {
         return if (state.selectionState is SelectionState.StartCursorDragging) {
             state.copy(selectionState = SelectionState.StartCursorDragging(row, col))
@@ -74,12 +72,12 @@ object TerminalSelectionLogic {
     }
 
     fun finalizeStartCursor(
-        state: TerminalUiState.Active
+        state: TerminalUiState.Active,
     ): TerminalUiState.Active {
         return when (val selState = state.selectionState) {
             is SelectionState.StartCursorDragging -> {
                 state.copy(
-                    selectionState = SelectionState.StartCursorPlaced(selState.startRow, selState.startCol)
+                    selectionState = SelectionState.StartCursorPlaced(selState.startRow, selState.startCol),
                 )
             }
             else -> state
@@ -89,7 +87,7 @@ object TerminalSelectionLogic {
     fun startDraggingEndCursor(
         state: TerminalUiState.Active,
         row: Int,
-        col: Int
+        col: Int,
     ): TerminalUiState.Active {
         return when (val selState = state.selectionState) {
             is SelectionState.StartCursorPlaced -> {
@@ -99,7 +97,7 @@ object TerminalSelectionLogic {
                         startCol = selState.startCol,
                         endRow = row,
                         endCol = col,
-                    )
+                    ),
                 )
             }
             is SelectionState.StartCursorDragging -> {
@@ -109,7 +107,7 @@ object TerminalSelectionLogic {
                         startCol = selState.startCol,
                         endRow = row,
                         endCol = col,
-                    )
+                    ),
                 )
             }
             is SelectionState.SelectionComplete -> {
@@ -120,7 +118,7 @@ object TerminalSelectionLogic {
                         startCol = sel.startCol,
                         endRow = row,
                         endCol = col,
-                    )
+                    ),
                 )
             }
             else -> state
@@ -130,7 +128,7 @@ object TerminalSelectionLogic {
     fun updateEndCursor(
         state: TerminalUiState.Active,
         row: Int,
-        col: Int
+        col: Int,
     ): TerminalUiState.Active {
         return if (state.selectionState is SelectionState.EndCursorDragging) {
             val selState = state.selectionState
@@ -140,7 +138,7 @@ object TerminalSelectionLogic {
                     startCol = selState.startCol,
                     endRow = row,
                     endCol = col,
-                )
+                ),
             )
         } else {
             state
@@ -148,7 +146,7 @@ object TerminalSelectionLogic {
     }
 
     fun finalizeEndCursor(
-        state: TerminalUiState.Active
+        state: TerminalUiState.Active,
     ): TerminalUiState.Active {
         return when (val selState = state.selectionState) {
             is SelectionState.EndCursorDragging -> {
@@ -166,7 +164,7 @@ object TerminalSelectionLogic {
 
     fun getSelectedText(
         state: TerminalUiState.Active,
-        buffer: ScreenBuffer
+        buffer: ScreenBuffer,
     ): String? {
         val selection = state.selectionState.toTerminalSelection() ?: return null
         return selection.extractText(buffer)

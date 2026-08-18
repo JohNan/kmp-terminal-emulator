@@ -37,12 +37,7 @@ import com.johnan.terminal.core.TerminalScreenState
 import com.johnan.terminal.core.UrlRange
 
 /**
- * Terminal canvas component - renders the terminal display with scrolling and input capture
- *
- * Performance Note:
- * This component uses a manual batching strategy to minimize draw calls.
- * Characters with identical attributes (color, style) are grouped and drawn in single passes.
- * Text construction uses a reused StringBuilder to reduce allocation pressure.
+ * Renders terminal character grid cells, cursor styles, highlights, and gesture overlays via hardware-accelerated Canvas.
  */
 @Composable
 fun TerminalCanvas(
@@ -338,8 +333,6 @@ fun TerminalCanvas(
                 val cachedData = renderBatchCache[row] ?: run {
                     batchListBuilder.clear()
                     calculateBatches(row, stringBuilder, batchListBuilder)
-                    // Optimization: Pre-resolve colors to avoid expensive lookup/conversion in the draw loop.
-                    // Bolt: Use indexed loops instead of .forEach to avoid Iterator allocations on the hot path.
                     for (i in 0 until batchListBuilder.size) {
                         resolveBatchColors(
                             batchListBuilder[i],
@@ -347,7 +340,7 @@ fun TerminalCanvas(
                             baseTextStyle,
                             terminalBackgroundColor,
                             colorScheme,
-                            isDark
+                            isDark,
                         )
                     }
 
@@ -363,8 +356,6 @@ fun TerminalCanvas(
                     }
                 }
 
-                // Draw URL underlines
-                // Bolt: Use indexed loops instead of .forEach to avoid Iterator allocations on the hot path.
                 for (i in 0 until cachedData.urls.size) {
                     val range = cachedData.urls[i]
                     val startX = range.startCol * cellWidth
@@ -379,7 +370,6 @@ fun TerminalCanvas(
                     )
                 }
 
-                // Bolt: Use indexed loops instead of .forEach to avoid Iterator allocations on the hot path.
                 for (i in 0 until cachedData.batches.size) {
                     val batch = cachedData.batches[i]
                     val x = batch.startCol * cellWidth
@@ -554,7 +544,7 @@ fun TerminalCanvas(
 }
 
 /**
- * Pre-calculated rendering information for a group of cells.
+ * Batch of contiguous characters sharing identical styling and color attributes.
  */
 data class RenderBatch(
     val startCol: Int,
@@ -580,18 +570,8 @@ data class RowRenderData(
     val urls: List<UrlRange>,
 )
 
-// Optimization: Pre-allocate a string of spaces to avoid repeated appends in loops
 private val SPACES = " ".repeat(1024)
 
-/**
- * Calculates render batches for a row.
- * Group cells with identical attributes (color, style) to minimize draw calls.
- *
- * Optimization: Uses a Lazy Backfill approach (Single Pass) to improve performance.
- * Pass 1: Scans row. If a non-space char is found, switches to "Build Mode".
- * If "Build Mode" is triggered, backfills preceding spaces (known to be spaces) and continues building.
- * This avoids the second pass for content-heavy rows while keeping whitespace rows efficient.
- */
 private fun calculateAnsiColors(
     colorScheme: com.johnan.terminal.core.TerminalColorScheme?,
     isDark: Boolean,
@@ -606,6 +586,9 @@ private fun calculateAnsiColors(
     }
 }
 
+/**
+ * Groups contiguous row cells with matching visual attributes into render batches.
+ */
 fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: ArrayList<RenderBatch>) {
     var colIndex = 0
     val rowSize = row.size

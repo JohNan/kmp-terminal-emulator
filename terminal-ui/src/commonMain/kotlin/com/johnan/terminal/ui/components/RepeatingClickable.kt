@@ -12,12 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * A modifier that invokes [onClick] repeatedly while the component is pressed.
- *
- * @param enabled Controls the enabled state of this modifier. When `false`, this component will not respond to user input.
- * @param initialDelay The delay in milliseconds before the first repeat click after the initial click.
- * @param repeatDelay The delay in milliseconds between subsequent repeat clicks.
- * @param onClick The callback to be invoked.
+ * Repeats invocation of [onClick] at periodic intervals while pointer remains pressed.
  */
 fun Modifier.repeatingClickable(
     enabled: Boolean = true,
@@ -33,11 +28,7 @@ fun Modifier.repeatingClickable(
 
         Modifier.pointerInput(Unit) {
             awaitEachGesture {
-                // Wait for the first down event.
-                // requireUnconsumed = false allowing it to work with other gesture detectors (like clickable for ripple)
                 awaitFirstDown(requireUnconsumed = false)
-
-                // Invoke the initial click
                 currentOnClick.value()
 
                 val job =
@@ -49,10 +40,7 @@ fun Modifier.repeatingClickable(
                         }
                     }
 
-                // Wait for the gesture to finish (up or cancel)
                 waitForUpOrCancellation()
-
-                // Cancel the repeating job
                 job.cancel()
             }
         }
