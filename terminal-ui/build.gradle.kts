@@ -85,8 +85,13 @@ if (!signingKey.isNullOrBlank()) {
     }
 }
 
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
 publishing {
     publications.withType<MavenPublication> {
+        artifact(javadocJar)
         pom {
             name.set("kmp-terminal-ui")
             description.set("Compose Multiplatform Terminal Rendering Canvas and UI components")

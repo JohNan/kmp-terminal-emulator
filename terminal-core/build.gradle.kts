@@ -80,8 +80,13 @@ if (!signingKey.isNullOrBlank()) {
     }
 }
 
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
 publishing {
     publications.withType<MavenPublication> {
+        artifact(javadocJar)
         pom {
             name.set("kmp-terminal-core")
             description.set("Pure Kotlin Multiplatform Terminal Emulator Core (Decoupled, zero UI dependencies)")
