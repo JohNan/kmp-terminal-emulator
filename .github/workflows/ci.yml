@@ -20,9 +20,6 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Install libatomic
-        run: sudo apt-get update && sudo apt-get install -y libatomic1
-
       - name: Make gradlew executable
         run: chmod +x gradlew
 

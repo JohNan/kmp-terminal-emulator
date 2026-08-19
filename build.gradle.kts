@@ -12,4 +12,10 @@ allprojects {
         mavenCentral()
     }
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
+
+    configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
+        filter {
+            exclude { it.file.path.contains("generated") || it.file.path.contains("/build/") }
+        }
+    }
 }
