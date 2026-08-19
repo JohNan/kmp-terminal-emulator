@@ -37,9 +37,12 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(compose.runtime)
-            implementation(compose.foundation)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.serialization.json)
+
+            implementation(compose.runtime)
+            implementation(compose.ui)
         }
 
         commonTest.dependencies {
@@ -55,7 +58,7 @@ kotlin {
 
 android {
     namespace = "com.johnan.terminal.core"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         minSdk = 24
     }
