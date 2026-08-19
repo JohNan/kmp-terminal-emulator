@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     `maven-publish`
+    signing
 }
 
 group = "io.github.johnan"
@@ -27,26 +28,35 @@ kotlin {
     listOf(
         iosArm64(),
         iosSimulatorArm64()
-    )
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "TerminalUi"
+            isStatic = true
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {
             api(project(":terminal-core"))
 
-            implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.kotlinx.datetime)
-
-            // Compose Multiplatform UI, foundation, & components
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.ui)
             implementation(compose.material3)
             implementation(compose.materialIconsExtended)
+            implementation(compose.components.resources)
+        }
+
+        androidMain.dependencies {
+            implementation(libs.androidx.core.ktx)
         }
 
         commonTest.dependencies {
             implementation(kotlin("test"))
-            implementation(libs.kotlinx.coroutines.test)
+        }
+
+        jvmTest.dependencies {
+            implementation(libs.junit)
         }
     }
 }
@@ -60,6 +70,18 @@ android {
     compileOptions {
         sourceCompatibility = org.gradle.api.JavaVersion.VERSION_21
         targetCompatibility = org.gradle.api.JavaVersion.VERSION_21
+    }
+}
+
+val signingKey = providers.environmentVariable("GPG_SIGNING_KEY").orNull
+    ?: providers.gradleProperty("signingInMemoryKey").orNull
+val signingPassword = providers.environmentVariable("GPG_PASSPHRASE").orNull
+    ?: providers.gradleProperty("signingInMemoryKeyPassword").orNull
+
+if (!signingKey.isNullOrBlank()) {
+    signing {
+        useInMemoryPgpKeys(signingKey, signingPassword ?: "")
+        sign(publishing.publications)
     }
 }
 
@@ -90,6 +112,10 @@ publishing {
         }
     }
     repositories {
+        maven {
+            name = "LocalStaging"
+            url = uri(rootProject.layout.buildDirectory.dir("staging-repo"))
+        }
         maven {
             name = "GitHubPackages"
             url = uri("https://maven.pkg.github.com/JohNan/kmp-terminal-emulator")

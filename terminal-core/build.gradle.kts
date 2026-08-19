@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     `maven-publish`
+    signing
 }
 
 group = "io.github.johnan"
@@ -27,35 +28,52 @@ kotlin {
     listOf(
         iosArm64(),
         iosSimulatorArm64()
-    )
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "TerminalCore"
+            isStatic = true
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {
-            implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.kotlinx.datetime)
-            implementation(libs.kotlinx.serialization.json)
-
-            // Compose Multiplatform (needed for graphics/Color in TerminalCell)
             implementation(compose.runtime)
-            implementation(compose.ui)
+            implementation(compose.foundation)
+            implementation(libs.kotlinx.coroutines.core)
         }
 
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
         }
+        
+        jvmTest.dependencies {
+            implementation(libs.junit)
+        }
     }
 }
 
 android {
     namespace = "com.johnan.terminal.core"
-    compileSdk = 36
+    compileSdk = 35
     defaultConfig {
         minSdk = 24
     }
     compileOptions {
-        sourceCompatibility = org.gradle.api.JavaVersion.VERSION_21
-        targetCompatibility = org.gradle.api.JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+val signingKey = providers.environmentVariable("GPG_SIGNING_KEY").orNull
+    ?: providers.gradleProperty("signingInMemoryKey").orNull
+val signingPassword = providers.environmentVariable("GPG_PASSPHRASE").orNull
+    ?: providers.gradleProperty("signingInMemoryKeyPassword").orNull
+
+if (!signingKey.isNullOrBlank()) {
+    signing {
+        useInMemoryPgpKeys(signingKey, signingPassword ?: "")
+        sign(publishing.publications)
     }
 }
 
@@ -86,6 +104,10 @@ publishing {
         }
     }
     repositories {
+        maven {
+            name = "LocalStaging"
+            url = uri(rootProject.layout.buildDirectory.dir("staging-repo"))
+        }
         maven {
             name = "GitHubPackages"
             url = uri("https://maven.pkg.github.com/JohNan/kmp-terminal-emulator")

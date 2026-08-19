@@ -12,6 +12,7 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    environment: prod
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -47,11 +48,47 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Publish Maven Packages to GitHub Packages
+      - name: Publish Maven Packages to Local Staging & GitHub Packages
         run: ./gradlew publish -Pversion=${{ env.version_name }} --no-daemon
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Bundle and Publish to Maven Central (Sonatype Central Portal)
+        if: env.SONATYPE_USERNAME != '' && env.SONATYPE_PASSWORD != ''
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: |
+          if [ -d "build/staging-repo" ]; then
+            echo "Packaging artifacts into bundle.zip..."
+            cd build/staging-repo
+            zip -r ../bundle.zip .
+            cd ../..
+            
+            echo "Uploading bundle to Sonatype Central Portal API..."
+            AUTH=$(echo -n "${{ secrets.SONATYPE_USERNAME }}:${{ secrets.SONATYPE_PASSWORD }}" | base64 -w 0)
+            RESPONSE=$(curl --request POST \
+              --url "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC" \
+              --header "Authorization: Bearer ${AUTH}" \
+              --form "bundle=@build/bundle.zip" \
+              --write-out "%{http_code}" \
+              --silent \
+              --output response.txt)
+            
+            echo "Sonatype Portal HTTP Status: $RESPONSE"
+            cat response.txt
+            if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+              echo "Bundle successfully submitted to Maven Central!"
+            else
+              echo "Sonatype Central Portal upload failed with status $RESPONSE"
+              exit 1
+            fi
+          else
+            echo "Warning: build/staging-repo directory not found, skipping Maven Central upload."
+          fi
 
       - name: Build WebAssembly Distribution
         run: ./gradlew :demo-web:wasmJsBrowserDistribution --no-daemon
