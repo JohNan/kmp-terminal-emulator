@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.PopupProperties
 import com.johnan.terminal.core.KeyBarUiItem
 import com.johnan.terminal.core.KeyBehavior
 import com.johnan.terminal.ui.components.repeatingClickable
@@ -251,6 +252,7 @@ private fun KeyItem(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
+                properties = PopupProperties(focusable = false),
             ) {
                 children.forEach { child ->
                     DropdownMenuItem(

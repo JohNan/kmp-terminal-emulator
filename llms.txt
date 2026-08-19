@@ -21,3 +21,7 @@
 - [MIGRATION.md](MIGRATION.md): Recipe-driven migration guide for consumers and AI agents.
 - [AGENTS.md](AGENTS.md): Coding rules, architecture constraints, and documentation maintenance requirements.
 - [LICENSE](LICENSE): Apache License, Version 2.0 (free to use with attribution and express patent grant).
+
+## Production References
+- [SSH Client - Terminal & SFTP](https://play.google.com/store/apps/details?id=com.johnan.sshclient): Production Android application utilizing `terminal-core` and `terminal-ui` for SSH terminal emulation.
+

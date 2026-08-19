@@ -5,10 +5,25 @@
 [![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin_Multiplatform-2.1.0-purple.svg)](https://kotlinlang.org/docs/multiplatform.html)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose_Multiplatform-1.7.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
 [![WebAssembly](https://img.shields.io/badge/Target-WasmJs-orange.svg)](https://webassembly.org/)
+[![Google Play](https://img.shields.io/badge/Google_Play-Production_App-34A853?logo=google-play&logoColor=white)](https://play.google.com/store/apps/details?id=com.johnan.sshclient)
 
 A modern Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform rendering library. This library provides a standalone, high-performance, GPU-accelerated terminal emulator designed for mobile, desktop, and web applications.
 
 👉 **[🚀 Try Live Interactive WebAssembly Demo](https://johnan.github.io/kmp-terminal-emulator/)**
+
+---
+
+## Production Showcase
+
+`kmp-terminal` powers the terminal rendering canvas and ANSI state machine in production:
+
+### [SSH Client - Terminal & SFTP](https://play.google.com/store/apps/details?id=com.johnan.sshclient)
+A secure, high-performance Android SSH & SFTP client with hardware-backed encryption, multi-session management, and custom quick key bars.
+
+- **Engine Core**: Uses `:terminal-core` for ANSI/VT100 parsing, TrueColor support, and circular scrollback buffer management.
+- **Rendering Pipeline**: Uses `:terminal-ui` for low-allocation Compose Multiplatform canvas rendering, touch gestures, and responsive IME soft-keyboard input capture.
+- **Product Website**: [ssh-client.nanzen.se](https://ssh-client.nanzen.se/)
+- **Google Play**: [Download on Google Play](https://play.google.com/store/apps/details?id=com.johnan.sshclient)
 
 ---
 
@@ -50,6 +65,26 @@ kmp-terminal/
 ├── terminal-ui/         # Compose Multiplatform canvas renderer & UI components
 ├── demo-web/            # WebAssembly (wasmJs) interactive demo
 └── demo-jvm/            # JVM Desktop Compose demo
+```
+
+---
+
+## Installation
+
+Add the dependencies to your multiplatform `build.gradle.kts`:
+
+```kotlin
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            // Core ANSI engine, scrollback buffer, and text selection (zero UI dependencies)
+            implementation("io.github.johnan:terminal-core:0.3.0")
+
+            // Optional: Compose Multiplatform canvas renderer & gestures
+            implementation("io.github.johnan:terminal-ui:0.3.0")
+        }
+    }
+}
 ```
 
 ---
