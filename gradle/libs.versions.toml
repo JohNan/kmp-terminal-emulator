@@ -41,7 +41,7 @@ billing = "8.3.0"
 
 # SSH
 sshj = "0.40.0"
-bouncycastle = "1.83"
+bouncycastle = "1.85"
 conscrypt = "2.5.3"
 
 # Testing
