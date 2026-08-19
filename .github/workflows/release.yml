@@ -40,11 +40,6 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libatomic1
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
