@@ -41,7 +41,7 @@ jobs:
           java-version: '21'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Publish Maven Packages to Local Staging & GitHub Packages
         run: ./gradlew publish -Pversion=${{ env.version_name }} --no-daemon
