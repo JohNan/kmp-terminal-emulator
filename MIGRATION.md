@@ -88,7 +88,9 @@ val uiConfig = terminalUiConfig {
         enableTouchToFocus = true
         enableSelection = true
         wheelScrollMultiplier = 1.0f
+        touchScrollSendsWheelOnly = true // Opt-in wheel-only touch scrolling for tmux/vim
     }
+
 }
 
 TerminalRenderer(

@@ -59,6 +59,7 @@ fun TerminalCanvas(
     colorScheme: com.johnan.terminal.core.TerminalColorScheme? = null,
     selectionState: SelectionState = SelectionState.None,
     searchState: SearchState = SearchState(),
+    touchScrollSendsWheelOnly: Boolean = false,
     // Copy mode gesture callbacks
     onSingleTap: (row: Int, col: Int) -> Unit = { _, _ -> },
     onStartDraggingStartCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
@@ -88,6 +89,7 @@ fun TerminalCanvas(
     val currentOnLongPress by rememberUpdatedState(onLongPress)
     val currentOnUrlClick by rememberUpdatedState(onUrlClick)
     val currentOnMouseEvent by rememberUpdatedState(onMouseEvent)
+    val currentTouchScrollSendsWheelOnly by rememberUpdatedState(touchScrollSendsWheelOnly)
 
     // Auto-scroll to search match
     LaunchedEffect(searchState.currentMatchIndex, searchState.isVisible) {
@@ -157,7 +159,7 @@ fun TerminalCanvas(
                 )
                 .background(terminalBackgroundColor)
                 // Standard mode gestures - only active when NOT in copy mode
-                .pointerInput(isCopyMode, terminalState.mouseTrackingMode) {
+                .pointerInput(isCopyMode, terminalState.mouseTrackingMode, touchScrollSendsWheelOnly) {
                     if (isCopyMode) return@pointerInput
 
                     if (terminalState.mouseTrackingMode != MouseTrackingMode.None) {
@@ -167,6 +169,11 @@ fun TerminalCanvas(
                             var lastCol = -1
                             var startOffsetY = 0f
                             var accumulatedDeltaY = 0f
+                            var initialPressX = 0f
+                            var initialPressY = 0f
+                            var pressVisibleRow = -1
+                            var pressCol = -1
+                            var isScrolling = false
 
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -188,14 +195,32 @@ fun TerminalCanvas(
                                     when (event.type) {
                                         androidx.compose.ui.input.pointer.PointerEventType.Press -> {
                                             startOffsetY = offset.y
+                                            initialPressX = offset.x
+                                            initialPressY = offset.y
                                             accumulatedDeltaY = 0f
-                                            currentOnMouseEvent(MouseEvent.Press, visibleRow, col)
+                                            pressVisibleRow = visibleRow
+                                            pressCol = col
+                                            isScrolling = false
+                                            if (!currentTouchScrollSendsWheelOnly) {
+                                                currentOnMouseEvent(MouseEvent.Press, visibleRow, col)
+                                            }
                                         }
                                         androidx.compose.ui.input.pointer.PointerEventType.Release -> {
-                                            lastRow = -1
-                                            lastCol = -1
-                                            accumulatedDeltaY = 0f
-                                            currentOnMouseEvent(MouseEvent.Release, visibleRow, col)
+                                            if (currentTouchScrollSendsWheelOnly) {
+                                                if (!isScrolling && pressVisibleRow >= 0 && pressCol >= 0) {
+                                                    currentOnMouseEvent(MouseEvent.Press, pressVisibleRow, pressCol)
+                                                    currentOnMouseEvent(MouseEvent.Release, pressVisibleRow, pressCol)
+                                                }
+                                                isScrolling = false
+                                                pressVisibleRow = -1
+                                                pressCol = -1
+                                                accumulatedDeltaY = 0f
+                                            } else {
+                                                lastRow = -1
+                                                lastCol = -1
+                                                accumulatedDeltaY = 0f
+                                                currentOnMouseEvent(MouseEvent.Release, visibleRow, col)
+                                            }
                                         }
                                         androidx.compose.ui.input.pointer.PointerEventType.Move -> {
                                             if (change.pressed) {
@@ -204,27 +229,49 @@ fun TerminalCanvas(
                                                 accumulatedDeltaY += deltaY
                                                 val threshold = currentCellHeight.coerceAtLeast(10f)
 
-                                                if (accumulatedDeltaY >= threshold) {
-                                                    // Scrolled downward -> Wheel Up in terminal apps (e.g. tmux/vim/less)
-                                                    val steps = (accumulatedDeltaY / threshold).toInt()
-                                                    accumulatedDeltaY -= steps * threshold
-                                                    repeat(steps) {
-                                                        currentOnMouseEvent(MouseEvent.WheelUp, visibleRow, col)
+                                                if (currentTouchScrollSendsWheelOnly) {
+                                                    if (kotlin.math.abs(offset.y - initialPressY) >= threshold ||
+                                                        kotlin.math.abs(offset.x - initialPressX) >= threshold
+                                                    ) {
+                                                        isScrolling = true
                                                     }
-                                                } else if (accumulatedDeltaY <= -threshold) {
-                                                    // Scrolled upward -> Wheel Down
-                                                    val steps = (-accumulatedDeltaY / threshold).toInt()
-                                                    accumulatedDeltaY += steps * threshold
-                                                    repeat(steps) {
-                                                        currentOnMouseEvent(MouseEvent.WheelDown, visibleRow, col)
-                                                    }
-                                                }
 
-                                                if (terminalState.mouseTrackingMode != MouseTrackingMode.Click) {
-                                                    if (visibleRow != lastRow || col != lastCol) {
-                                                        currentOnMouseEvent(MouseEvent.Drag, visibleRow, col)
-                                                        lastRow = visibleRow
-                                                        lastCol = col
+                                                    if (accumulatedDeltaY >= threshold) {
+                                                        val steps = (accumulatedDeltaY / threshold).toInt()
+                                                        accumulatedDeltaY -= steps * threshold
+                                                        repeat(steps) {
+                                                            currentOnMouseEvent(MouseEvent.WheelUp, visibleRow, col)
+                                                        }
+                                                    } else if (accumulatedDeltaY <= -threshold) {
+                                                        val steps = (-accumulatedDeltaY / threshold).toInt()
+                                                        accumulatedDeltaY += steps * threshold
+                                                        repeat(steps) {
+                                                            currentOnMouseEvent(MouseEvent.WheelDown, visibleRow, col)
+                                                        }
+                                                    }
+                                                } else {
+                                                    if (accumulatedDeltaY >= threshold) {
+                                                        // Scrolled downward -> Wheel Up in terminal apps (e.g. tmux/vim/less)
+                                                        val steps = (accumulatedDeltaY / threshold).toInt()
+                                                        accumulatedDeltaY -= steps * threshold
+                                                        repeat(steps) {
+                                                            currentOnMouseEvent(MouseEvent.WheelUp, visibleRow, col)
+                                                        }
+                                                    } else if (accumulatedDeltaY <= -threshold) {
+                                                        // Scrolled upward -> Wheel Down
+                                                        val steps = (-accumulatedDeltaY / threshold).toInt()
+                                                        accumulatedDeltaY += steps * threshold
+                                                        repeat(steps) {
+                                                            currentOnMouseEvent(MouseEvent.WheelDown, visibleRow, col)
+                                                        }
+                                                    }
+
+                                                    if (terminalState.mouseTrackingMode != MouseTrackingMode.Click) {
+                                                        if (visibleRow != lastRow || col != lastCol) {
+                                                            currentOnMouseEvent(MouseEvent.Drag, visibleRow, col)
+                                                            lastRow = visibleRow
+                                                            lastCol = col
+                                                        }
                                                     }
                                                 }
                                             }
@@ -237,6 +284,7 @@ fun TerminalCanvas(
                             }
                         }
                     } else {
+
                         // Native mode gestures
                         detectTapGestures(
                             onTap = { offset ->
