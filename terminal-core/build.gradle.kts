@@ -80,13 +80,14 @@ if (!signingKey.isNullOrBlank()) {
     }
 }
 
-val javadocJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("javadoc")
-}
-
 publishing {
     publications.withType<MavenPublication> {
-        artifact(javadocJar)
+        val javadocTask = tasks.register("${this@withType.name}JavadocJar", Jar::class) {
+            archiveClassifier.set("javadoc")
+            archiveBaseName.set("${project.name}-${this@withType.name}")
+        }
+        artifact(javadocTask)
+
         pom {
             name.set("kmp-terminal-core")
             description.set("Pure Kotlin Multiplatform Terminal Emulator Core (Decoupled, zero UI dependencies)")
@@ -125,4 +126,8 @@ publishing {
             }
         }
     }
+}
+
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    dependsOn(tasks.withType<Sign>())
 }
