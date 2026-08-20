@@ -53,6 +53,7 @@ data class TerminalGestureConfig(
     val enableUrlClick: Boolean = true,
     val wheelScrollMultiplier: Float = 1.0f,
     val longPressTimeoutMs: Long = 400L,
+    val touchScrollSendsWheelOnly: Boolean = false,
 )
 
 /**
@@ -136,6 +137,7 @@ class TerminalUiConfigBuilder {
             enableUrlClick = gestures.enableUrlClick
             wheelScrollMultiplier = gestures.wheelScrollMultiplier
             longPressTimeoutMs = gestures.longPressTimeoutMs
+            touchScrollSendsWheelOnly = gestures.touchScrollSendsWheelOnly
         }
         builder.init()
         gestures = builder.build()
@@ -195,14 +197,17 @@ class TerminalGestureConfigBuilder {
     var enableUrlClick: Boolean = true
     var wheelScrollMultiplier: Float = 1.0f
     var longPressTimeoutMs: Long = 400L
+    var touchScrollSendsWheelOnly: Boolean = false
 
-    fun build() = TerminalGestureConfig(
-        enableTouchToFocus,
-        enableSelection,
-        enableUrlClick,
-        wheelScrollMultiplier,
-        longPressTimeoutMs,
-    )
+    fun build() =
+        TerminalGestureConfig(
+            enableTouchToFocus = enableTouchToFocus,
+            enableSelection = enableSelection,
+            enableUrlClick = enableUrlClick,
+            wheelScrollMultiplier = wheelScrollMultiplier,
+            longPressTimeoutMs = longPressTimeoutMs,
+            touchScrollSendsWheelOnly = touchScrollSendsWheelOnly,
+        )
 }
 
 class TerminalKeyBarConfigBuilder {

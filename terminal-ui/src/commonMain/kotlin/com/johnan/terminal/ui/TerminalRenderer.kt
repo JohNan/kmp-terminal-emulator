@@ -255,6 +255,7 @@ fun TerminalRenderer(
             colorScheme = effectiveColorScheme,
             selectionState = selectionState,
             searchState = searchState,
+            touchScrollSendsWheelOnly = config.gestures.touchScrollSendsWheelOnly,
             onSingleTap = onSingleTap,
             onStartDraggingStartCursor = onStartDraggingStartCursor,
             onUpdateStartCursor = onUpdateStartCursor,

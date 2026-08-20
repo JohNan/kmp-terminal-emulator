@@ -155,13 +155,15 @@ fun TerminalScreen(emulator: TerminalEmulator) {
             blink = true
             overrideColor = Color(0xFF00FFCC)
         }
-        colorScheme = TerminalColorScheme.SOLARIZED_DARK
         gestures {
             enableTouchToFocus = true
             enableSelection = true
             wheelScrollMultiplier = 1.5f
+            touchScrollSendsWheelOnly = true // Opt-in wheel-only touch scrolling for tmux/vim
         }
     }
+
+
 
     TerminalRenderer(
         terminalState = terminalState,

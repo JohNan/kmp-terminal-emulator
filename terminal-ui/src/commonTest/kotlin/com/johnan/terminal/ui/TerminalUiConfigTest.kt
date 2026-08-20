@@ -38,6 +38,7 @@ class TerminalUiConfigTest {
         assertTrue(config.gestures.enableUrlClick)
         assertEquals(1.0f, config.gestures.wheelScrollMultiplier)
         assertEquals(400L, config.gestures.longPressTimeoutMs)
+        assertFalse(config.gestures.touchScrollSendsWheelOnly)
 
         // KeyBar
         assertTrue(config.keyBar.isVisible)
@@ -69,6 +70,7 @@ class TerminalUiConfigTest {
                 enableUrlClick = false
                 wheelScrollMultiplier = 2.5f
                 longPressTimeoutMs = 600L
+                touchScrollSendsWheelOnly = true
             }
             keyBar {
                 isVisible = false
@@ -95,6 +97,7 @@ class TerminalUiConfigTest {
         assertFalse(config.gestures.enableUrlClick)
         assertEquals(2.5f, config.gestures.wheelScrollMultiplier)
         assertEquals(600L, config.gestures.longPressTimeoutMs)
+        assertTrue(config.gestures.touchScrollSendsWheelOnly)
 
         assertFalse(config.keyBar.isVisible)
         assertEquals(56.dp, config.keyBar.height)
