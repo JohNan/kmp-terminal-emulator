@@ -67,7 +67,7 @@ arch-core = "2.2.0"
 reorderable = "3.0.0"
 
 # Firebase
-google-services = "4.4.4"
+google-services = "4.5.0"
 firebase-crashlytics-plugin = "3.0.6"
 firebase-bom = "34.9.0"
 
