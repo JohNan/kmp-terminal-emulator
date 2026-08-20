@@ -99,7 +99,6 @@ class TerminalUiConfigTest {
         assertEquals(600L, config.gestures.longPressTimeoutMs)
         assertTrue(config.gestures.touchScrollSendsWheelOnly)
 
-
         assertFalse(config.keyBar.isVisible)
         assertEquals(56.dp, config.keyBar.height)
         assertEquals(1, config.keyBar.items.size)

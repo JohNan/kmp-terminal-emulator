@@ -56,7 +56,6 @@ data class TerminalGestureConfig(
     val touchScrollSendsWheelOnly: Boolean = false,
 )
 
-
 /**
  * Virtual soft key toolbar appearance and item list.
  */
@@ -144,7 +143,6 @@ class TerminalUiConfigBuilder {
         gestures = builder.build()
     }
 
-
     fun keyBar(init: TerminalKeyBarConfigBuilder.() -> Unit) {
         val builder = TerminalKeyBarConfigBuilder().apply {
             isVisible = keyBar.isVisible
@@ -211,7 +209,6 @@ class TerminalGestureConfigBuilder {
             touchScrollSendsWheelOnly = touchScrollSendsWheelOnly,
         )
 }
-
 
 class TerminalKeyBarConfigBuilder {
     var isVisible: Boolean = true

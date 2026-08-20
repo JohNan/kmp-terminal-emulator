@@ -284,7 +284,6 @@ fun TerminalCanvas(
                             }
                         }
                     } else {
-
                         // Native mode gestures
                         detectTapGestures(
                             onTap = { offset ->
