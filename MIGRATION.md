@@ -148,3 +148,23 @@ val isInside = selection.contains(row = 1, col = 10)
 // Extract text from ScreenBuffer
 val selectedText = selection.extractText(screenBuffer)
 ```
+
+---
+
+### Recipe 5: Mobile Touch Scroll Disambiguation (`tmux`, `vim`, `less`)
+
+When connecting to terminal environments with mouse mode enabled (`set -g mouse on` in `tmux` or `mouse=a` in `vim`), touchscreen drag gestures normally emit mouse button 0 `Press` and `Drag` events. In `tmux`, this triggers the application's internal text selection (showing a yellow selection overlay) and snaps viewport scrollback upon finger release.
+
+To enable smooth, persistent touch scrolling without triggering copy-mode selection, enable `touchScrollSendsWheelOnly`:
+
+#### Example
+```kotlin
+val uiConfig = terminalUiConfig {
+    gestures {
+        // Send pure WheelUp / WheelDown mouse events on drag
+        // Discrete taps without dragging continue to dispatch Press + Release
+        touchScrollSendsWheelOnly = true
+    }
+}
+```
+
