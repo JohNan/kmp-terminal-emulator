@@ -15,7 +15,7 @@ navigation-compose = "2.9.6"
 navigation-compose-multiplatform = "2.9.2"
 
 # Dependency Injection
-koin = "4.1.1"
+koin = "4.2.2"
 
 # Coroutines
 coroutines = "1.10.2"
