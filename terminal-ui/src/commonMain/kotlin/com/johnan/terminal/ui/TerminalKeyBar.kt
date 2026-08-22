@@ -172,22 +172,20 @@ fun TerminalKeyBar(
     }
 }
 
-fun resolveIcon(name: String?): ImageVector? {
-    return when (name) {
-        "ArrowUpward" -> Icons.Default.KeyboardArrowUp
-        "ArrowDownward" -> Icons.Default.KeyboardArrowDown
-        "ArrowBack" -> Icons.AutoMirrored.Filled.KeyboardArrowLeft
-        "ArrowForward" -> Icons.AutoMirrored.Filled.KeyboardArrowRight
-        "Keyboard" -> Icons.Default.Keyboard
-        "Search" -> Icons.Default.Search
-        "Home" -> Icons.Default.Home
-        "ContentCopy" -> Icons.Default.ContentCopy
-        "ContentPaste" -> Icons.Default.ContentPaste
-        "Clear" -> Icons.Default.Clear
-        "History" -> Icons.Default.History
-        "Menu" -> Icons.Default.Menu
-        else -> null
-    }
+fun resolveIcon(name: String?): ImageVector? = when (name) {
+    "ArrowUpward" -> Icons.Default.KeyboardArrowUp
+    "ArrowDownward" -> Icons.Default.KeyboardArrowDown
+    "ArrowBack" -> Icons.AutoMirrored.Filled.KeyboardArrowLeft
+    "ArrowForward" -> Icons.AutoMirrored.Filled.KeyboardArrowRight
+    "Keyboard" -> Icons.Default.Keyboard
+    "Search" -> Icons.Default.Search
+    "Home" -> Icons.Default.Home
+    "ContentCopy" -> Icons.Default.ContentCopy
+    "ContentPaste" -> Icons.Default.ContentPaste
+    "Clear" -> Icons.Default.Clear
+    "History" -> Icons.Default.History
+    "Menu" -> Icons.Default.Menu
+    else -> null
 }
 
 @Composable

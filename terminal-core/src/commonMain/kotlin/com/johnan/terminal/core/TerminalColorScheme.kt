@@ -31,26 +31,24 @@ data class TerminalColorScheme(
     /**
      * Resolves Compose [Color] for standard ANSI color code (0-15).
      */
-    fun getAnsiColor(code: Int): Color {
-        return when (code) {
-            0 -> black
-            1 -> red
-            2 -> green
-            3 -> yellow
-            4 -> blue
-            5 -> magenta
-            6 -> cyan
-            7 -> white
-            8 -> brightBlack
-            9 -> brightRed
-            10 -> brightGreen
-            11 -> brightYellow
-            12 -> brightBlue
-            13 -> brightMagenta
-            14 -> brightCyan
-            15 -> brightWhite
-            else -> foreground
-        }
+    fun getAnsiColor(code: Int): Color = when (code) {
+        0 -> black
+        1 -> red
+        2 -> green
+        3 -> yellow
+        4 -> blue
+        5 -> magenta
+        6 -> cyan
+        7 -> white
+        8 -> brightBlack
+        9 -> brightRed
+        10 -> brightGreen
+        11 -> brightYellow
+        12 -> brightBlue
+        13 -> brightMagenta
+        14 -> brightCyan
+        15 -> brightWhite
+        else -> foreground
     }
 
     companion object {

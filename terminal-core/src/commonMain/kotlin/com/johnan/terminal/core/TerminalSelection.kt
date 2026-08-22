@@ -12,12 +12,10 @@ data class TerminalSelection(
     /**
      * Returns a normalized selection ensuring start coordinates precede end coordinates.
      */
-    fun normalized(): TerminalSelection {
-        return if (startRow < endRow || (startRow == endRow && startCol <= endCol)) {
-            this
-        } else {
-            TerminalSelection(endRow, endCol, startRow, startCol)
-        }
+    fun normalized(): TerminalSelection = if (startRow < endRow || (startRow == endRow && startCol <= endCol)) {
+        this
+    } else {
+        TerminalSelection(endRow, endCol, startRow, startCol)
     }
 
     /**

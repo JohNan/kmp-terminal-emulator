@@ -14,7 +14,9 @@ import com.johnan.terminal.core.ArrowDirection
 /**
  * Native Android View managing [InputConnection] and soft keyboard interactions.
  */
-class TerminalInputView(context: Context) : View(context) {
+class TerminalInputView(
+    context: Context
+) : View(context) {
     var onInput: ((String) -> Unit)? = null
     var onArrowKey: ((ArrowDirection, Boolean) -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
