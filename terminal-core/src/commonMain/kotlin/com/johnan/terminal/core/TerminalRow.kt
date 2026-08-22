@@ -3,7 +3,9 @@ package com.johnan.terminal.core
 /**
  * Internal mutable row of terminal cells with version and occupancy tracking.
  */
-internal class TerminalRow(val cols: Int) {
+internal class TerminalRow(
+    val cols: Int
+) {
     val cells: Array<TerminalCell> = Array(cols) { TerminalCell.EMPTY }
     var version: Long = 0
         private set

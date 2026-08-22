@@ -622,15 +622,13 @@ private val SPACES = " ".repeat(1024)
 private fun calculateAnsiColors(
     colorScheme: com.johnan.terminal.core.TerminalColorScheme?,
     isDark: Boolean,
-): Array<Color> {
-    return Array(16) { code ->
-        TerminalColor.toComposeColor(
-            TerminalColor.Standard(code),
-            colorScheme,
-            isDark,
-            isBackground = false,
-        )
-    }
+): Array<Color> = Array(16) { code ->
+    TerminalColor.toComposeColor(
+        TerminalColor.Standard(code),
+        colorScheme,
+        isDark,
+        isBackground = false,
+    )
 }
 
 /**
@@ -663,7 +661,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
             while (k < rowSize) {
                 val nextCell = row[k]
 
-                if (nextCell !== cell && (
+                if (nextCell !== cell &&
+                    (
                         nextCell.backgroundColor !== currentBg ||
                             nextCell.foregroundColor !== currentFg ||
                             nextCell.bold != currentBold ||
@@ -702,7 +701,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
             while (k < rowSize) {
                 val nextCell = row[k]
 
-                if (nextCell !== cell && (
+                if (nextCell !== cell &&
+                    (
                         nextCell.backgroundColor !== currentBg ||
                             nextCell.foregroundColor !== currentFg ||
                             nextCell.bold != currentBold ||
@@ -739,7 +739,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                 // Continue building from k
                 while (k < rowSize) {
                     val nextCell = row[k]
-                    if (nextCell !== cell && (
+                    if (nextCell !== cell &&
+                        (
                             nextCell.backgroundColor !== currentBg ||
                                 nextCell.foregroundColor !== currentFg ||
                                 nextCell.bold != currentBold ||
@@ -777,8 +778,11 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                 // An empty batch with default background, no reverse video, and no underline is completely invisible.
                 // Bolt: Use fast-path reference equality (===) since TerminalColor.Default is a data object.
                 // Strikethrough and overline might also be visible on empty spaces depending on terminal emulator.
-                if (currentBg !== TerminalColor.Default || currentReverse || currentUnderline ||
-                    currentStrikethrough || currentOverline
+                if (currentBg !== TerminalColor.Default ||
+                    currentReverse ||
+                    currentUnderline ||
+                    currentStrikethrough ||
+                    currentOverline
                 ) {
                     batches.add(
                         RenderBatch(

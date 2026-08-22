@@ -23,47 +23,45 @@ const val ESCAPE_CHAR = "\u001b"
 fun applyModifierToChar(
     char: Char,
     modifierState: ModifierKeyState,
-): String {
-    return when {
-        modifierState.ctrlPressed -> {
-            when (char.lowercaseChar()) {
-                'a' -> "\u0001"
-                'b' -> "\u0002"
-                'c' -> "\u0003"
-                'd' -> "\u0004"
-                'e' -> "\u0005"
-                'f' -> "\u0006"
-                'g' -> "\u0007"
-                'h' -> "\u0008"
-                'i' -> "\u0009"
-                'j' -> "\u000A"
-                'k' -> "\u000B"
-                'l' -> "\u000C"
-                'm' -> "\u000D"
-                'n' -> "\u000E"
-                'o' -> "\u000F"
-                'p' -> "\u0010"
-                'q' -> "\u0011"
-                'r' -> "\u0012"
-                's' -> "\u0013"
-                't' -> "\u0014"
-                'u' -> "\u0015"
-                'v' -> "\u0016"
-                'w' -> "\u0017"
-                'x' -> "\u0018"
-                'y' -> "\u0019"
-                'z' -> "\u001A"
-                '[' -> "\u001B"
-                '\\' -> "\u001C"
-                ']' -> "\u001D"
-                '^' -> "\u001E"
-                '_' -> "\u001F"
-                else -> char.toString()
-            }
+): String = when {
+    modifierState.ctrlPressed -> {
+        when (char.lowercaseChar()) {
+            'a' -> "\u0001"
+            'b' -> "\u0002"
+            'c' -> "\u0003"
+            'd' -> "\u0004"
+            'e' -> "\u0005"
+            'f' -> "\u0006"
+            'g' -> "\u0007"
+            'h' -> "\u0008"
+            'i' -> "\u0009"
+            'j' -> "\u000A"
+            'k' -> "\u000B"
+            'l' -> "\u000C"
+            'm' -> "\u000D"
+            'n' -> "\u000E"
+            'o' -> "\u000F"
+            'p' -> "\u0010"
+            'q' -> "\u0011"
+            'r' -> "\u0012"
+            's' -> "\u0013"
+            't' -> "\u0014"
+            'u' -> "\u0015"
+            'v' -> "\u0016"
+            'w' -> "\u0017"
+            'x' -> "\u0018"
+            'y' -> "\u0019"
+            'z' -> "\u001A"
+            '[' -> "\u001B"
+            '\\' -> "\u001C"
+            ']' -> "\u001D"
+            '^' -> "\u001E"
+            '_' -> "\u001F"
+            else -> char.toString()
         }
-        modifierState.altPressed -> "$ESCAPE_CHAR$char"
-        else -> char.toString()
     }
+    modifierState.altPressed -> "$ESCAPE_CHAR$char"
+    else -> char.toString()
 }
 
 /**

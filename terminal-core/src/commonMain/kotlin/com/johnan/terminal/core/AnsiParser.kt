@@ -162,9 +162,7 @@ class AnsiParser(
         }
     }
 
-    private fun isPrintable(char: Char): Boolean {
-        return (char in '\u0020'..'\u007E') || (char in '\u00A0'..'\uFFFF')
-    }
+    private fun isPrintable(char: Char): Boolean = (char in '\u0020'..'\u007E') || (char in '\u00A0'..'\uFFFF')
 
     private fun processChar(char: Char) {
         when (state) {
