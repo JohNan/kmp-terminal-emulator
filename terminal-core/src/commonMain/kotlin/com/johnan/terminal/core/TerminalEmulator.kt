@@ -222,14 +222,12 @@ class TerminalEmulator(
     suspend fun resize(
         newRows: Int,
         newCols: Int,
-    ): Boolean {
-        return mutex.withLock {
-            val resized = screenBuffer.resize(newRows, newCols)
-            if (resized) {
-                updateScreenState()
-            }
-            resized
+    ): Boolean = mutex.withLock {
+        val resized = screenBuffer.resize(newRows, newCols)
+        if (resized) {
+            updateScreenState()
         }
+        resized
     }
 
     /**
@@ -266,10 +264,8 @@ class TerminalEmulator(
     suspend fun search(
         query: String,
         ignoreCase: Boolean = true,
-    ): List<TerminalMatch> {
-        return mutex.withLock {
-            screenBuffer.search(query, ignoreCase)
-        }
+    ): List<TerminalMatch> = mutex.withLock {
+        screenBuffer.search(query, ignoreCase)
     }
 }
 

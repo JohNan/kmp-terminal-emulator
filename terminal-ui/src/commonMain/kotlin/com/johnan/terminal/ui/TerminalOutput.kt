@@ -6,7 +6,11 @@ package com.johnan.terminal.ui
 sealed interface TerminalOutput {
     val text: String
 
-    data class CommandOutput(override val text: String) : TerminalOutput
+    data class CommandOutput(
+        override val text: String
+    ) : TerminalOutput
 
-    data class SystemLog(override val text: String) : TerminalOutput
+    data class SystemLog(
+        override val text: String
+    ) : TerminalOutput
 }

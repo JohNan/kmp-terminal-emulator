@@ -186,7 +186,15 @@ class ScreenBuffer(
             val isDefault =
                 fg === TerminalColor.Default &&
                     bg === TerminalColor.Default &&
-                    !b && !it && !u && !r && !d && !bl && !st && !ov && !co
+                    !b &&
+                    !it &&
+                    !u &&
+                    !r &&
+                    !d &&
+                    !bl &&
+                    !st &&
+                    !ov &&
+                    !co
 
             val currentRow = buffer[cursorRow]
             var changed = false
@@ -609,20 +617,18 @@ class ScreenBuffer(
         /**
          * Finds URL match boundaries within a row of terminal cells.
          */
-        fun getUrlRanges(row: Array<TerminalCell>): List<UrlRange> {
-            return UrlCache.getOrPut(row) {
-                val ranges = mutableListOf<UrlRange>()
-                val text = TerminalRowCharSequence(row)
-                val matches = urlPattern.findAll(text)
+        fun getUrlRanges(row: Array<TerminalCell>): List<UrlRange> = UrlCache.getOrPut(row) {
+            val ranges = mutableListOf<UrlRange>()
+            val text = TerminalRowCharSequence(row)
+            val matches = urlPattern.findAll(text)
 
-                for (match in matches) {
-                    val start = match.range.first
-                    val end = match.range.last + 1
-                    ranges.add(UrlRange(start, end))
-                }
-
-                if (ranges.isEmpty()) emptyList() else ranges.toList()
+            for (match in matches) {
+                val start = match.range.first
+                val end = match.range.last + 1
+                ranges.add(UrlRange(start, end))
             }
+
+            if (ranges.isEmpty()) emptyList() else ranges.toList()
         }
 
         /**
@@ -823,4 +829,7 @@ class ScreenBuffer(
 /**
  * Character column range representing a detected URL.
  */
-data class UrlRange(val startCol: Int, val endCol: Int)
+data class UrlRange(
+    val startCol: Int,
+    val endCol: Int
+)
