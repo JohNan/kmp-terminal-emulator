@@ -57,10 +57,16 @@ fun applyModifierToChar(
             ']' -> "\u001D"
             '^' -> "\u001E"
             '_' -> "\u001F"
+            '\r', '\n' -> "\u000A"
             else -> char.toString()
         }
     }
-    modifierState.altPressed -> "$ESCAPE_CHAR$char"
+    modifierState.altPressed -> {
+        when (char) {
+            '\r', '\n' -> "$ESCAPE_CHAR\r"
+            else -> "$ESCAPE_CHAR$char"
+        }
+    }
     else -> char.toString()
 }
 
@@ -330,8 +336,14 @@ fun handleHardwareKeyEvent(
     }
 
     when (key) {
-        Key.Enter -> {
-            onInput(CARRIAGE_RETURN)
+        Key.Enter, Key.NumPadEnter -> {
+            val seq =
+                when {
+                    isAlt -> "\u001B\r"
+                    isShift || isCtrl -> "\n"
+                    else -> CARRIAGE_RETURN
+                }
+            onInput(seq)
             return true
         }
         Key.Backspace -> {

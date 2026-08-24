@@ -86,4 +86,15 @@ class ModifierKeyStateTest {
         assertFalse(reset.ctrlPressed, "Reset state should have no ctrl")
         assertFalse(reset.altPressed, "Reset state should have no alt")
     }
+
+    @Test
+    fun `applyModifierToChar transforms newlines under ctrl and alt`() {
+        val ctrlState = ModifierKeyState(ctrlPressed = true)
+        val altState = ModifierKeyState(altPressed = true)
+
+        kotlin.test.assertEquals("\u000A", com.johnan.terminal.ui.applyModifierToChar('\r', ctrlState))
+        kotlin.test.assertEquals("\u000A", com.johnan.terminal.ui.applyModifierToChar('\n', ctrlState))
+        kotlin.test.assertEquals("\u001B\r", com.johnan.terminal.ui.applyModifierToChar('\r', altState))
+        kotlin.test.assertEquals("\u001B\r", com.johnan.terminal.ui.applyModifierToChar('\n', altState))
+    }
 }

@@ -144,8 +144,14 @@ fun handleAndroidHardwareKeyEvent(
     }
 
     when (keyCode) {
-        KeyEvent.KEYCODE_ENTER -> {
-            onInput.invoke("\r")
+        KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+            val seq =
+                when {
+                    isAlt -> "\u001B\r"
+                    isShift || isCtrl -> "\n"
+                    else -> "\r"
+                }
+            onInput.invoke(seq)
             return true
         }
         KeyEvent.KEYCODE_DEL -> {

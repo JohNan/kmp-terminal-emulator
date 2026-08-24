@@ -82,6 +82,22 @@ class AnsiParserTest {
         }
 
     @Test
+    fun `formatPaste should wrap in bracketed paste sequence when enabled and raw when disabled`() =
+        runTest {
+            val chunk = "first line\nsecond line\nthird line"
+            // Initially disabled
+            assertEquals(chunk, terminalEmulator.formatPaste(chunk))
+
+            // Enable bracketed paste mode
+            terminalEmulator.processOutput("\u001B[?2004h")
+            assertEquals("\u001B[200~$chunk\u001B[201~", terminalEmulator.formatPaste(chunk))
+
+            // Disable bracketed paste mode
+            terminalEmulator.processOutput("\u001B[?2004l")
+            assertEquals(chunk, terminalEmulator.formatPaste(chunk))
+        }
+
+    @Test
     fun `Line drawing character set mapping`() =
         runTest {
             // Write normal 'a'
