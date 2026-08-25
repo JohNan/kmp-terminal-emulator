@@ -271,13 +271,12 @@ class TerminalEmulator(
     /**
      * Formats pasted text with bracketed paste escape sequences if enabled in config and requested by the terminal.
      */
-    fun formatPaste(text: String): String {
-        return if (config.bracketedPasteEnabled && bracketedPasteModeEnabled) {
+    fun formatPaste(text: String): String =
+        if (config.bracketedPasteEnabled && bracketedPasteModeEnabled) {
             "\u001B[200~$text\u001B[201~"
         } else {
             text
         }
-    }
 }
 
 /**
