@@ -63,7 +63,9 @@ class TerminalInputView(
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
+            InputType.TYPE_TEXT_FLAG_MULTI_LINE
         outAttrs.imeOptions =
             EditorInfo.IME_ACTION_NONE or
             EditorInfo.IME_FLAG_NO_FULLSCREEN or
@@ -88,8 +90,14 @@ class TerminalInputView(
 
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 if (!text.isNullOrEmpty()) {
-                    onInput?.invoke(text.toString())
+                    val normalized = text.toString().replace("\n", "\r")
+                    onInput?.invoke(normalized)
                 }
+                return true
+            }
+
+            override fun performEditorAction(editorAction: Int): Boolean {
+                onInput?.invoke("\r")
                 return true
             }
         }

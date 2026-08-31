@@ -124,8 +124,19 @@ class TerminalEmulator(
     private val _bellEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val bellEvents: SharedFlow<Unit> = _bellEvents.asSharedFlow()
 
+    private val _attentionEvents = MutableSharedFlow<AttentionEvent>(extraBufferCapacity = 64)
+    val attentionEvents: SharedFlow<AttentionEvent> = _attentionEvents.asSharedFlow()
+
     internal fun triggerBell() {
         _bellEvents.tryEmit(Unit)
+        _attentionEvents.tryEmit(AttentionEvent.Bell())
+    }
+
+    internal fun triggerNotification(
+        title: String,
+        message: String,
+    ) {
+        _attentionEvents.tryEmit(AttentionEvent.Notification(title, message))
     }
 
     internal fun sendResponse(response: String) {
@@ -211,6 +222,7 @@ class TerminalEmulator(
             contentHeight = contentHeight,
             mouseTrackingMode = mouseTrackingMode,
             sgrMouseModeEnabled = sgrMouseModeEnabled,
+            bracketedPasteModeEnabled = bracketedPasteModeEnabled,
         )
     }
 
@@ -293,12 +305,14 @@ data class TerminalScreenState(
     val contentHeight: Int = 0,
     val mouseTrackingMode: MouseTrackingMode = MouseTrackingMode.None,
     val sgrMouseModeEnabled: Boolean = false,
+    val bracketedPasteModeEnabled: Boolean = false,
 ) {
     companion object {
         fun from(
             buffer: ScreenBuffer,
             mouseTrackingMode: MouseTrackingMode = MouseTrackingMode.None,
             sgrMouseModeEnabled: Boolean = false,
+            bracketedPasteModeEnabled: Boolean = false,
         ): TerminalScreenState {
             var contentHeight = 0
             for (i in 0 until buffer.rows) {
@@ -318,6 +332,7 @@ data class TerminalScreenState(
                 contentHeight = contentHeight,
                 mouseTrackingMode = mouseTrackingMode,
                 sgrMouseModeEnabled = sgrMouseModeEnabled,
+                bracketedPasteModeEnabled = bracketedPasteModeEnabled,
             )
         }
     }

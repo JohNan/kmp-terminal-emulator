@@ -507,6 +507,21 @@ class AnsiParser(
                             terminalEmulator.setWindowTitle(value)
                             log("OSC", "Set window title: $value")
                         }
+
+                        "9" -> {
+                            terminalEmulator.triggerNotification("Terminal Notification", value)
+                            log("OSC 9") { "Notification: $value" }
+                        }
+
+                        "777" -> {
+                            val parts = value.split(";", limit = 3)
+                            if (parts.isNotEmpty() && parts[0] == "notify") {
+                                val title = parts.getOrElse(1) { "" }
+                                val body = parts.getOrElse(2) { "" }
+                                terminalEmulator.triggerNotification(title, body)
+                                log("OSC 777") { "Notification: title='$title', body='$body'" }
+                            }
+                        }
                     }
                 }
 

@@ -410,4 +410,87 @@ class AnsiParserTest {
 
         assertEquals(null, emulator.clipboardEvents.replayCache.firstOrNull())
     }
+
+    @Test
+    fun `Terminal bell triggers AttentionEvent Bell`() =
+        runTest {
+            val events = mutableListOf<AttentionEvent>()
+            val job = launch(kotlinx.coroutines.Dispatchers.Unconfined) {
+                terminalEmulator.attentionEvents.collect {
+                    events.add(it)
+                }
+            }
+
+            terminalEmulator.processOutput("\u0007")
+            kotlinx.coroutines.delay(50)
+
+            assertEquals(1, events.size)
+            assertTrue(events[0] is AttentionEvent.Bell)
+            job.cancel()
+        }
+
+    @Test
+    fun `OSC 9 triggers AttentionEvent Notification with BEL and ST`() =
+        runTest {
+            val events = mutableListOf<AttentionEvent>()
+            val job = launch(kotlinx.coroutines.Dispatchers.Unconfined) {
+                terminalEmulator.attentionEvents.collect {
+                    events.add(it)
+                }
+            }
+
+            // Test BEL terminator
+            terminalEmulator.processOutput("\u001B]9;Hello World\u0007")
+            // Test ST terminator
+            terminalEmulator.processOutput("\u001B]9;Build Finished\u001B\\")
+            kotlinx.coroutines.delay(50)
+
+            assertEquals(2, events.size)
+            assertEquals(
+                AttentionEvent.Notification(title = "Terminal Notification", message = "Hello World"),
+                events[0].let {
+                    AttentionEvent.Notification((it as AttentionEvent.Notification).title, it.message)
+                }
+            )
+            assertEquals(
+                AttentionEvent.Notification(title = "Terminal Notification", message = "Build Finished"),
+                events[1].let {
+                    AttentionEvent.Notification((it as AttentionEvent.Notification).title, it.message)
+                }
+            )
+            job.cancel()
+        }
+
+    @Test
+    fun `OSC 777 triggers AttentionEvent Notification with title and message`() =
+        runTest {
+            val events = mutableListOf<AttentionEvent>()
+            val job = launch(kotlinx.coroutines.Dispatchers.Unconfined) {
+                terminalEmulator.attentionEvents.collect {
+                    events.add(it)
+                }
+            }
+
+            // Test OSC 777 with title and body using BEL
+            terminalEmulator.processOutput("\u001B]777;notify;Build;Success\u0007")
+            // Test OSC 777 with title and body using ST
+            terminalEmulator.processOutput("\u001B]777;notify;Deploy;Complete\u001B\\")
+            // Test OSC 777 with title only
+            terminalEmulator.processOutput("\u001B]777;notify;Alert\u0007")
+            kotlinx.coroutines.delay(50)
+
+            assertEquals(3, events.size)
+            val notif0 = events[0] as AttentionEvent.Notification
+            assertEquals("Build", notif0.title)
+            assertEquals("Success", notif0.message)
+
+            val notif1 = events[1] as AttentionEvent.Notification
+            assertEquals("Deploy", notif1.title)
+            assertEquals("Complete", notif1.message)
+
+            val notif2 = events[2] as AttentionEvent.Notification
+            assertEquals("Alert", notif2.title)
+            assertEquals("", notif2.message)
+            job.cancel()
+        }
 }
