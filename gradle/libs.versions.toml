@@ -1,6 +1,6 @@
 [versions]
 # Build & Tooling
-agp = "9.3.2"
+agp = "9.4.0"
 kotlin = "2.3.20"
 compose-multiplatform = "1.12.0"
 ktlint = "14.2.0"
