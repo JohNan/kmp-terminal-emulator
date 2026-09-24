@@ -155,6 +155,7 @@ fun TerminalCanvas(
                     enabled =
                         selectionState is SelectionState.None ||
                             selectionState is SelectionState.CopyModeActive ||
+                            selectionState is SelectionState.StartCursorPlaced ||
                             selectionState is SelectionState.SelectionComplete,
                 )
                 .background(terminalBackgroundColor)
@@ -316,6 +317,7 @@ fun TerminalCanvas(
                                 }
                             },
                             onLongPress = { offset ->
+                                onRequestFocus()
                                 val (row, col) =
                                     TerminalCoordinateConverter.screenToTerminal(
                                         offset = offset,

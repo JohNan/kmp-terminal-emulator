@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -79,7 +78,7 @@ fun TerminalKeyBar(
     modifierState: ModifierKeyState,
     onItemClick: (KeyBarUiItem) -> Unit,
     onShowKeyboard: () -> Unit,
-    onConfigureKeyBar: () -> Unit,
+    onConfigureKeyBar: () -> Unit = {},
     modifier: Modifier = Modifier,
     hapticFeedbackEnabled: Boolean = true,
     onLog: ((String) -> Unit)? = null,
@@ -129,7 +128,15 @@ fun TerminalKeyBar(
                         for (i in 0 until leftItems.size step 2) {
                             val item1 = leftItems[i]
                             val item2 = if (i + 1 < leftItems.size) leftItems[i + 1] else null
-                            KeyColumn(item1, item2, modifierState, onItemClick, hapticFeedbackEnabled, onLog)
+                            KeyColumn(
+                                item1,
+                                item2,
+                                modifierState,
+                                onItemClick,
+                                hapticFeedbackEnabled,
+                                onLog,
+                                onShowKeyboard = onShowKeyboard,
+                            )
                         }
                     }
                 },
@@ -141,33 +148,31 @@ fun TerminalKeyBar(
                         for (i in 0 until rightItems.size step 2) {
                             val item1 = rightItems[i]
                             val item2 = if (i + 1 < rightItems.size) rightItems[i + 1] else null
-                            KeyColumn(item1, item2, modifierState, onItemClick, hapticFeedbackEnabled, onLog)
+                            KeyColumn(
+                                item1,
+                                item2,
+                                modifierState,
+                                onItemClick,
+                                hapticFeedbackEnabled,
+                                onLog,
+                                onShowKeyboard = onShowKeyboard,
+                            )
                         }
                     }
                 },
             )
 
-            Column(
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier
-                    .padding(start = 2.dp)
-                    .width(IntrinsicSize.Max),
-            ) {
-                TerminalKey(
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Default.Settings,
-                    contentDescription = "Configure Key Bar",
-                    onClick = onConfigureKeyBar,
-                    hapticFeedbackEnabled = hapticFeedbackEnabled,
-                )
-                TerminalKey(
-                    modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Default.Keyboard,
-                    contentDescription = "Toggle Keyboard",
-                    onClick = onShowKeyboard,
-                    hapticFeedbackEnabled = hapticFeedbackEnabled,
-                )
-            }
+            TerminalKey(
+                modifier =
+                    Modifier
+                        .padding(start = 2.dp)
+                        .fillMaxHeight(),
+                icon = Icons.Default.Keyboard,
+                contentDescription = "Toggle Keyboard",
+                onClick = onShowKeyboard,
+                hapticFeedbackEnabled = hapticFeedbackEnabled,
+                fillMaxHeight = true,
+            )
         }
     }
 }
@@ -196,6 +201,7 @@ private fun KeyItem(
     hapticFeedbackEnabled: Boolean,
     onLog: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
+    onShowKeyboard: (() -> Unit)? = null,
 ) {
     val icon = resolveIcon(item.iconName)
     val isPressed =
@@ -238,10 +244,12 @@ private fun KeyItem(
                         onItemClick(item)
                     } else {
                         expanded = true
+                        onShowKeyboard?.invoke()
                     }
                 },
                 onLongClick = {
                     expanded = true
+                    onShowKeyboard?.invoke()
                 },
                 hapticFeedbackEnabled = hapticFeedbackEnabled,
                 onLog = onLog,
@@ -289,9 +297,10 @@ private fun KeyColumn(
     hapticFeedbackEnabled: Boolean,
     onLog: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
+    onShowKeyboard: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = Modifier.width(IntrinsicSize.Max),
+        modifier = modifier.width(IntrinsicSize.Max),
     ) {
         KeyItem(
             item = item1,
@@ -300,6 +309,7 @@ private fun KeyColumn(
             hapticFeedbackEnabled = hapticFeedbackEnabled,
             onLog = onLog,
             modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            onShowKeyboard = onShowKeyboard,
         )
 
         if (item2 != null) {
@@ -310,6 +320,7 @@ private fun KeyColumn(
                 hapticFeedbackEnabled = hapticFeedbackEnabled,
                 onLog = onLog,
                 modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                onShowKeyboard = onShowKeyboard,
             )
         }
     }
@@ -332,6 +343,7 @@ fun TerminalKey(
     onLongClick: (() -> Unit)? = null,
     hapticFeedbackEnabled: Boolean = true,
     onLog: ((String) -> Unit)? = null,
+    fillMaxHeight: Boolean = false,
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -367,10 +379,16 @@ fun TerminalKey(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
 
+    val heightModifier = if (fillMaxHeight) {
+        Modifier.fillMaxHeight()
+    } else {
+        Modifier.height(40.dp)
+    }
+
     Surface(
         modifier =
             buttonModifier
-                .height(40.dp)
+                .then(heightModifier)
                 .defaultMinSize(minWidth = 32.dp)
                 .width(45.dp)
                 .semantics {
