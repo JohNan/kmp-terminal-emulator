@@ -157,6 +157,30 @@ object TerminalSelectionLogic {
         return SelectionState.SelectionComplete(selection)
     }
 
+    fun selectAll(state: TerminalScreenState): SelectionState {
+        val totalRows = state.scrollback.size + state.rows.size
+        val totalCols = state.cols
+        val selection =
+            TerminalSelection(
+                startRow = 0,
+                startCol = 0,
+                endRow = (totalRows - 1).coerceAtLeast(0),
+                endCol = (totalCols - 1).coerceAtLeast(0),
+            )
+        return SelectionState.SelectionComplete(selection)
+    }
+
+    fun selectVisible(state: TerminalScreenState): SelectionState {
+        val selection =
+            TerminalSelection(
+                startRow = state.scrollback.size,
+                startCol = 0,
+                endRow = (state.scrollback.size + state.rows.size - 1).coerceAtLeast(0),
+                endCol = (state.cols - 1).coerceAtLeast(0),
+            )
+        return SelectionState.SelectionComplete(selection)
+    }
+
     fun selectVisible(
         firstVisibleRow: Int,
         visibleRowCount: Int,

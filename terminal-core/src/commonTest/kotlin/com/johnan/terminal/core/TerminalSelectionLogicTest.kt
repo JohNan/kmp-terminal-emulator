@@ -65,6 +65,31 @@ class TerminalSelectionLogicTest {
     }
 
     @Test
+    fun testSelectAllAndVisibleWithTerminalScreenState() {
+        val buffer = ScreenBuffer(initialRows = 10, initialCols = 40)
+        for (i in 0 until 15) {
+            buffer.writeChar('B')
+            buffer.lineFeed()
+            buffer.carriageReturn()
+        }
+        val screenState = TerminalScreenState.from(buffer)
+
+        val allSelection = TerminalSelectionLogic.selectAll(screenState)
+        assertTrue(allSelection is SelectionState.SelectionComplete)
+        assertEquals(0, allSelection.selection.startRow)
+        assertEquals(0, allSelection.selection.startCol)
+        assertEquals(screenState.scrollback.size + screenState.rows.size - 1, allSelection.selection.endRow)
+        assertEquals(39, allSelection.selection.endCol)
+
+        val visibleSelection = TerminalSelectionLogic.selectVisible(screenState)
+        assertTrue(visibleSelection is SelectionState.SelectionComplete)
+        assertEquals(screenState.scrollback.size, visibleSelection.selection.startRow)
+        assertEquals(0, visibleSelection.selection.startCol)
+        assertEquals(screenState.scrollback.size + screenState.rows.size - 1, visibleSelection.selection.endRow)
+        assertEquals(39, visibleSelection.selection.endCol)
+    }
+
+    @Test
     fun testCursorDraggingLifecycle() {
         val placed = SelectionState.StartCursorPlaced(2, 3)
 
