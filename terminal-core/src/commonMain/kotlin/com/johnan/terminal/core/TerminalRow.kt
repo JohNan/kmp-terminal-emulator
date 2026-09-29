@@ -13,6 +13,8 @@ internal class TerminalRow(
     var nonDefaultCells: Int = 0
         private set
 
+    var isWrapped: Boolean = false
+
     var cachedSnapshot: Array<TerminalCell>? = null
     var cachedSnapshotVersion: Long = -1
 
@@ -38,6 +40,9 @@ internal class TerminalRow(
         startIndex: Int,
         endIndex: Int,
     ): Boolean {
+        if (startIndex == 0 && endIndex >= cols) {
+            isWrapped = false
+        }
         if (nonDefaultCells == 0) return false
 
         var changed = false
@@ -108,4 +113,12 @@ internal class TerminalRow(
     }
 
     fun copyOf(): Array<TerminalCell> = cells.copyOf()
+
+    fun copy(): TerminalRow {
+        val copy = TerminalRow(cols)
+        copyInto(copy.cells)
+        copy.isWrapped = isWrapped
+        copy.nonDefaultCells = nonDefaultCells
+        return copy
+    }
 }

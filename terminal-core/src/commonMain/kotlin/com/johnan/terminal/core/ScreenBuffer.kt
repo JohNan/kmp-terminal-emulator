@@ -102,6 +102,7 @@ class ScreenBuffer(
      */
     fun writeChar(char: Char) {
         if (pendingWrap) {
+            buffer[cursorRow].isWrapped = true
             cursorCol = 0
             cursorRow++
             if (cursorRow > scrollBottom) {
@@ -149,6 +150,7 @@ class ScreenBuffer(
 
         while (i < len) {
             if (pendingWrap) {
+                buffer[cursorRow].isWrapped = true
                 cursorCol = 0
                 cursorRow++
                 if (cursorRow > scrollBottom) {
@@ -769,17 +771,7 @@ class ScreenBuffer(
         val newPrimaryBuffer: Array<TerminalRow>
         val newAlternateBuffer: Array<TerminalRow>
 
-        if (newCols == cols) {
-            val commonRows = minOf(rows, newRows)
-            newPrimaryBuffer =
-                Array(newRows) { i ->
-                    if (i < commonRows) primaryBuffer[i] else TerminalRow(newCols)
-                }
-            newAlternateBuffer =
-                Array(newRows) { i ->
-                    if (i < commonRows) alternateBuffer[i] else TerminalRow(newCols)
-                }
-        } else {
+        if (isAlternateScreen) {
             val rowsToCopy = minOf(rows, newRows)
             val colsToCopy = minOf(cols, newCols)
 
@@ -808,16 +800,214 @@ class ScreenBuffer(
                     }
                     newRow
                 }
+
+            rows = newRows
+            cols = newCols
+            primaryBuffer = newPrimaryBuffer
+            alternateBuffer = newAlternateBuffer
+            buffer = alternateBuffer
+
+            cursorRow = cursorRow.coerceIn(0, newRows - 1)
+            cursorCol = cursorCol.coerceIn(0, newCols - 1)
+            pendingWrap = false
+            scrollTop = 0
+            scrollBottom = newRows - 1
+            return true
         }
 
+        val rowsToCopy = minOf(rows, newRows)
+        val colsToCopy = minOf(cols, newCols)
+        newAlternateBuffer =
+            Array(newRows) { i ->
+                val newRow = TerminalRow(newCols)
+                if (i < rowsToCopy) {
+                    val oldRow = alternateBuffer[i]
+                    if (!oldRow.isEmpty()) {
+                        oldRow.copyInto(newRow.cells, 0, 0, colsToCopy)
+                        newRow.recalculateNonDefaultCells()
+                    }
+                }
+                newRow
+            }
+
+        if (newCols == cols) {
+            val commonRows = minOf(rows, newRows)
+            newPrimaryBuffer =
+                Array(newRows) { i ->
+                    if (i < commonRows) primaryBuffer[i] else TerminalRow(newCols)
+                }
+
+            rows = newRows
+            cols = newCols
+            primaryBuffer = newPrimaryBuffer
+            alternateBuffer = newAlternateBuffer
+            buffer = primaryBuffer
+
+            cursorRow = cursorRow.coerceIn(0, newRows - 1)
+            cursorCol = cursorCol.coerceIn(0, newCols - 1)
+            pendingWrap = false
+            scrollTop = 0
+            scrollBottom = newRows - 1
+            return true
+        }
+
+        // Primary buffer soft-wrap reflow when newCols != cols
+        var lastNonEmptyRow = -1
+        for (r in rows - 1 downTo 0) {
+            if (!primaryBuffer[r].isEmpty() || primaryBuffer[r].isWrapped) {
+                lastNonEmptyRow = r
+                break
+            }
+        }
+        if (lastNonEmptyRow in 0 until (rows - 1) && primaryBuffer[lastNonEmptyRow].isWrapped) {
+            lastNonEmptyRow++
+        }
+
+        if (lastNonEmptyRow == -1) {
+            rows = newRows
+            cols = newCols
+            primaryBuffer = Array(newRows) { TerminalRow(newCols) }
+            alternateBuffer = newAlternateBuffer
+            buffer = primaryBuffer
+            cursorRow = cursorRow.coerceIn(0, newRows - 1)
+            cursorCol = cursorCol.coerceIn(0, newCols - 1)
+            pendingWrap = false
+            scrollTop = 0
+            scrollBottom = newRows - 1
+            return true
+        }
+
+        val maxActiveRow = lastNonEmptyRow
+
+        class LogicalLine(
+            val cells: List<TerminalCell>,
+            val hasCursor: Boolean,
+            val cursorOffset: Int,
+        )
+
+        val logicalLines = mutableListOf<LogicalLine>()
+        var r = 0
+        while (r <= maxActiveRow) {
+            val startR = r
+            val lineCells = mutableListOf<TerminalCell>()
+            var lineHasCursor = false
+            var lineCursorOffset = -1
+
+            while (r <= maxActiveRow) {
+                val rowObj = primaryBuffer[r]
+                if (r == cursorRow) {
+                    lineHasCursor = true
+                    lineCursorOffset = (r - startR) * cols + cursorCol
+                }
+
+                if (rowObj.isWrapped && r < maxActiveRow) {
+                    for (c in 0 until cols) {
+                        lineCells.add(rowObj.cells[c])
+                    }
+                    r++
+                } else {
+                    var lastUsed = -1
+                    for (c in cols - 1 downTo 0) {
+                        if (!rowObj.cells[c].isDefault()) {
+                            lastUsed = c
+                            break
+                        }
+                    }
+                    val count = lastUsed + 1
+                    for (c in 0 until count) {
+                        lineCells.add(rowObj.cells[c])
+                    }
+                    r++
+                    break
+                }
+            }
+
+            logicalLines.add(
+                LogicalLine(
+                    cells = lineCells,
+                    hasCursor = lineHasCursor,
+                    cursorOffset = lineCursorOffset,
+                ),
+            )
+        }
+
+        val reflowedRows = mutableListOf<TerminalRow>()
+        var newCursorRow = 0
+        var newCursorCol = 0
+
+        for (line in logicalLines) {
+            val lineStartRowIndex = reflowedRows.size
+            if (line.cells.isEmpty()) {
+                val emptyRow = TerminalRow(newCols)
+                reflowedRows.add(emptyRow)
+                if (line.hasCursor) {
+                    newCursorRow = lineStartRowIndex
+                    newCursorCol = minOf(line.cursorOffset.coerceAtLeast(0), newCols - 1)
+                }
+            } else {
+                val numRowsForLine = (line.cells.size + newCols - 1) / newCols
+                for (chunkIdx in 0 until numRowsForLine) {
+                    val row = TerminalRow(newCols)
+                    val startIdx = chunkIdx * newCols
+                    val endIdx = minOf(startIdx + newCols, line.cells.size)
+                    for (c in startIdx until endIdx) {
+                        row.setCell(c - startIdx, line.cells[c])
+                    }
+                    row.recalculateNonDefaultCells()
+                    row.incrementVersion()
+                    if (chunkIdx < numRowsForLine - 1) {
+                        row.isWrapped = true
+                    } else {
+                        row.isWrapped = false
+                    }
+                    reflowedRows.add(row)
+                }
+
+                if (line.hasCursor) {
+                    val targetChunk = line.cursorOffset / newCols
+                    val targetCol = line.cursorOffset % newCols
+                    if (targetChunk < numRowsForLine) {
+                        newCursorRow = lineStartRowIndex + targetChunk
+                        newCursorCol = targetCol
+                    } else {
+                        newCursorRow = lineStartRowIndex + numRowsForLine - 1
+                        newCursorCol = minOf(targetCol, newCols - 1)
+                    }
+                }
+            }
+        }
+
+        if (cursorRow > lastNonEmptyRow) {
+            newCursorRow = reflowedRows.size + (cursorRow - lastNonEmptyRow - 1)
+            newCursorCol = cursorCol
+        }
+
+        val overflowCount = maxOf(0, reflowedRows.size - newRows)
+        for (i in 0 until overflowCount) {
+            if (scrollback.size >= maxScrollback) {
+                scrollback.removeFirst()
+            }
+            scrollback.addLast(reflowedRows[i].copyOf())
+            scrollbackVersion++
+        }
+
+        newPrimaryBuffer =
+            Array(newRows) { i ->
+                val reflowIdx = overflowCount + i
+                if (reflowIdx < reflowedRows.size) {
+                    reflowedRows[reflowIdx]
+                } else {
+                    TerminalRow(newCols)
+                }
+            }
+
+        cursorRow = (newCursorRow - overflowCount).coerceIn(0, newRows - 1)
+        cursorCol = newCursorCol.coerceIn(0, newCols - 1)
         rows = newRows
         cols = newCols
         primaryBuffer = newPrimaryBuffer
         alternateBuffer = newAlternateBuffer
-        buffer = if (isAlternateScreen) alternateBuffer else primaryBuffer
-
-        cursorRow = cursorRow.coerceIn(0, newRows - 1)
-        cursorCol = cursorCol.coerceIn(0, newCols - 1)
+        buffer = primaryBuffer
         pendingWrap = false
         scrollTop = 0
         scrollBottom = newRows - 1
