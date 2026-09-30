@@ -227,6 +227,10 @@ class AnsiParser(
                 screenBuffer.cursorUp()
                 state = State.NORMAL
             }
+            '\\' -> {
+                log("ST", "String Terminator")
+                state = State.NORMAL
+            }
             'D' -> {
                 log("IND", "Index")
                 screenBuffer.lineFeed()

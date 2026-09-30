@@ -64,14 +64,16 @@ class TerminalInputView(
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
-            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
-            InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        outAttrs.initialCapsMode = 0
         outAttrs.imeOptions =
             EditorInfo.IME_ACTION_NONE or
             EditorInfo.IME_FLAG_NO_FULLSCREEN or
             EditorInfo.IME_FLAG_NO_EXTRACT_UI
 
         return object : BaseInputConnection(this, false) {
+            override fun getCursorCapsMode(reqModes: Int): Int = 0
+
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
                 if (beforeLength > 0) {
                     onInput?.invoke(DELETE_CHAR)
@@ -81,9 +83,14 @@ class TerminalInputView(
             }
 
             override fun sendKeyEvent(event: KeyEvent): Boolean {
-                if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DEL) {
-                    onInput?.invoke(DELETE_CHAR)
-                    return true
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    if (event.keyCode == KeyEvent.KEYCODE_DEL) {
+                        onInput?.invoke(DELETE_CHAR)
+                        return true
+                    } else if (event.keyCode == KeyEvent.KEYCODE_ENTER) {
+                        onInput?.invoke("\r")
+                        return true
+                    }
                 }
                 return super.sendKeyEvent(event)
             }
