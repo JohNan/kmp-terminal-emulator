@@ -52,7 +52,7 @@ class TerminalEmulator(
     val osc52Policy: Osc52Policy
         get() = config.osc52Policy
 
-    private val screenBuffer = ScreenBuffer(config.initialRows, config.initialCols, config.maxScrollback)
+    private var screenBuffer = ScreenBuffer(config.initialRows, config.initialCols, config.maxScrollback)
 
     var applicationCursorKeysEnabled = false
         internal set
@@ -66,7 +66,7 @@ class TerminalEmulator(
     var bracketedPasteModeEnabled = false
         internal set
 
-    private val ansiParser = AnsiParser(this, screenBuffer, logCallback)
+    private var ansiParser = AnsiParser(this, screenBuffer, logCallback)
     private val mutex = Mutex()
 
     private var cachedScrollback: List<Array<TerminalCell>> = emptyList()
@@ -99,7 +99,23 @@ class TerminalEmulator(
         _clipboardEvents.tryEmit(text)
     }
 
+    /**
+     * Number of OSC 52 clipboard write requests received, regardless of [Osc52Policy].
+     *
+     * Lets consumers diff clipboard state between snapshots (see [copy]) without collecting [clipboardEvents].
+     */
+    var clipboardWriteCount: Long = 0
+        private set
+
+    /**
+     * Payload of the most recent OSC 52 clipboard write request, regardless of [Osc52Policy], or null if none.
+     */
+    var lastClipboardWrite: String? = null
+        private set
+
     internal fun handleOsc52Write(text: String) {
+        clipboardWriteCount++
+        lastClipboardWrite = text
         when (osc52Policy) {
             Osc52Policy.ALWAYS_ALLOW -> {
                 copyToClipboard(text)
@@ -127,7 +143,16 @@ class TerminalEmulator(
     private val _attentionEvents = MutableSharedFlow<AttentionEvent>(extraBufferCapacity = 64)
     val attentionEvents: SharedFlow<AttentionEvent> = _attentionEvents.asSharedFlow()
 
+    /**
+     * Number of bells (BEL) received so far.
+     *
+     * Lets consumers diff bell state between snapshots (see [copy]) without collecting [bellEvents].
+     */
+    var bellCount: Long = 0
+        internal set
+
     internal fun triggerBell() {
+        bellCount++
         _bellEvents.tryEmit(Unit)
         _attentionEvents.tryEmit(AttentionEvent.Bell())
     }
@@ -156,6 +181,48 @@ class TerminalEmulator(
         if (title != null) {
             _windowTitle.value = if (title.isEmpty()) null else title
         }
+    }
+
+    /**
+     * Returns a fully independent deep copy of this emulator.
+     *
+     * The copy carries the screen buffers (primary, alternate and scrollback), cursor and saved cursor, text
+     * attributes, scroll region, all mode flags, window title and title stack, [config], [bellCount], the clipboard
+     * write state and any partially parsed escape or UTF-8 sequence, so feeding the same bytes to the copy
+     * and to this emulator yields the same result from this point on. Mutating one never affects the other.
+     *
+     * Not copied: the callbacks (pass them here, they default to none), the processing mutex, and the reactive
+     * flows ([clipboardEvents], [bellEvents], [attentionEvents] start without replay). [screenState] is recomputed
+     * from the copied buffer and the internal render caches start empty.
+     *
+     * This is not synchronised with [processOutput]; call it from the context that feeds this emulator, not
+     * concurrently with it.
+     */
+    fun copy(
+        onOsc52WriteRequested: ((String, () -> Unit) -> Unit)? = null,
+        logCallback: ((String) -> Unit)? = null,
+        onTerminalResponse: ((String) -> Unit)? = null,
+    ): TerminalEmulator {
+        // Intentionally not copied: mutex, flows, render caches (cachedScrollback*) and callbacks; see KDoc.
+        val clone = TerminalEmulator(config, onOsc52WriteRequested, logCallback, onTerminalResponse)
+        val bufferCopy = screenBuffer.copy()
+        clone.screenBuffer = bufferCopy
+        clone.ansiParser = ansiParser.copy(clone, bufferCopy, logCallback)
+        clone.applicationCursorKeysEnabled = applicationCursorKeysEnabled
+        clone.applicationKeypadModeEnabled = applicationKeypadModeEnabled
+        clone.originModeEnabled = originModeEnabled
+        clone.bracketedPasteModeEnabled = bracketedPasteModeEnabled
+        clone.cursorBlinking = cursorBlinking
+        clone.invertScreenColors = invertScreenColors
+        clone.mouseTrackingMode = mouseTrackingMode
+        clone.sgrMouseModeEnabled = sgrMouseModeEnabled
+        clone._windowTitle.value = _windowTitle.value
+        clone.windowTitleStack.addAll(windowTitleStack)
+        clone.bellCount = bellCount
+        clone.clipboardWriteCount = clipboardWriteCount
+        clone.lastClipboardWrite = lastClipboardWrite
+        clone.updateScreenState()
+        return clone
     }
 
     /**

@@ -195,6 +195,25 @@ val selectedText = selection.extractText(screenBuffer)
 val isInside = selection.contains(row = 1, col = 10)
 ```
 
+### 4. Forking state (`TerminalEmulator.copy()`)
+
+`copy()` returns a fully independent deep copy, including a partially parsed escape or UTF-8 sequence. This lets you
+keep one headless emulator per received state (for example Mosh) and apply a diff to a copy of the reference state.
+`bellCount`, `clipboardWriteCount` and `lastClipboardWrite` let you diff event-only state between snapshots, and
+`ScreenBuffer.isRowWrapped(row)` exposes the soft-wrap flag.
+
+```kotlin
+val reference = TerminalEmulator(TerminalConfig(initialRows = 24, initialCols = 80))
+reference.processOutput("hello")
+
+val next = reference.copy()           // callbacks are not inherited; pass them if needed
+next.processOutput("\u001B[31m world") // diff applied to the copy only
+
+val bellRang = next.bellCount > reference.bellCount
+val clipboardChanged = next.clipboardWriteCount > reference.clipboardWriteCount
+val firstRowWraps = next.getScreenBuffer().isRowWrapped(0)
+```
+
 ---
 
 ## Tooling & Verification

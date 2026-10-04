@@ -37,6 +37,32 @@ class AnsiParser(
     private val currentCharset: Char get() = if (activeCharset == 0) g0Charset else g1Charset
     private var lastPrintableChar: Char? = null
 
+    /**
+     * Creates a copy of this parser bound to [terminalEmulator] and [screenBuffer], including any partially
+     * parsed escape sequence, buffered parameters and incomplete UTF-8 bytes.
+     *
+     * Every mutable field is copied; the immutable constructor references are replaced by the arguments.
+     */
+    internal fun copy(
+        terminalEmulator: TerminalEmulator,
+        screenBuffer: ScreenBuffer,
+        logCallback: ((String) -> Unit)? = null,
+    ): AnsiParser {
+        val clone = AnsiParser(terminalEmulator, screenBuffer, logCallback)
+        clone.state = state
+        clone.paramBuffer.append(paramBuffer)
+        clone.leftoverBytes = leftoverBytes.copyOf()
+        paramValues.copyInto(clone.paramValues)
+        clone.paramCount = paramCount
+        clone.paramsParsed = paramsParsed
+        clone.g0Charset = g0Charset
+        clone.g1Charset = g1Charset
+        clone.activeCharset = activeCharset
+        clone.charsetTarget = charsetTarget
+        clone.lastPrintableChar = lastPrintableChar
+        return clone
+    }
+
     companion object {
         const val MAX_OSC52_PAYLOAD_SIZE = 65536
     }

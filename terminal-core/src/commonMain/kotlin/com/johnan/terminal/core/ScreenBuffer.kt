@@ -49,6 +49,45 @@ class ScreenBuffer(
     private var currentConceal: Boolean = false
 
     /**
+     * Returns a deep, fully independent copy of this buffer: primary and alternate rows, scrollback, cursor,
+     * saved cursor, scroll region, wrap state and current text attributes.
+     *
+     * Scrollback rows are shared by reference because they are immutable once inserted: every insertion
+     * stores a fresh `copyOf()` and nothing mutates a stored array afterwards, including during reflow.
+     */
+    fun copy(): ScreenBuffer {
+        val clone = ScreenBuffer(rows, cols, maxScrollback)
+        clone.primaryBuffer = Array(primaryBuffer.size) { primaryBuffer[it].copy() }
+        clone.alternateBuffer = Array(alternateBuffer.size) { alternateBuffer[it].copy() }
+        clone.isAlternateScreen = isAlternateScreen
+        clone.buffer = if (isAlternateScreen) clone.alternateBuffer else clone.primaryBuffer
+        clone.scrollTop = scrollTop
+        clone.scrollBottom = scrollBottom
+        clone.scrollback.addAll(scrollback)
+        clone.scrollbackVersion = scrollbackVersion
+        clone.cursorRow = cursorRow
+        clone.cursorCol = cursorCol
+        clone.cursorVisible = cursorVisible
+        clone.autoWrapMode = autoWrapMode
+        clone.pendingWrap = pendingWrap
+        clone.currentForeground = currentForeground
+        clone.currentBackground = currentBackground
+        clone.currentBold = currentBold
+        clone.currentItalic = currentItalic
+        clone.currentUnderline = currentUnderline
+        clone.currentReverse = currentReverse
+        clone.currentDim = currentDim
+        clone.currentBlink = currentBlink
+        clone.currentStrikethrough = currentStrikethrough
+        clone.currentOverline = currentOverline
+        clone.currentConceal = currentConceal
+        clone.savedCursorRow = savedCursorRow
+        clone.savedCursorCol = savedCursorCol
+        // Every var in this class is copied above; rows/cols and maxScrollback come from the constructor.
+        return clone
+    }
+
+    /**
      * Returns the cell at the given row and column index, or [TerminalCell.EMPTY] if out of bounds.
      */
     fun getCell(
@@ -81,6 +120,12 @@ class ScreenBuffer(
         }
         return list
     }
+
+    /**
+     * Returns true if the given row of the active screen soft-wrapped into the next row (its text continues
+     * on the following row), or false if not or if [row] is out of bounds.
+     */
+    fun isRowWrapped(row: Int): Boolean = row in 0 until rows && buffer[row].isWrapped
 
     internal fun getTerminalRow(row: Int): TerminalRow = buffer[row]
 
@@ -370,11 +415,13 @@ class ScreenBuffer(
 
     private fun scrollUp() {
         if (scrollTop == 0 && scrollBottom == rows - 1) {
-            if (scrollback.size >= maxScrollback) {
-                scrollback.removeFirst()
+            if (maxScrollback > 0) {
+                if (scrollback.size >= maxScrollback) {
+                    scrollback.removeFirst()
+                }
+                scrollback.addLast(buffer[scrollTop].copyOf())
+                scrollbackVersion++
             }
-            scrollback.addLast(buffer[scrollTop].copyOf())
-            scrollbackVersion++
         }
 
         val topRow = buffer[scrollTop]
@@ -984,6 +1031,7 @@ class ScreenBuffer(
 
         val overflowCount = maxOf(0, reflowedRows.size - newRows)
         for (i in 0 until overflowCount) {
+            if (maxScrollback == 0) break
             if (scrollback.size >= maxScrollback) {
                 scrollback.removeFirst()
             }
