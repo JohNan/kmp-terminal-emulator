@@ -9,7 +9,8 @@
 ## Core API References
 - [Core Configuration](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalConfig.kt): `TerminalConfig`, `terminalConfig { ... }`, `BellBehavior`
 - [UI Configuration](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalUiConfig.kt): `TerminalUiConfig`, `terminalUiConfig { ... }`, `TerminalGestureConfig` (`touchScrollSendsWheelOnly`), `LocalTerminalUiConfig`, `TerminalCursorStyle`
-- [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `copyToClipboard`
+- [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `copyToClipboard`, `copy()` (deep fork), `bellCount`, `clipboardWriteCount`, `lastClipboardWrite`
+- [Screen Buffer](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/ScreenBuffer.kt): `ScreenBuffer`, `getScrollback`, `isRowWrapped(row)`
 - [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable
 - [Text Selection](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalSelection.kt): `TerminalSelection`, `SelectionState`
 

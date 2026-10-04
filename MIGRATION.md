@@ -168,3 +168,24 @@ val uiConfig = terminalUiConfig {
 }
 ```
 
+
+
+### Recipe 6: Forking emulator state (additive API)
+
+No migration is required; these APIs are purely additive. Replace hand-rolled replays of the full byte history with a copy:
+
+#### Before
+```kotlin
+val next = TerminalEmulator(config)
+next.processOutput(fullHistory + diff) // O(history) per state
+```
+
+#### After
+```kotlin
+val next = reference.copy()   // deep, independent copy, including mid-sequence parser state
+next.processOutput(diff)
+```
+
+Also new: `TerminalEmulator.bellCount`, `clipboardWriteCount` and `lastClipboardWrite` (updated for every OSC 52 write
+request regardless of `Osc52Policy`), and `ScreenBuffer.isRowWrapped(row)`. Fixed: `maxScrollback = 0` no longer
+crashes when output scrolls past the bottom or a resize reflows overflowing rows.
