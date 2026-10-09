@@ -170,8 +170,12 @@ fun TerminalRenderer(
             if (cursorY < viewportTop) {
                 scrollState.scrollTo(cursorY.toInt().coerceIn(0, scrollState.maxValue))
             } else if (cursorY + cellHeight > viewportBottom) {
-                val targetScroll = (cursorY + cellHeight - maxHeightPx).toInt()
-                scrollState.scrollTo(targetScroll.coerceIn(0, scrollState.maxValue))
+                val isNearBottom =
+                    scrollState.maxValue == 0 || (scrollState.maxValue - scrollState.value) <= (cellHeight * 2).toInt()
+                if (isNearBottom) {
+                    val targetScroll = (cursorY + cellHeight - maxHeightPx).toInt()
+                    scrollState.scrollTo(targetScroll.coerceIn(0, scrollState.maxValue))
+                }
             }
         }
 
@@ -245,6 +249,7 @@ fun TerminalRenderer(
             cellWidth = cellWidth,
             cellHeight = cellHeight,
             totalHeight = totalHeight,
+            viewportHeightPx = maxHeightPx,
             isDark = isDark,
             cursorColor = cursorColor,
             cursorStyle = config.cursor.style,

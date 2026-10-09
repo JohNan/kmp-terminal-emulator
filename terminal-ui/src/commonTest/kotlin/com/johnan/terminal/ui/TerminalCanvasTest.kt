@@ -4,11 +4,91 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import com.johnan.terminal.ui.RenderBatch
 import com.johnan.terminal.ui.calculateBatches
+import com.johnan.terminal.ui.calculateVisibleRowRange
 import com.johnan.terminal.ui.resolveBatchColors
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class TerminalCanvasTest {
+    @Test
+    fun testCalculateVisibleRowRangeAtTopReturnsOnlyViewportRows() {
+        val totalRows = 10_000
+        val cellHeight = 40f
+        val viewportHeight = 1000f
+        val scrollOffset = 0f
+
+        val range = calculateVisibleRowRange(
+            scrollOffset = scrollOffset,
+            viewportHeight = viewportHeight,
+            cellHeight = cellHeight,
+            totalRows = totalRows,
+            overscanRows = 1,
+        )
+
+        assertEquals(0, range.first)
+        // 1000 / 40 = 25 rows + 1 (partial) + 1 (overscan) = row index 27 exclusive (0 until 27 -> 27 rows)
+        assertEquals(26, range.last)
+        assertEquals(27, range.count())
+        assertTrue(range.count() < 100, "Should only render visible rows plus overscan, never all $totalRows rows")
+    }
+
+    @Test
+    fun testCalculateVisibleRowRangeInMiddleReturnsExactWindow() {
+        val totalRows = 10_000
+        val cellHeight = 40f
+        val viewportHeight = 1000f
+        val scrollOffset = 5000f // row 125
+
+        val range = calculateVisibleRowRange(
+            scrollOffset = scrollOffset,
+            viewportHeight = viewportHeight,
+            cellHeight = cellHeight,
+            totalRows = totalRows,
+            overscanRows = 1,
+        )
+
+        assertEquals(124, range.first) // 125 - 1 overscan
+        assertEquals(151, range.last) // 125 + 25 + 1 + 1 = 152 exclusive -> last index 151
+        assertEquals(28, range.count())
+    }
+
+    @Test
+    fun testCalculateVisibleRowRangeAtBottomClampsToTotalRows() {
+        val totalRows = 10_000
+        val cellHeight = 40f
+        val viewportHeight = 1000f
+        val maxScroll = (totalRows * cellHeight) - viewportHeight // 399,000f
+
+        val range = calculateVisibleRowRange(
+            scrollOffset = maxScroll,
+            viewportHeight = viewportHeight,
+            cellHeight = cellHeight,
+            totalRows = totalRows,
+            overscanRows = 1,
+        )
+
+        assertEquals(9974, range.first)
+        assertEquals(9999, range.last)
+        assertEquals(26, range.count())
+    }
+
+    @Test
+    fun testCalculateVisibleRowRangeEdgeCases() {
+        // Zero rows
+        assertTrue(calculateVisibleRowRange(0f, 1000f, 40f, 0).isEmpty())
+
+        // Zero cell height
+        assertTrue(calculateVisibleRowRange(0f, 1000f, 0f, 100).isEmpty())
+
+        // Zero viewport height
+        assertTrue(calculateVisibleRowRange(0f, 0f, 40f, 100).isEmpty())
+
+        // Negative scroll offset should clamp to 0
+        val negativeRange = calculateVisibleRowRange(-500f, 1000f, 40f, 100)
+        assertEquals(0, negativeRange.first)
+    }
+
     @Test
     fun testCalculateBatchesShouldUseRawColorsAndCaptureReverseFlag() {
         val row = arrayOf(

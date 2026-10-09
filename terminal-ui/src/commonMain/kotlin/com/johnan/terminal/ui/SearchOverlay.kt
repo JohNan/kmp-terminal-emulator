@@ -22,6 +22,8 @@ fun SearchOverlay(
     scrollbackLineCount: Int,
     totalRows: Int,
     modifier: Modifier = Modifier,
+    scrollState: androidx.compose.foundation.ScrollState? = null,
+    viewportHeightPx: Float = 0f,
     matchColor: Color = Color(0x80FFFF00),
     currentMatchColor: Color = Color(0x80FF8000),
 ) {
@@ -31,9 +33,32 @@ fun SearchOverlay(
         val contentHeight = totalRows * cellHeight
         val verticalOffset = if (contentHeight < size.height) size.height - contentHeight else 0f
 
+        val resolvedViewport = if (viewportHeightPx > 0f) {
+            viewportHeightPx
+        } else if (scrollState != null) {
+            (size.height - scrollState.maxValue).coerceAtLeast(cellHeight)
+        } else {
+            0f
+        }
+
+        val visibleRange = if (scrollState != null && resolvedViewport > 0f && cellHeight > 0f) {
+            calculateVisibleRowRange(
+                scrollOffset = scrollState.value.toFloat(),
+                viewportHeight = resolvedViewport,
+                cellHeight = cellHeight,
+                totalRows = totalRows,
+                overscanRows = 2,
+            )
+        } else {
+            null
+        }
+
         val matchesSize = searchState.matches.size
         for (index in 0 until matchesSize) {
             val match = searchState.matches[index]
+            if (visibleRange != null && match.startRow !in visibleRange) {
+                continue
+            }
             val color = if (index == searchState.currentMatchIndex) currentMatchColor else matchColor
 
             drawMatch(

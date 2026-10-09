@@ -37,6 +37,22 @@ import com.johnan.terminal.core.TerminalScreenState
 import com.johnan.terminal.core.UrlRange
 
 /**
+ * Calculates the index range of rows visible within the viewport, including an overscan margin.
+ */
+fun calculateVisibleRowRange(
+    scrollOffset: Float,
+    viewportHeight: Float,
+    cellHeight: Float,
+    totalRows: Int,
+    overscanRows: Int = 1,
+): IntRange {
+    if (cellHeight <= 0f || totalRows <= 0 || viewportHeight <= 0f) return IntRange.EMPTY
+    val firstVisible = ((scrollOffset / cellHeight).toInt() - overscanRows).coerceIn(0, totalRows)
+    val lastVisible = (((scrollOffset + viewportHeight) / cellHeight).toInt() + 1 + overscanRows).coerceIn(0, totalRows)
+    return firstVisible until lastVisible
+}
+
+/**
  * Renders terminal character grid cells, cursor styles, highlights, and gesture overlays via hardware-accelerated Canvas.
  */
 @Composable
@@ -49,6 +65,7 @@ fun TerminalCanvas(
     cellWidth: Float,
     cellHeight: Float,
     totalHeight: androidx.compose.ui.unit.Dp,
+    viewportHeightPx: Float = 0f,
     isDark: Boolean,
     cursorColor: Color,
     cursorStyle: TerminalCursorStyle = TerminalCursorStyle.BLOCK,
@@ -365,16 +382,26 @@ fun TerminalCanvas(
                     .fillMaxWidth()
                     .height(totalHeight),
         ) {
-            // Viewport-aware rendering: only draw visible rows
-            val viewportTop = scrollState.value.toFloat()
-            val viewportBottom = viewportTop + size.height
+            val resolvedViewportHeight = if (viewportHeightPx > 0f) {
+                viewportHeightPx
+            } else if (scrollState.viewportSize > 0) {
+                scrollState.viewportSize.toFloat()
+            } else {
+                val totalHeightPx = totalHeight.toPx()
+                (totalHeightPx - scrollState.maxValue).coerceAtLeast(cellHeight)
+            }
 
-            val firstVisibleRow = (viewportTop / cellHeight).toInt().coerceIn(0, allRows.size)
-            val lastVisibleRow = ((viewportBottom / cellHeight).toInt() + 1).coerceIn(0, allRows.size)
+            val visibleRowRange = calculateVisibleRowRange(
+                scrollOffset = scrollState.value.toFloat(),
+                viewportHeight = resolvedViewportHeight,
+                cellHeight = cellHeight,
+                totalRows = allRows.size,
+                overscanRows = 1,
+            )
 
             val verticalOffsetCanvas = 0f
 
-            for (rowIndex in firstVisibleRow until lastVisibleRow) {
+            for (rowIndex in visibleRowRange) {
                 val row = allRows.getOrNull(rowIndex) ?: continue
                 val y = rowIndex * cellHeight + verticalOffsetCanvas
 
@@ -395,7 +422,7 @@ fun TerminalCanvas(
 
                     val urls = ScreenBuffer.getUrlRanges(row)
                     RowRenderData(batchListBuilder.toList(), urls).also {
-                        if (renderBatchCache.size >= 200) {
+                        if (renderBatchCache.size >= 500) {
                             val oldestKey = renderBatchCache.keys.firstOrNull()
                             if (oldestKey != null) {
                                 renderBatchCache.remove(oldestKey)
@@ -584,6 +611,8 @@ fun TerminalCanvas(
             cellHeight = cellHeight,
             scrollbackLineCount = scrollbackLineCount,
             totalRows = allRows.size,
+            scrollState = scrollState,
+            viewportHeightPx = viewportHeightPx,
             modifier =
                 Modifier
                     .fillMaxWidth()
