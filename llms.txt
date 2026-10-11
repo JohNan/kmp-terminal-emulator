@@ -17,6 +17,7 @@
 
 ## Interactive Demos & Previews
 - [Live Demo (GitHub Pages)](https://johnan.github.io/kmp-terminal-emulator/): Hosted interactive WebAssembly demo.
+- `demo-mobile`: Android & iOS Compose Multiplatform mobile showcase.
 - `demo-web`: Kotlin Multiplatform WebAssembly browser REPL demo and JS bridge.
 - `demo-jvm`: JVM Desktop Compose Multiplatform demo application.
 - `demo-vite`: Modern Vite + TypeScript web integration demo.

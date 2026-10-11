@@ -29,3 +29,9 @@ jobs:
 
       - name: Compile WebAssembly (WasmJs) Target
         run: ./gradlew compileKotlinWasmJs --no-daemon
+
+      - name: Build Android Demo APK
+        run: ./gradlew :demo-mobile:assembleDebug --no-daemon
+
+      - name: Compile iOS Demo (Simulator Target)
+        run: ./gradlew :demo-mobile:compileKotlinIosSimulatorArm64 --no-daemon

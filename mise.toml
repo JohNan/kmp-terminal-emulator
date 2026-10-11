@@ -18,3 +18,11 @@ run = "./gradlew :demo-web:wasmJsBrowserDevelopmentRun"
 [tasks.run-jvm]
 description = "Run the JVM Desktop interactive shell REPL demo"
 run = "./gradlew :demo-jvm:run"
+
+[tasks.assemble-android]
+description = "Assemble Android debug APK for demo-mobile"
+run = "./gradlew :demo-mobile:assembleDebug"
+
+[tasks.compile-ios-demo]
+description = "Compile iOS simulator Kotlin/Native framework for demo-mobile"
+run = "./gradlew :demo-mobile:compileKotlinIosSimulatorArm64"
