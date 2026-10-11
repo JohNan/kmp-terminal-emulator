@@ -143,23 +143,24 @@ fun TerminalRenderer(
             onKeyboardToggleAvailable(onRequestFocus)
         }
 
-        var shouldForceScrollToBottom by remember { mutableStateOf(false) }
         var autoScrollEnabled by remember { mutableStateOf(true) }
         var isProgrammaticScroll by remember { mutableStateOf(false) }
+        var forceScrollSignal by remember { mutableIntStateOf(0) }
+        val lastHandledForceScrollSignal = remember { intArrayOf(0) }
 
         LaunchedEffect(scrollState, cellHeight) {
             val thresholdPx = (cellHeight * 2).toInt().coerceAtLeast(1)
             snapshotFlow {
-                Triple(scrollState.isScrollInProgress, scrollState.value, scrollState.maxValue)
-            }.collect { (isScrollInProgress, value, maxValue) ->
-                autoScrollEnabled = resolveAutoScrollStateOnScroll(
-                    isScrollInProgress = isScrollInProgress,
+                resolveAutoScrollStateOnScroll(
+                    isScrollInProgress = scrollState.isScrollInProgress,
                     isProgrammaticScroll = isProgrammaticScroll,
-                    currentValue = value,
-                    maxValue = maxValue,
+                    currentValue = scrollState.value,
+                    maxValue = scrollState.maxValue,
                     thresholdPx = thresholdPx,
                     currentAutoScrollEnabled = autoScrollEnabled,
                 )
+            }.collect { resolvedAutoScroll ->
+                autoScrollEnabled = resolvedAutoScroll
             }
         }
 
@@ -173,9 +174,12 @@ fun TerminalRenderer(
             cellHeight,
             maxHeightPx,
             cursorVisible,
-            shouldForceScrollToBottom,
+            forceScrollSignal,
             autoScrollEnabled,
         ) {
+            val shouldForceScrollToBottom = forceScrollSignal != lastHandledForceScrollSignal[0]
+            lastHandledForceScrollSignal[0] = forceScrollSignal
+
             val cursorY = (cursorRow + scrollbackLineCount) * cellHeight
             val targetScroll = calculateTargetScrollOffset(
                 autoScrollEnabled = autoScrollEnabled,
@@ -188,11 +192,6 @@ fun TerminalRenderer(
                 cursorVisible = cursorVisible,
                 enabled = enabled,
             )
-
-            if (shouldForceScrollToBottom) {
-                shouldForceScrollToBottom = false
-                autoScrollEnabled = true
-            }
 
             if (targetScroll != null && targetScroll != scrollState.value) {
                 isProgrammaticScroll = true
@@ -207,7 +206,7 @@ fun TerminalRenderer(
         val handleSoftInput: (String) -> Unit =
             remember(onInput, modifierKeyState, onModifierStateChange) {
                 { input ->
-                    shouldForceScrollToBottom = true
+                    forceScrollSignal++
                     autoScrollEnabled = true
 
                     if (modifierKeyState.ctrlPressed || modifierKeyState.altPressed) {
@@ -227,7 +226,7 @@ fun TerminalRenderer(
         val handleArrowKey: (ArrowDirection, Boolean) -> Unit =
             remember(onArrowKey) {
                 { direction, altPressed ->
-                    shouldForceScrollToBottom = true
+                    forceScrollSignal++
                     autoScrollEnabled = true
                     onArrowKey(direction, altPressed)
                 }
