@@ -1,9 +1,10 @@
 # KMP Terminal Emulator
 
 [![CI](https://github.com/JohNan/kmp-terminal-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/JohNan/kmp-terminal-emulator/actions/workflows/ci.yml)
+[![GitHub Pages](https://img.shields.io/badge/GitHub_Pages-Live_Demo-brightgreen.svg?logo=github)](https://johnan.github.io/kmp-terminal-emulator/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin_Multiplatform-2.1.0-purple.svg)](https://kotlinlang.org/docs/multiplatform.html)
-[![Compose Multiplatform](https://img.shields.io/badge/Compose_Multiplatform-1.7.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin_Multiplatform-2.4.20-purple.svg)](https://kotlinlang.org/docs/multiplatform.html)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose_Multiplatform-1.11.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
 [![Android](https://img.shields.io/badge/Target-Android-3DDC84.svg?logo=android&logoColor=white)](https://developer.android.com)
 [![iOS](https://img.shields.io/badge/Target-iOS-000000.svg?logo=apple&logoColor=white)](https://developer.apple.com/ios/)
 [![JVM](https://img.shields.io/badge/Target-JVM_Desktop-ED8B00.svg?logo=openjdk&logoColor=white)](https://openjdk.org)
@@ -12,7 +13,56 @@
 
 A modern Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform rendering library. This library provides a standalone, high-performance, GPU-accelerated terminal emulator designed for mobile, desktop, and web applications.
 
-👉 **[🚀 Try Live Interactive WebAssembly Demo](https://johnan.github.io/kmp-terminal-emulator/)**
+👉 **[🚀 Try Live Interactive WebAssembly Demo on GitHub Pages](https://johnan.github.io/kmp-terminal-emulator/)**
+
+---
+
+## Interactive Demos & Showcase
+
+The repository includes multiple demo implementations targeting different environments and runtimes:
+
+### 1. [Live WebAssembly Demo (GitHub Pages)](https://johnan.github.io/kmp-terminal-emulator/)
+- **Live URL**: [https://johnan.github.io/kmp-terminal-emulator/](https://johnan.github.io/kmp-terminal-emulator/)
+- **Module**: [`demo-web`](demo-web)
+- An interactive in-browser terminal REPL compiled via Kotlin/Wasm (`wasmJs`) and rendered with Compose Multiplatform on a GPU-accelerated Skia canvas.
+- Automatically built and deployed on pushes to `main` via [GitHub Actions](.github/workflows/deploy-pages.yml).
+- Supports interactive typing, ANSI color test patterns (16 / 256 / 24-bit TrueColor), Unicode box drawing, alternate screen buffer (`htop` preview), and configurable cursor styling.
+
+### 2. Desktop Terminal Emulator (`demo-jvm`)
+- **Module**: [`demo-jvm`](demo-jvm)
+- A native desktop application running on macOS, Linux, and Windows using Compose Multiplatform for JVM.
+- Features a standalone interactive REPL terminal window with real-time ANSI sequence parsing and keyboard navigation.
+- Run locally:
+  ```bash
+  mise run run-jvm
+  # or
+  ./gradlew :demo-jvm:run
+  ```
+
+### 3. Modern Web Application with Vite & TypeScript (`demo-vite`)
+- **Directory**: [`demo-vite`](demo-vite)
+- Demonstrates how to consume the compiled WebAssembly terminal emulator inside a modern TypeScript single-page application using Vite.
+- Includes interactive UI controls for real-time theme switching (Default, Monokai, Nord, Solarized Dark/Light), cursor style selection (`BLOCK`, `BEAM`, `UNDERLINE`), font size scaling, and one-click ANSI stress-testing scripts (color matrices, progress bars, matrix rain, htop alt-buffer).
+- Run locally:
+  ```bash
+  cd demo-vite
+  npm install
+  npm run dev
+  ```
+
+### 4. Zero-Framework Vanilla HTML/JS Integration (`demo-html`)
+- **Directory**: [`demo-html`](demo-html)
+- Demonstrates how to mount, control, and receive events from the compiled Wasm terminal emulator directly in plain HTML and JavaScript without any frontend framework or bundler.
+- Run locally with any static web server:
+  ```bash
+  npx http-server demo-html -p 8083
+  # or
+  python3 -m http.server -d demo-html 8083
+  ```
+
+### 5. Web Distribution Package (`npm-package`)
+- **Directory**: [`npm-package`](npm-package)
+- A self-contained npm-ready package (`@JohNan/kmp-terminal`) generated via `./build-npm.sh` that bundles the production WebAssembly executable, JavaScript interop loader (`demo-web.js`), and Compose web resources for integration in web applications.
 
 ---
 
@@ -39,6 +89,9 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - `TerminalConfig` & `terminalConfig { ... }` DSL for core engine dimensions, scrollback capacity, OSC 52 security policies, tab stops, and bell behavior.
   - `TerminalUiConfig` & `terminalUiConfig { ... }` DSL for typography, cursor styles (`BLOCK`, `UNDERLINE`, `BEAM`), gesture controls, key bar layouts, and color themes.
   - Ambient Compose propagation via `LocalTerminalUiConfig`.
+- **Reactive State & Attention Events**:
+  - `screenState` StateFlow emitting immutable buffer snapshots on change.
+  - Reactive event flows: `attentionEvents` (OSC 9 / OSC 777 desktop notifications), `bellEvents` / `bellCount`, `clipboardEvents` / `clipboardWriteCount`, and `windowTitle`.
 - **Text Selection & Clipboard Management**:
   - Multi-line text selection overlay with visual start/end handle indicators.
   - Drag-selection gesture tracking, long-press activation, and auto-copy on release.
@@ -48,10 +101,13 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - Cursor movement, scrolling regions (DECSTBM), alternate screen buffer (`altBuffer` for vim/htop/less).
   - SGR Mouse Tracking (1006) and legacy xterm mouse tracking (press, release, drag, wheel).
   - OSC 52 clipboard integration with configurable security policies (`ASK`, `ALWAYS_ALLOW`, `ALWAYS_DENY`).
+  - Independent deep state cloning (`TerminalEmulator.copy()`) for headless sessions and speculative execution (e.g. Mosh).
+  - Soft-wrap row querying (`ScreenBuffer.isRowWrapped(row)`).
 - **Mobile & Desktop Responsive Features**:
   - Soft keyboard modifier toggle integration (Ctrl, Alt, Shift states).
   - Monospace cell measurement with sub-pixel precision to eliminate column drift.
   - Low-allocation batching render loop with LRU cache.
+  - Touch-scroll disambiguation (`touchScrollSendsWheelOnly`) to send mouse wheel events on mobile drag gestures in tmux and vim.
 - **Multiplatform Target Support**:
   - WebAssembly (`wasmJs`)
   - Desktop (`jvm`)
@@ -64,10 +120,13 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 
 ```
 kmp-terminal/
-├── terminal-core/       # Pure Kotlin Multiplatform emulation engine & screen buffer
+├── terminal-core/       # Pure Kotlin Multiplatform emulation engine & screen buffer (Zero UI dependencies)
 ├── terminal-ui/         # Compose Multiplatform canvas renderer & UI components
-├── demo-web/            # WebAssembly (wasmJs) interactive demo
-└── demo-jvm/            # JVM Desktop Compose demo
+├── demo-web/            # WebAssembly (wasmJs) interactive demo & JS bridge (deployed to GitHub Pages)
+├── demo-jvm/            # JVM Desktop Compose demo (macOS, Linux, Windows)
+├── demo-vite/           # Vite + TypeScript web application integrating Wasm terminal
+├── demo-html/           # Vanilla HTML/JS zero-framework integration demo
+└── npm-package/         # NPM package bundle (@JohNan/kmp-terminal)
 ```
 
 ---
@@ -81,10 +140,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // Core ANSI engine, scrollback buffer, and text selection (zero UI dependencies)
-            implementation("io.github.johnan:terminal-core:0.3.0")
+            implementation("io.github.johnan:terminal-core:0.3.11")
 
             // Optional: Compose Multiplatform canvas renderer & gestures
-            implementation("io.github.johnan:terminal-ui:0.3.0")
+            implementation("io.github.johnan:terminal-ui:0.3.11")
         }
     }
 }
@@ -163,8 +222,6 @@ fun TerminalScreen(emulator: TerminalEmulator) {
         }
     }
 
-
-
     TerminalRenderer(
         terminalState = terminalState,
         config = uiConfig,
@@ -218,17 +275,29 @@ val firstRowWraps = next.getScreenBuffer().isRowWrapped(0)
 
 ## Tooling & Verification
 
-This project uses `mise` for reproducible toolchain management (JDK 21, Android SDK, Gradle).
+This project uses `mise` for reproducible toolchain management (JDK 21, Android SDK, Gradle, Node 20).
 
 ```bash
-# Compile WebAssembly demo
+# Compile WebAssembly target
 mise run compile-wasm
 
-# Run local WebAssembly demo server
+# Run local WebAssembly browser demo
 mise run run-demo
+
+# Run native JVM Desktop demo
+mise run run-jvm
+
+# Build all targets
+mise run build
 
 # Execute all multiplatform unit tests
 mise exec -- ./gradlew allTests
+
+# Run fast unit test suite
+mise exec -- ./gradlew test
+
+# Verify Kotlin code formatting and linting
+mise exec -- ./gradlew ktlintCheck
 ```
 
 ---
