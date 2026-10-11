@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
@@ -142,7 +143,26 @@ fun TerminalRenderer(
             onKeyboardToggleAvailable(onRequestFocus)
         }
 
-        var shouldForceScrollToBottom by remember { mutableStateOf(false) }
+        var autoScrollEnabled by remember { mutableStateOf(true) }
+        var isProgrammaticScroll by remember { mutableStateOf(false) }
+        var forceScrollSignal by remember { mutableIntStateOf(0) }
+        val lastHandledForceScrollSignal = remember { intArrayOf(0) }
+
+        LaunchedEffect(scrollState, cellHeight) {
+            val thresholdPx = (cellHeight * 2).toInt().coerceAtLeast(1)
+            snapshotFlow {
+                resolveAutoScrollStateOnScroll(
+                    isScrollInProgress = scrollState.isScrollInProgress,
+                    isProgrammaticScroll = isProgrammaticScroll,
+                    currentValue = scrollState.value,
+                    maxValue = scrollState.maxValue,
+                    thresholdPx = thresholdPx,
+                    currentAutoScrollEnabled = autoScrollEnabled,
+                )
+            }.collect { resolvedAutoScroll ->
+                autoScrollEnabled = resolvedAutoScroll
+            }
+        }
 
         val cursorRow = terminalState.cursorRow
         val cursorVisible = terminalState.cursorVisible
@@ -150,31 +170,35 @@ fun TerminalRenderer(
         LaunchedEffect(
             cursorRow,
             scrollbackLineCount,
+            scrollState.maxValue,
             cellHeight,
             maxHeightPx,
             cursorVisible,
-            shouldForceScrollToBottom,
+            forceScrollSignal,
+            autoScrollEnabled,
         ) {
-            if (shouldForceScrollToBottom) {
-                scrollState.scrollTo(scrollState.maxValue)
-                shouldForceScrollToBottom = false
-                return@LaunchedEffect
-            }
-
-            if (!enabled || !cursorVisible) return@LaunchedEffect
+            val shouldForceScrollToBottom = forceScrollSignal != lastHandledForceScrollSignal[0]
+            lastHandledForceScrollSignal[0] = forceScrollSignal
 
             val cursorY = (cursorRow + scrollbackLineCount) * cellHeight
-            val viewportTop = scrollState.value
-            val viewportBottom = viewportTop + maxHeightPx
+            val targetScroll = calculateTargetScrollOffset(
+                autoScrollEnabled = autoScrollEnabled,
+                shouldForceScrollToBottom = shouldForceScrollToBottom,
+                cursorY = cursorY,
+                cellHeight = cellHeight,
+                viewportTop = scrollState.value,
+                viewportHeight = maxHeightPx,
+                maxScroll = scrollState.maxValue,
+                cursorVisible = cursorVisible,
+                enabled = enabled,
+            )
 
-            if (cursorY < viewportTop) {
-                scrollState.scrollTo(cursorY.toInt().coerceIn(0, scrollState.maxValue))
-            } else if (cursorY + cellHeight > viewportBottom) {
-                val isNearBottom =
-                    scrollState.maxValue == 0 || (scrollState.maxValue - scrollState.value) <= (cellHeight * 2).toInt()
-                if (isNearBottom) {
-                    val targetScroll = (cursorY + cellHeight - maxHeightPx).toInt()
-                    scrollState.scrollTo(targetScroll.coerceIn(0, scrollState.maxValue))
+            if (targetScroll != null && targetScroll != scrollState.value) {
+                isProgrammaticScroll = true
+                try {
+                    scrollState.scrollTo(targetScroll)
+                } finally {
+                    isProgrammaticScroll = false
                 }
             }
         }
@@ -182,7 +206,8 @@ fun TerminalRenderer(
         val handleSoftInput: (String) -> Unit =
             remember(onInput, modifierKeyState, onModifierStateChange) {
                 { input ->
-                    shouldForceScrollToBottom = true
+                    forceScrollSignal++
+                    autoScrollEnabled = true
 
                     if (modifierKeyState.ctrlPressed || modifierKeyState.altPressed) {
                         val transformed = buildString(input.length) {
@@ -198,13 +223,22 @@ fun TerminalRenderer(
                 }
             }
 
+        val handleArrowKey: (ArrowDirection, Boolean) -> Unit =
+            remember(onArrowKey) {
+                { direction, altPressed ->
+                    forceScrollSignal++
+                    autoScrollEnabled = true
+                    onArrowKey(direction, altPressed)
+                }
+            }
+
         if (enabled && selectionState is SelectionState.None) {
             TerminalInputCapture(
                 enabled = enabled,
                 focusRequester = internalFocusRequester,
                 showKeyboardSignal = effectiveShowKeyboardSignal,
                 onInput = handleSoftInput,
-                onArrowKey = onArrowKey,
+                onArrowKey = handleArrowKey,
                 onLog = onLog,
                 modifier = Modifier.fillMaxSize(),
             )
