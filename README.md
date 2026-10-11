@@ -21,14 +21,20 @@ A modern Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multipl
 
 The repository includes multiple demo implementations targeting different environments and runtimes:
 
-### 1. [Live WebAssembly Demo (GitHub Pages)](https://johnan.github.io/kmp-terminal-emulator/)
+<details>
+<summary><strong>1. Live WebAssembly Demo (GitHub Pages)</strong> &mdash; In-browser REPL via Kotlin/Wasm</summary>
+
 - **Live URL**: [https://johnan.github.io/kmp-terminal-emulator/](https://johnan.github.io/kmp-terminal-emulator/)
 - **Module**: [`demo-web`](demo-web)
 - An interactive in-browser terminal REPL compiled via Kotlin/Wasm (`wasmJs`) and rendered with Compose Multiplatform on a GPU-accelerated Skia canvas.
 - Automatically built and deployed on pushes to `main` via [GitHub Actions](.github/workflows/deploy-pages.yml).
 - Supports interactive typing, ANSI color test patterns (16 / 256 / 24-bit TrueColor), Unicode box drawing, alternate screen buffer (`htop` preview), and configurable cursor styling.
 
-### 2. Desktop Terminal Emulator (`demo-jvm`)
+</details>
+
+<details>
+<summary><strong>2. Desktop Terminal Emulator (<code>demo-jvm</code>)</strong> &mdash; Native JVM application (macOS, Linux, Windows)</summary>
+
 - **Module**: [`demo-jvm`](demo-jvm)
 - A native desktop application running on macOS, Linux, and Windows using Compose Multiplatform for JVM.
 - Features a standalone interactive REPL terminal window with real-time ANSI sequence parsing and keyboard navigation.
@@ -39,7 +45,11 @@ The repository includes multiple demo implementations targeting different enviro
   ./gradlew :demo-jvm:run
   ```
 
-### 3. Modern Web Application with Vite & TypeScript (`demo-vite`)
+</details>
+
+<details>
+<summary><strong>3. Modern Web Application with Vite & TypeScript (<code>demo-vite</code>)</strong> &mdash; Frontend bundler integration</summary>
+
 - **Directory**: [`demo-vite`](demo-vite)
 - Demonstrates how to consume the compiled WebAssembly terminal emulator inside a modern TypeScript single-page application using Vite.
 - Includes interactive UI controls for real-time theme switching (Default, Monokai, Nord, Solarized Dark/Light), cursor style selection (`BLOCK`, `BEAM`, `UNDERLINE`), font size scaling, and one-click ANSI stress-testing scripts (color matrices, progress bars, matrix rain, htop alt-buffer).
@@ -50,7 +60,11 @@ The repository includes multiple demo implementations targeting different enviro
   npm run dev
   ```
 
-### 4. Zero-Framework Vanilla HTML/JS Integration (`demo-html`)
+</details>
+
+<details>
+<summary><strong>4. Zero-Framework Vanilla HTML/JS Integration (<code>demo-html</code>)</strong> &mdash; Direct DOM mounting over static HTTP</summary>
+
 - **Directory**: [`demo-html`](demo-html)
 - Demonstrates how to mount, control, and receive events from the compiled Wasm terminal emulator directly in plain HTML and JavaScript without any frontend framework or bundler.
 - Run locally with any static web server:
@@ -60,9 +74,15 @@ The repository includes multiple demo implementations targeting different enviro
   python3 -m http.server -d demo-html 8083
   ```
 
-### 5. Web Distribution Package (`npm-package`)
+</details>
+
+<details>
+<summary><strong>5. Web Distribution Package (<code>npm-package</code>)</strong> &mdash; Pre-packaged NPM bundle</summary>
+
 - **Directory**: [`npm-package`](npm-package)
 - A self-contained npm-ready package (`@JohNan/kmp-terminal`) generated via `./build-npm.sh` that bundles the production WebAssembly executable, JavaScript interop loader (`demo-web.js`), and Compose web resources for integration in web applications.
+
+</details>
 
 ---
 
