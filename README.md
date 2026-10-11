@@ -84,6 +84,27 @@ The repository includes multiple demo implementations targeting different enviro
 
 </details>
 
+<details>
+<summary><strong>6. Mobile Android & iOS Showcase (<code>demo-mobile</code>)</strong> &mdash; Native Compose Multiplatform Mobile App</summary>
+
+- **Module**: [`demo-mobile`](demo-mobile)
+- A shared Compose Multiplatform mobile application targeting Android (APK) and iOS (`ComposeUIViewController` export).
+- Features an interactive mobile REPL with a floating soft-key bar (Ctrl, Alt, Shift, Esc, Tab, Arrows), virtual keyboard toggle, touch-drag selection handles, and quick-action ANSI test chips (Colors, Styles, Unicode, Matrix rain, Htop alternate buffer).
+- Run on Android:
+  ```bash
+  mise run assemble-android
+  # or
+  ./gradlew :demo-mobile:assembleDebug
+  ```
+- Compile for iOS Simulator:
+  ```bash
+  mise run compile-ios-demo
+  # or
+  ./gradlew :demo-mobile:compileKotlinIosSimulatorArm64
+  ```
+
+</details>
+
 ---
 
 ## Production Showcase
@@ -142,6 +163,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 kmp-terminal/
 ├── terminal-core/       # Pure Kotlin Multiplatform emulation engine & screen buffer (Zero UI dependencies)
 ├── terminal-ui/         # Compose Multiplatform canvas renderer & UI components
+├── demo-mobile/         # Android & iOS Compose Multiplatform mobile showcase
 ├── demo-web/            # WebAssembly (wasmJs) interactive demo & JS bridge (deployed to GitHub Pages)
 ├── demo-jvm/            # JVM Desktop Compose demo (macOS, Linux, Windows)
 ├── demo-vite/           # Vite + TypeScript web application integrating Wasm terminal
@@ -306,6 +328,12 @@ mise run run-demo
 
 # Run native JVM Desktop demo
 mise run run-jvm
+
+# Assemble Android debug APK (demo-mobile)
+mise run assemble-android
+
+# Compile iOS simulator target (demo-mobile)
+mise run compile-ios-demo
 
 # Build all targets
 mise run build
