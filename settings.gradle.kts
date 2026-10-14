@@ -15,6 +15,7 @@ pluginManagement {
 rootProject.name = "kmp-terminal"
 include(":terminal-core")
 include(":terminal-ui")
+include(":terminal-tui")
 include(":demo-web")
 include(":demo-jvm")
 include(":demo-mobile")

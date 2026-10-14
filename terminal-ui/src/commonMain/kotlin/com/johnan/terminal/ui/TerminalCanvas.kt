@@ -35,6 +35,7 @@ import com.johnan.terminal.core.TerminalCell
 import com.johnan.terminal.core.TerminalColor
 import com.johnan.terminal.core.TerminalScreenState
 import com.johnan.terminal.core.UrlRange
+import com.johnan.terminal.core.toComposeColor
 
 /**
  * Calculates the index range of rows visible within the viewport, including an overscan margin.

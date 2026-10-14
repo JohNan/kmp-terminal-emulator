@@ -189,3 +189,56 @@ next.processOutput(diff)
 Also new: `TerminalEmulator.bellCount`, `clipboardWriteCount` and `lastClipboardWrite` (updated for every OSC 52 write
 request regardless of `Osc52Policy`), and `ScreenBuffer.isRowWrapped(row)`. Fixed: `maxScrollback = 0` no longer
 crashes when output scrolls past the bottom or a resize reflows overflowing rows.
+
+---
+
+### Recipe 7: Pure Kotlin `TerminalPalette` & Decoupled `:terminal-core`
+
+`:terminal-core` is now completely decoupled from Compose UI dependencies, adding native compilation targets (`macosArm64`, `macosX64`, `linuxX64`).
+
+- **Compose UI Users**: `TerminalColorScheme` and `TerminalColor.toComposeColor(...)` have moved to `:terminal-ui` inside `package com.johnan.terminal.core`. Since `:terminal-ui` already exposes an API dependency on `:terminal-core`, **existing Compose consumers require zero code or import changes**.
+- **Non-UI / Backend / CLI Users**: Use `TerminalPalette` and `TerminalColor.toRgbInt(...)` for pure Kotlin 24-bit RGB packed colors (`0xRRGGBB`):
+
+```kotlin
+import com.johnan.terminal.core.TerminalColor
+import com.johnan.terminal.core.TerminalPalette
+
+// Pure Kotlin color resolution with packed RGB ints
+val palette = TerminalPalette.SOLARIZED_DARK
+val fgRgb = TerminalColor.toRgbInt(TerminalColor.Standard(1), palette = palette)
+val r = TerminalColor.red(fgRgb)
+val g = TerminalColor.green(fgRgb)
+val b = TerminalColor.blue(fgRgb)
+```
+
+---
+
+### Recipe 8: Using `:terminal-tui` for Terminal Applications & CLI Tools
+
+The new `:terminal-tui` module provides a low-allocation differential ANSI renderer and VT100 / SGR input parser for building command-line TUI applications without Compose:
+
+```kotlin
+import com.johnan.terminal.tui.TuiAnsiRenderer
+import com.johnan.terminal.tui.TuiInputParser
+import com.johnan.terminal.tui.TuiSurface
+import com.johnan.terminal.tui.createPlatformTerminalIo
+
+val io = createPlatformTerminalIo()
+io.enterRawTuiMode()
+try {
+    val size = io.getTerminalSize()
+    val surface = TuiSurface(rows = size.rows, cols = size.cols)
+    val renderer = TuiAnsiRenderer()
+    val parser = TuiInputParser()
+
+    // Draw UI components with rounded boxes and text
+    surface.drawBox(row = 0, col = 0, height = size.rows, width = size.cols, title = "My TUI", borderFgRgb = 0x81A1C1, bgRgb = 0x2E3440)
+    surface.drawText(row = 2, col = 4, text = "Press Q to exit", fgRgb = 0xECEFF4, bgRgb = 0x2E3440)
+
+    // Render frame atomically with minimal ANSI diff
+    io.writeStdout(renderer.render(surface))
+} finally {
+    io.exitRawTuiMode()
+}
+```
+
