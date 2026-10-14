@@ -35,3 +35,6 @@ jobs:
 
       - name: Compile iOS Demo (Simulator Target)
         run: ./gradlew :demo-mobile:compileKotlinIosSimulatorArm64 --no-daemon
+
+      - name: Compile TUI Native & Multiplatform Metadata
+        run: ./gradlew :terminal-core:allMetadataJar :terminal-tui:allMetadataJar :terminal-tui:compileKotlinLinuxX64 --no-daemon

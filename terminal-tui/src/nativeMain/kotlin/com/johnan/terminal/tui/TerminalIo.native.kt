@@ -1,6 +1,7 @@
 package com.johnan.terminal.tui
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
@@ -44,7 +45,7 @@ import platform.posix.termios
 import platform.posix.winsize
 import kotlin.experimental.ExperimentalNativeApi
 
-@OptIn(ExperimentalForeignApi::class, ExperimentalNativeApi::class)
+@OptIn(ExperimentalForeignApi::class, ExperimentalNativeApi::class, UnsafeNumber::class)
 class NativeTerminalIo : TerminalIo {
     private val origTermios = nativeHeap.alloc<termios>()
     private var inRawMode = false
