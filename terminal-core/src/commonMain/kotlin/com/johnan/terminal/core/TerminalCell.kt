@@ -1,7 +1,5 @@
 package com.johnan.terminal.core
 
-import androidx.compose.ui.graphics.Color
-
 /**
  * Character cell within the terminal grid containing glyph data and visual styling attributes.
  */
@@ -131,9 +129,11 @@ sealed class TerminalColor {
     ) : TerminalColor()
 
     companion object {
-        private val STANDARD_DARK_CACHE = Array(16) { i -> computeStandardColor(i, true) }
-        private val STANDARD_LIGHT_CACHE = Array(16) { i -> computeStandardColor(i, false) }
-        private val PALETTE_256_CACHE = Array(256) { i -> compute256Color(i) }
+        const val TRANSPARENT_RGB: Int = -1
+
+        private val STANDARD_DARK_CACHE = IntArray(16) { i -> computeStandardRgb(i, true) }
+        private val STANDARD_LIGHT_CACHE = IntArray(16) { i -> computeStandardRgb(i, false) }
+        private val PALETTE_256_CACHE = IntArray(256) { i -> compute256Rgb(i) }
 
         private val STANDARD_INSTANCES = Array(16) { i -> Standard(i) }
         private val PALETTE_256_INSTANCES = Array(256) { i -> Palette256(i) }
@@ -151,70 +151,78 @@ sealed class TerminalColor {
         ): Palette256 = if (code in 0..255) PALETTE_256_INSTANCES[code] else Palette256(code)
 
         /**
-         * Converts this [TerminalColor] to a Compose [Color].
+         * Converts this [TerminalColor] to a 24-bit RGB integer (0xRRGGBB).
+         * Returns [TRANSPARENT_RGB] (-1) when [terminalColor] is [Default] as a background and [palette] is null.
          */
-        fun toComposeColor(
+        fun toRgbInt(
             terminalColor: TerminalColor,
-            scheme: TerminalColorScheme? = null,
+            palette: TerminalPalette? = null,
             isDark: Boolean = true,
             isBackground: Boolean = false,
-        ): Color = when (terminalColor) {
+        ): Int = when (terminalColor) {
             is Default -> {
                 if (isBackground) {
-                    scheme?.background ?: Color.Transparent
+                    palette?.background ?: TRANSPARENT_RGB
                 } else {
-                    scheme?.foreground ?: (if (isDark) Color(0xFFE0E0E0) else Color(0xFF000000))
+                    palette?.foreground ?: (if (isDark) 0xE0E0E0 else 0x000000)
                 }
             }
             is Standard -> {
-                scheme?.getAnsiColor(terminalColor.code) ?: getStandardColor(terminalColor.code, isDark)
+                palette?.getAnsiRgb(terminalColor.code) ?: getStandardRgb(terminalColor.code, isDark)
             }
-            is Palette256 -> get256Color(terminalColor.code)
-            is Rgb -> Color(terminalColor.r, terminalColor.g, terminalColor.b)
+            is Palette256 -> get256Rgb(terminalColor.code)
+            is Rgb -> ((terminalColor.r and 0xFF) shl 16) or ((terminalColor.g and 0xFF) shl 8) or
+                (terminalColor.b and 0xFF)
         }
 
-        private fun getStandardColor(code: Int, isDark: Boolean): Color = if (code in 0..15) {
+        fun red(rgb: Int): Int = (rgb shr 16) and 0xFF
+
+        fun green(rgb: Int): Int = (rgb shr 8) and 0xFF
+
+        fun blue(rgb: Int): Int = rgb and 0xFF
+
+        private fun getStandardRgb(code: Int, isDark: Boolean): Int = if (code in 0..15) {
             if (isDark) STANDARD_DARK_CACHE[code] else STANDARD_LIGHT_CACHE[code]
         } else {
-            if (isDark) Color(0xFFE0E0E0) else Color(0xFF000000)
+            if (isDark) 0xE0E0E0 else 0x000000
         }
 
-        private fun computeStandardColor(code: Int, isDark: Boolean): Color = when (code) {
-            0 -> Color(0xFF000000)
-            1 -> Color(0xFFCD0000)
-            2 -> Color(0xFF00CD00)
-            3 -> Color(0xFFCDCD00)
-            4 -> Color(0xFF0000EE)
-            5 -> Color(0xFFCD00CD)
-            6 -> Color(0xFF00CDCD)
-            7 -> Color(0xFFE5E5E5)
-            8 -> Color(0xFF7F7F7F)
-            9 -> Color(0xFFFF0000)
-            10 -> Color(0xFF00FF00)
-            11 -> Color(0xFFFFFF00)
-            12 -> Color(0xFF5C5CFF)
-            13 -> Color(0xFFFF00FF)
-            14 -> Color(0xFF00FFFF)
-            15 -> Color(0xFFFFFFFF)
-            else -> if (isDark) Color(0xFFE0E0E0) else Color(0xFF000000)
+        private fun computeStandardRgb(code: Int, isDark: Boolean): Int = when (code) {
+            0 -> 0x000000
+            1 -> 0xCD0000
+            2 -> 0x00CD00
+            3 -> 0xCDCD00
+            4 -> 0x0000EE
+            5 -> 0xCD00CD
+            6 -> 0x00CDCD
+            7 -> 0xE5E5E5
+            8 -> 0x7F7F7F
+            9 -> 0xFF0000
+            10 -> 0x00FF00
+            11 -> 0xFFFF00
+            12 -> 0x5C5CFF
+            13 -> 0xFF00FF
+            14 -> 0x00FFFF
+            15 -> 0xFFFFFF
+            else -> if (isDark) 0xE0E0E0 else 0x000000
         }
 
-        private fun get256Color(code: Int): Color = if (code in 0..255) PALETTE_256_CACHE[code] else Color(0xFFE0E0E0)
+        private fun get256Rgb(code: Int): Int = if (code in 0..255) PALETTE_256_CACHE[code] else 0xE0E0E0
 
-        private fun compute256Color(code: Int): Color = when {
-            code < 16 -> computeStandardColor(code, true)
+        private fun compute256Rgb(code: Int): Int = when {
+            code < 16 -> computeStandardRgb(code, true)
             code < 232 -> {
                 val index = code - 16
                 val r = (index / 36) * 51
                 val g = ((index % 36) / 6) * 51
                 val b = (index % 6) * 51
-                Color(r, g, b)
+                (r shl 16) or (g shl 8) or b
             }
             code < 256 -> {
                 val gray = 8 + (code - 232) * 10
-                Color(gray, gray, gray)
+                (gray shl 16) or (gray shl 8) or gray
             }
-            else -> Color(0xFFE0E0E0)
+            else -> 0xE0E0E0
         }
     }
 }

@@ -3,12 +3,19 @@
 > Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform GPU-accelerated canvas renderer.
 
 ## Architecture
-- `terminal-core`: Pure Kotlin Multiplatform emulation state machine, screen buffer, ANSI parser, and text selection models. Zero UI dependencies.
+- `terminal-core`: Pure Kotlin Multiplatform emulation state machine, screen buffer, ANSI parser, and text selection models. Zero UI dependencies. Targets: JVM, Android, WasmJS, iOS, macOS Arm64/x64, Linux x64.
 - `terminal-ui`: Compose Multiplatform canvas renderer, gesture detectors, platform native input capture, and selection overlays.
+- `terminal-tui`: Terminal User Interface (TUI) engine featuring differential ANSI renderer, 24-bit TrueColor, offscreen grid surface, and VT100/SGR raw input parser.
 
 ## Core API References
 - [Core Configuration](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalConfig.kt): `TerminalConfig`, `terminalConfig { ... }`, `BellBehavior`
+- [Terminal Palette](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalPalette.kt): `TerminalPalette`, `TerminalColor.toRgbInt`
 - [UI Configuration](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalUiConfig.kt): `TerminalUiConfig`, `terminalUiConfig { ... }`, `TerminalGestureConfig` (`touchScrollSendsWheelOnly`), `LocalTerminalUiConfig`, `TerminalCursorStyle`
+- [Terminal Color Scheme](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/core/TerminalColorScheme.kt): `TerminalColorScheme`, `TerminalColor.toComposeColor`
+- [TUI Surface](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiSurface.kt): `TuiSurface`, `TuiCellStyle`
+- [TUI ANSI Renderer](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiAnsiRenderer.kt): `TuiAnsiRenderer`
+- [TUI Input Parser](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiInputParser.kt): `TuiInputParser`, `TuiEvent`, `TuiKey`
+- [Terminal I/O](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TerminalIo.kt): `TerminalIo`, `TerminalSize`, `createPlatformTerminalIo`
 - [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `copyToClipboard`, `copy()` (deep fork), `bellCount`, `clipboardWriteCount`, `lastClipboardWrite`
 - [Screen Buffer](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/ScreenBuffer.kt): `ScreenBuffer`, `getScrollback`, `isRowWrapped(row)`
 - [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable

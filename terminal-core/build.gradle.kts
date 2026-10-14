@@ -1,8 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.library)
-    alias(libs.plugins.compose.multiplatform)
-    alias(libs.plugins.compose.compiler)
     `maven-publish`
     signing
 }
@@ -35,14 +33,15 @@ kotlin {
         }
     }
 
+    macosArm64()
+    macosX64()
+    linuxX64()
+
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
-
-            implementation(compose.runtime)
-            implementation(compose.ui)
         }
 
         commonTest.dependencies {

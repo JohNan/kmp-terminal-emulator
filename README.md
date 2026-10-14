@@ -7,11 +7,13 @@
 [![Compose Multiplatform](https://img.shields.io/badge/Compose_Multiplatform-1.11.1-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
 [![Android](https://img.shields.io/badge/Target-Android-3DDC84.svg?logo=android&logoColor=white)](https://developer.android.com)
 [![iOS](https://img.shields.io/badge/Target-iOS-000000.svg?logo=apple&logoColor=white)](https://developer.apple.com/ios/)
+[![macOS](https://img.shields.io/badge/Target-macOS-000000.svg?logo=apple&logoColor=white)](https://apple.com/macos/)
+[![Linux](https://img.shields.io/badge/Target-Linux-FCC624.svg?logo=linux&logoColor=black)](https://kernel.org)
 [![JVM](https://img.shields.io/badge/Target-JVM_Desktop-ED8B00.svg?logo=openjdk&logoColor=white)](https://openjdk.org)
 [![WebAssembly](https://img.shields.io/badge/Target-WasmJs-654FF0.svg?logo=webassembly&logoColor=white)](https://webassembly.org/)
 [![Google Play](https://img.shields.io/badge/Google_Play-Production_App-34A853?logo=google-play&logoColor=white)](https://play.google.com/store/apps/details?id=com.johnan.sshclient)
 
-A modern Kotlin Multiplatform (KMP) terminal emulator engine and Compose Multiplatform rendering library. This library provides a standalone, high-performance, GPU-accelerated terminal emulator designed for mobile, desktop, and web applications.
+A modern Kotlin Multiplatform (KMP) terminal emulator engine, TUI differential rendering system, and Compose Multiplatform rendering library. Designed for mobile, desktop, CLI, and web applications.
 
 👉 **[🚀 Try Live Interactive WebAssembly Demo on GitHub Pages](https://johnan.github.io/kmp-terminal-emulator/)**
 
@@ -124,10 +126,12 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 ## Key Features
 
 - **Decoupled Tiered Architecture**: 
-  - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, and text selection models. Zero UI dependencies.
+  - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models. Zero UI dependencies.
   - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, gesture recognizers, platform-native input capture, selection overlays, and toolbar key bars.
-- **Type-Safe Configuration System**:
+  - `:terminal-tui`: Low-allocation differential ANSI terminal UI renderer, 24-bit TrueColor, offscreen grid surface (`TuiSurface`), and raw VT100 / SGR input parser (`TuiInputParser`).
+- **Type-Safe Configuration & Palette System**:
   - `TerminalConfig` & `terminalConfig { ... }` DSL for core engine dimensions, scrollback capacity, OSC 52 security policies, tab stops, and bell behavior.
+  - `TerminalPalette`: Pure Kotlin 24-bit RGB color palette models and fast ANSI code resolution (`TerminalColor.toRgbInt`).
   - `TerminalUiConfig` & `terminalUiConfig { ... }` DSL for typography, cursor styles (`BLOCK`, `UNDERLINE`, `BEAM`), gesture controls, key bar layouts, and color themes.
   - Ambient Compose propagation via `LocalTerminalUiConfig`.
 - **Reactive State & Attention Events**:
@@ -154,6 +158,8 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - Desktop (`jvm`)
   - Android (`androidMain`)
   - iOS (`iosArm64`, `iosSimulatorArm64`)
+  - macOS (`macosArm64`, `macosX64`)
+  - Linux (`linuxX64`)
 
 ---
 
@@ -163,6 +169,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 kmp-terminal/
 ├── terminal-core/       # Pure Kotlin Multiplatform emulation engine & screen buffer (Zero UI dependencies)
 ├── terminal-ui/         # Compose Multiplatform canvas renderer & UI components
+├── terminal-tui/        # Terminal User Interface (TUI) differential renderer & raw input parser
 ├── demo-mobile/         # Android & iOS Compose Multiplatform mobile showcase
 ├── demo-web/            # WebAssembly (wasmJs) interactive demo & JS bridge (deployed to GitHub Pages)
 ├── demo-jvm/            # JVM Desktop Compose demo (macOS, Linux, Windows)
@@ -186,6 +193,9 @@ kotlin {
 
             // Optional: Compose Multiplatform canvas renderer & gestures
             implementation("io.github.johnan:terminal-ui:0.3.11")
+
+            // Optional: Terminal User Interface (TUI) differential renderer & raw input engine
+            implementation("io.github.johnan:terminal-tui:0.3.11")
         }
     }
 }
@@ -311,6 +321,35 @@ next.processOutput("\u001B[31m world") // diff applied to the copy only
 val bellRang = next.bellCount > reference.bellCount
 val clipboardChanged = next.clipboardWriteCount > reference.clipboardWriteCount
 val firstRowWraps = next.getScreenBuffer().isRowWrapped(0)
+```
+
+### 5. TUI Differential Rendering & Raw Input (`terminal-tui`)
+
+Build native command-line interfaces and terminal applications using `TuiSurface` and `TuiAnsiRenderer`:
+
+```kotlin
+import com.johnan.terminal.tui.TuiAnsiRenderer
+import com.johnan.terminal.tui.TuiInputParser
+import com.johnan.terminal.tui.TuiSurface
+import com.johnan.terminal.tui.createPlatformTerminalIo
+
+val io = createPlatformTerminalIo()
+io.enterRawTuiMode()
+try {
+    val size = io.getTerminalSize()
+    val surface = TuiSurface(rows = size.rows, cols = size.cols)
+    val renderer = TuiAnsiRenderer()
+    val parser = TuiInputParser()
+
+    // Draw borders, titles, and text
+    surface.drawBox(row = 0, col = 0, height = size.rows, width = size.cols, title = "Console", borderFgRgb = 0x88C0D0, bgRgb = 0x2E3440)
+    surface.drawText(row = 2, col = 4, text = "Ready.", fgRgb = 0xECEFF4, bgRgb = 0x2E3440)
+
+    // Atomically render differential updates to stdout
+    io.writeStdout(renderer.render(surface))
+} finally {
+    io.exitRawTuiMode()
+}
 ```
 
 ---
