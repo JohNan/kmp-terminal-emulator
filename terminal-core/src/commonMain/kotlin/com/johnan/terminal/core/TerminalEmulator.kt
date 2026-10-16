@@ -226,12 +226,26 @@ class TerminalEmulator(
     }
 
     /**
+     * Parses and applies incoming terminal output bytes synchronously without acquiring [mutex].
+     */
+    fun processOutputSync(data: ByteArray) {
+        ansiParser.processBytes(data)
+        updateScreenState()
+    }
+
+    /**
+     * Parses and applies incoming terminal output text synchronously without acquiring [mutex].
+     */
+    fun processOutputSync(text: String) {
+        processOutputSync(text.encodeToByteArray())
+    }
+
+    /**
      * Parses and applies incoming terminal output bytes.
      */
     suspend fun processOutput(data: ByteArray) {
         mutex.withLock {
-            ansiParser.processBytes(data)
-            updateScreenState()
+            processOutputSync(data)
         }
     }
 
@@ -294,6 +308,19 @@ class TerminalEmulator(
     }
 
     /**
+     * Resizes the screen buffer dimensions synchronously and updates reactive screen state.
+     *
+     * @return true if dimensions changed, false if unchanged.
+     */
+    fun resizeSync(newRows: Int, newCols: Int): Boolean {
+        val resized = screenBuffer.resize(newRows, newCols)
+        if (resized) {
+            updateScreenState()
+        }
+        return resized
+    }
+
+    /**
      * Resizes the screen buffer dimensions and updates reactive screen state.
      *
      * @return true if dimensions changed, false if unchanged.
@@ -302,11 +329,16 @@ class TerminalEmulator(
         newRows: Int,
         newCols: Int,
     ): Boolean = mutex.withLock {
-        val resized = screenBuffer.resize(newRows, newCols)
-        if (resized) {
-            updateScreenState()
-        }
-        resized
+        resizeSync(newRows, newCols)
+    }
+
+    /**
+     * Clears all content on the active screen buffer and resets cursor position synchronously.
+     */
+    fun clearSync() {
+        screenBuffer.clearScreen()
+        screenBuffer.setCursorPosition(0, 0)
+        updateScreenState()
     }
 
     /**
@@ -314,10 +346,18 @@ class TerminalEmulator(
      */
     suspend fun clear() {
         mutex.withLock {
-            screenBuffer.clearScreen()
-            screenBuffer.setCursorPosition(0, 0)
-            updateScreenState()
+            clearSync()
         }
+    }
+
+    /**
+     * Resets screen buffer, cursor, and text formatting attributes to defaults synchronously.
+     */
+    fun resetSync() {
+        screenBuffer.clearScreen()
+        screenBuffer.setCursorPosition(0, 0)
+        screenBuffer.resetTextAttributes()
+        updateScreenState()
     }
 
     /**
@@ -325,10 +365,7 @@ class TerminalEmulator(
      */
     suspend fun reset() {
         mutex.withLock {
-            screenBuffer.clearScreen()
-            screenBuffer.setCursorPosition(0, 0)
-            screenBuffer.resetTextAttributes()
-            updateScreenState()
+            resetSync()
         }
     }
 
@@ -338,13 +375,96 @@ class TerminalEmulator(
     fun getScreenBuffer(): ScreenBuffer = screenBuffer
 
     /**
+     * Searches visible rows and scrollback buffer for matching text occurrences synchronously.
+     */
+    fun searchSync(
+        query: String,
+        ignoreCase: Boolean = true,
+    ): List<TerminalMatch> = screenBuffer.search(query, ignoreCase)
+
+    /**
      * Searches visible rows and scrollback buffer for matching text occurrences.
      */
     suspend fun search(
         query: String,
         ignoreCase: Boolean = true,
     ): List<TerminalMatch> = mutex.withLock {
-        screenBuffer.search(query, ignoreCase)
+        searchSync(query, ignoreCase)
+    }
+
+    /**
+     * Packs visible terminal grid cells into [outBuffer] using 4 integers per cell:
+     * - `offset + 0`: Unicode codepoint (`cell.char.code`)
+     * - `offset + 1`: Effective foreground 24-bit RGB (`0xRRGGBB`)
+     * - `offset + 2`: Effective background 24-bit RGB (`0xRRGGBB` or `-1` for transparent)
+     * - `offset + 3`: Attribute bitmask:
+     *   bit 0 = bold, bit 1 = italic, bit 2 = underline, bit 3 = reverse,
+     *   bit 4 = dim, bit 5 = blink, bit 6 = strikethrough, bit 7 = overline,
+     *   bit 8 = conceal, bit 9 = row is soft-wrapped (`isRowWrapped(row)`)
+     *
+     * @return Number of cells written (`0` if [outBuffer] is empty).
+     */
+    fun packGridToBuffer(
+        outBuffer: IntArray,
+        palette: TerminalPalette = TerminalPalette.DEFAULT,
+        isDark: Boolean = true,
+    ): Int {
+        val maxCells = outBuffer.size / PACKED_CELL_INTS
+        return packGridCells(maxCells, palette, isDark) { outOffset, codepoint, fgRgb, bgRgb, attrs ->
+            outBuffer[outOffset] = codepoint
+            outBuffer[outOffset + 1] = fgRgb
+            outBuffer[outOffset + 2] = bgRgb
+            outBuffer[outOffset + 3] = attrs
+        }
+    }
+
+    internal inline fun packGridCells(
+        maxCells: Int,
+        palette: TerminalPalette,
+        isDark: Boolean,
+        writeCell: (outOffset: Int, codepoint: Int, fgRgb: Int, bgRgb: Int, attrs: Int) -> Unit,
+    ): Int {
+        if (maxCells <= 0) return 0
+        val totalRows = screenBuffer.rows
+        val totalCols = screenBuffer.cols
+
+        var cellsWritten = 0
+        var outOffset = 0
+        for (r in 0 until totalRows) {
+            val row = screenBuffer.getTerminalRow(r)
+            val wrappedBit = if (row.isWrapped) ATTR_ROW_WRAPPED else 0
+            for (c in 0 until totalCols) {
+                if (cellsWritten >= maxCells) return cellsWritten
+                val cell = row[c]
+                val fgRgb = TerminalColor.toRgbInt(
+                    terminalColor = cell.getEffectiveForegroundColor(),
+                    palette = palette,
+                    isDark = isDark,
+                    isBackground = false,
+                )
+                val bgRgb = TerminalColor.toRgbInt(
+                    terminalColor = cell.getEffectiveBackgroundColor(),
+                    palette = palette,
+                    isDark = isDark,
+                    isBackground = true,
+                )
+                var attrs = wrappedBit
+                if (cell.bold) attrs = attrs or ATTR_BOLD
+                if (cell.italic) attrs = attrs or ATTR_ITALIC
+                if (cell.underline) attrs = attrs or ATTR_UNDERLINE
+                if (cell.reverse) attrs = attrs or ATTR_REVERSE
+                if (cell.dim) attrs = attrs or ATTR_DIM
+                if (cell.blink) attrs = attrs or ATTR_BLINK
+                if (cell.strikethrough) attrs = attrs or ATTR_STRIKETHROUGH
+                if (cell.overline) attrs = attrs or ATTR_OVERLINE
+                if (cell.conceal) attrs = attrs or ATTR_CONCEAL
+
+                writeCell(outOffset, cell.char.code, fgRgb, bgRgb, attrs)
+                outOffset += PACKED_CELL_INTS
+                cellsWritten++
+            }
+        }
+        return cellsWritten
     }
 
     /**
@@ -356,6 +476,20 @@ class TerminalEmulator(
         } else {
             text
         }
+
+    companion object {
+        const val PACKED_CELL_INTS: Int = 4
+        const val ATTR_BOLD: Int = 1 shl 0
+        const val ATTR_ITALIC: Int = 1 shl 1
+        const val ATTR_UNDERLINE: Int = 1 shl 2
+        const val ATTR_REVERSE: Int = 1 shl 3
+        const val ATTR_DIM: Int = 1 shl 4
+        const val ATTR_BLINK: Int = 1 shl 5
+        const val ATTR_STRIKETHROUGH: Int = 1 shl 6
+        const val ATTR_OVERLINE: Int = 1 shl 7
+        const val ATTR_CONCEAL: Int = 1 shl 8
+        const val ATTR_ROW_WRAPPED: Int = 1 shl 9
+    }
 }
 
 /**

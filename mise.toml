@@ -2,6 +2,7 @@
 java = "21"
 android-sdk = "latest"
 node = "20"
+rust = "stable"
 
 [tasks.build]
 description = "Build all targets"
@@ -26,3 +27,15 @@ run = "./gradlew :demo-mobile:assembleDebug"
 [tasks.compile-ios-demo]
 description = "Compile iOS simulator Kotlin/Native framework for demo-mobile"
 run = "./gradlew :demo-mobile:compileKotlinIosSimulatorArm64"
+
+[tasks.build-native-lib]
+description = "Compile terminal-core Kotlin/Native shared and static C-ABI libraries (Linux x64)"
+run = "./gradlew :terminal-core:linkReleaseSharedLinuxX64 :terminal-core:linkReleaseStaticLinuxX64"
+
+[tasks.test-rust]
+description = "Build native shared library and run Rust FFI integration tests"
+run = "./gradlew :terminal-core:linkReleaseSharedLinuxX64 && cargo test --manifest-path demo-rust/Cargo.toml"
+
+[tasks.run-rust]
+description = "Build native shared library and run the Rust CLI terminal demo"
+run = "./gradlew :terminal-core:linkReleaseSharedLinuxX64 && cargo run --manifest-path demo-rust/Cargo.toml"

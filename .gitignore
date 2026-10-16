@@ -115,3 +115,6 @@ marketing_site.zip
 .mise.toml.node-version
 kotlin-js-store/
 npm-package/
+
+# Rust Cargo build artifacts
+demo-rust/target/

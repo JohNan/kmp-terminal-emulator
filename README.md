@@ -107,6 +107,23 @@ The repository includes multiple demo implementations targeting different enviro
 
 </details>
 
+<details>
+<summary><strong>7. Native C-ABI & Rust FFI Integration (<code>demo-rust</code>)</strong> &mdash; Safe Rust bindings over Kotlin/Native</summary>
+
+- **Directory**: [`demo-rust`](demo-rust)
+- Safe, idiomatic Rust RAII bindings (`kmp-terminal-rs`) interfacing with Kotlin/Native `:terminal-core` compiled as a native C-ABI dynamic (`libterminal_core.so` / `libterminal_core.dylib`) or static (`libterminal_core.a`) library.
+- Demonstrates zero-allocation bulk grid rendering via `packGridToBuffer`, synchronous ANSI stream processing, selection extraction, and ANSI terminal rendering.
+- Run tests:
+  ```bash
+  mise run test-rust
+  ```
+- Run CLI showcase demo:
+  ```bash
+  mise run run-rust
+  ```
+
+</details>
+
 ---
 
 ## Production Showcase
@@ -126,9 +143,14 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 ## Key Features
 
 - **Decoupled Tiered Architecture**: 
-  - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models. Zero UI dependencies.
+  - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models. Zero UI dependencies. Compiles to native C-ABI shared (`libterminal_core.so` / `libterminal_core.dylib`) and static (`libterminal_core.a`) libraries on Linux and macOS.
   - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, gesture recognizers, platform-native input capture, selection overlays, and toolbar key bars.
   - `:terminal-tui`: Low-allocation differential ANSI terminal UI renderer, 24-bit TrueColor, offscreen grid surface (`TuiSurface`), and raw VT100 / SGR input parser (`TuiInputParser`).
+- **Native C-ABI & Zero-Allocation FFI Interop**:
+  - Direct C-ABI dynamic and static library exports from `:terminal-core` for non-JVM / non-Compose runtimes.
+  - Additive synchronous execution APIs (`processOutputSync`, `resizeSync`, `clearSync`, `resetSync`, `searchSync`).
+  - Zero-allocation bulk grid serializer (`packGridToBuffer`) packing cell data into contiguous integers (codepoint, fg RGB, bg RGB, attribute bitmask) for high-throughput FFI consumers (Rust, C, C++).
+  - Safe, idiomatic Rust bindings crate (`kmp-terminal-rs` in `demo-rust`).
 - **Type-Safe Configuration & Palette System**:
   - `TerminalConfig` & `terminalConfig { ... }` DSL for core engine dimensions, scrollback capacity, OSC 52 security policies, tab stops, and bell behavior.
   - `TerminalPalette`: Pure Kotlin 24-bit RGB color palette models and fast ANSI code resolution (`TerminalColor.toRgbInt`).
@@ -160,6 +182,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - iOS (`iosArm64`, `iosSimulatorArm64`)
   - macOS (`macosArm64`, `macosX64`)
   - Linux (`linuxX64`)
+  - Native C-ABI / FFI (`linuxX64`, `macosArm64`, `macosX64`) via `libterminal_core`
 
 ---
 
@@ -175,6 +198,7 @@ kmp-terminal/
 ├── demo-jvm/            # JVM Desktop Compose demo (macOS, Linux, Windows)
 ├── demo-vite/           # Vite + TypeScript web application integrating Wasm terminal
 ├── demo-html/           # Vanilla HTML/JS zero-framework integration demo
+├── demo-rust/           # Safe Rust FFI wrapper crate & CLI demo linking libterminal_core
 └── npm-package/         # NPM package bundle (@JohNan/kmp-terminal)
 ```
 
@@ -323,7 +347,46 @@ val clipboardChanged = next.clipboardWriteCount > reference.clipboardWriteCount
 val firstRowWraps = next.getScreenBuffer().isRowWrapped(0)
 ```
 
-### 5. TUI Differential Rendering & Raw Input (`terminal-tui`)
+### 5. Native C-ABI & Rust FFI Integration (`terminal-core` / `demo-rust`)
+
+`:terminal-core` exports a flat C-ABI allowing native runtimes (Rust, C, C++) to drive the terminal emulator without JVM overhead. The `demo-rust` crate (`kmp-terminal-rs`) provides safe, idiomatic Rust RAII bindings and zero-allocation bulk grid reading:
+
+```rust
+use kmp_terminal_rs::{PackedCell, Palette, Terminal};
+
+fn main() {
+    // Instantiate terminal emulator via C-ABI (rows, cols)
+    let mut term = Terminal::new(24, 80);
+
+    // Process ANSI byte stream synchronously
+    term.process_str("\x1b[32mHello from Rust!\x1b[0m\r\n");
+
+    // Zero-allocation bulk grid reading into pre-allocated buffer
+    let mut cells = vec![
+        PackedCell {
+            codepoint: ' ' as i32,
+            fg_rgb: 0,
+            bg_rgb: -1,
+            attributes: 0,
+        };
+        (term.rows() * term.cols()) as usize
+    ];
+    let count = term.read_grid_into(&mut cells, Palette::Default);
+
+    for cell in &cells[..count] {
+        if cell.codepoint != 0 && cell.codepoint != 32 {
+            println!(
+                "Cell: char='{}', fg={:06x}, bg={:06x}",
+                cell.ch(),
+                cell.fg_rgb,
+                cell.bg_rgb
+            );
+        }
+    }
+}
+```
+
+### 6. TUI Differential Rendering & Raw Input (`terminal-tui`)
 
 Build native command-line interfaces and terminal applications using `TuiSurface` and `TuiAnsiRenderer`:
 
@@ -373,6 +436,12 @@ mise run assemble-android
 
 # Compile iOS simulator target (demo-mobile)
 mise run compile-ios-demo
+
+# Execute Rust FFI unit & integration tests
+mise run test-rust
+
+# Run Rust CLI showcase demo
+mise run run-rust
 
 # Build all targets
 mise run build
