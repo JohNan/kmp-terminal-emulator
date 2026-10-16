@@ -33,9 +33,20 @@ kotlin {
         }
     }
 
-    macosArm64()
-    macosX64()
-    linuxX64()
+    listOf(
+        macosArm64(),
+        macosX64(),
+        linuxX64(),
+    ).forEach { nativeTarget ->
+        nativeTarget.binaries {
+            sharedLib {
+                baseName = "terminal_core"
+            }
+            staticLib {
+                baseName = "terminal_core"
+            }
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {

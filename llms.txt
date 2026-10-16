@@ -16,10 +16,11 @@
 - [TUI ANSI Renderer](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiAnsiRenderer.kt): `TuiAnsiRenderer`
 - [TUI Input Parser](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiInputParser.kt): `TuiInputParser`, `TuiEvent`, `TuiKey`
 - [Terminal I/O](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TerminalIo.kt): `TerminalIo`, `TerminalSize`, `createPlatformTerminalIo`
-- [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `copyToClipboard`, `copy()` (deep fork), `bellCount`, `clipboardWriteCount`, `lastClipboardWrite`
+- [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `processOutputSync`, `packGridToBuffer`, `copyToClipboard`, `copy()` (deep fork), `bellCount`, `clipboardWriteCount`, `lastClipboardWrite`
 - [Screen Buffer](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/ScreenBuffer.kt): `ScreenBuffer`, `getScrollback`, `isRowWrapped(row)`
 - [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable
 - [Text Selection](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalSelection.kt): `TerminalSelection`, `SelectionState`
+- [Native C-ABI FFI Bridge](terminal-core/src/nativeMain/kotlin/com/johnan/terminal/core/ffi/TerminalNativeBridge.kt): `terminal_create`, `terminal_copy`, `terminal_destroy`, `terminal_process_bytes`, `terminal_read_grid`, `terminal_extract_selection`
 
 
 ## Interactive Demos & Previews
@@ -29,6 +30,7 @@
 - `demo-jvm`: JVM Desktop Compose Multiplatform demo application.
 - `demo-vite`: Modern Vite + TypeScript web integration demo.
 - `demo-html`: Minimal vanilla HTML/JS integration demo.
+- `demo-rust`: Safe Rust FFI crate (kmp-terminal-rs) and CLI showcase linking against Kotlin/Native libterminal_core.
 - `npm-package`: Pre-packaged WebAssembly distribution bundle.
 
 ## Guides & Documentation

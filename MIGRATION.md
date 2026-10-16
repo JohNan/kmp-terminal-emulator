@@ -10,6 +10,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 2. **`TerminalUiConfig`**: Modular Compose Multiplatform UI configuration for `terminal-ui` (`TerminalTypographyConfig`, `TerminalCursorConfig`, `TerminalGestureConfig`, `TerminalKeyBarConfig`, `TerminalRenderOptimizationConfig`, `LocalTerminalUiConfig`).
 3. **Cursor Styling**: Added support for `TerminalCursorStyle.BLOCK`, `TerminalCursorStyle.UNDERLINE`, and `TerminalCursorStyle.BEAM`.
 4. **Text Selection & Extraction**: Fully built into `terminal-core` (`TerminalSelection`, `SelectionState`) and rendered via `terminal-ui` (`SelectionOverlay`).
+5. **Synchronous Core APIs & Native C-ABI / Rust FFI**: Additive synchronous execution APIs in `TerminalEmulator`, zero-allocation grid serialization (`packGridToBuffer`), native C-ABI library exports (`libterminal_core`), and safe Rust bindings (`kmp-terminal-rs`).
 
 ---
 
@@ -241,4 +242,79 @@ try {
     io.exitRawTuiMode()
 }
 ```
+
+---
+
+### Recipe 9: Synchronous Core API, Bulk Grid Packing & Native C-ABI / Rust FFI
+
+`:terminal-core` introduces synchronous execution methods and a zero-allocation bulk grid serializer alongside native C-ABI library exports (`libterminal_core.so` / `libterminal_core.dylib` / `libterminal_core.a`). This enables non-JVM, single-threaded, and high-performance native contexts (such as Rust, C, and C++) to leverage the terminal engine.
+
+> [!NOTE]
+> All existing coroutine `suspend` methods (`processOutput`, `resize`, `clear`, `reset`, `search`) and reactive `StateFlow` / `SharedFlow` properties remain **100% unchanged and fully supported**. No migration is required for existing Compose Multiplatform or coroutine-based consumers.
+
+#### Synchronous Core APIs (Kotlin)
+
+When operating in environments where coroutines or dispatcher context switching are undesirable, use the synchronous companion methods:
+
+```kotlin
+import com.johnan.terminal.core.TerminalEmulator
+import com.johnan.terminal.core.TerminalPalette
+import com.johnan.terminal.core.terminalConfig
+
+val emulator = TerminalEmulator(
+    config = terminalConfig {
+        initialRows = 24
+        initialCols = 80
+        maxScrollback = 1000
+    }
+)
+
+// Synchronous non-suspending ANSI byte processing
+emulator.processOutputSync("\u001B[32mSuccess:\u001B[0m Operation completed.\r\n")
+
+// Zero-allocation grid serialization into pre-allocated IntArray (4 Ints per cell: codepoint, fg, bg, bitmask)
+val buffer = IntArray(24 * 80 * 4)
+val cellsWritten = emulator.packGridToBuffer(
+    outBuffer = buffer,
+    palette = TerminalPalette.DEFAULT,
+    isDark = true
+)
+```
+
+#### Safe Rust FFI Usage (`kmp-terminal-rs` / `demo-rust`)
+
+Rust consumers can use the `kmp-terminal-rs` crate, which provides safe RAII bindings over the Kotlin/Native C-ABI:
+
+```rust
+use kmp_terminal_rs::{PackedCell, Palette, Terminal};
+
+fn main() {
+    // RAII initialization via terminal_create
+    let mut term = Terminal::new(24, 80);
+
+    // Synchronous ANSI parsing via terminal_process_bytes
+    term.process_str("\x1b[1;36mKMP Terminal Native Bridge\x1b[0m\r\n");
+
+    // High-throughput zero-allocation bulk grid reading into pre-allocated slice
+    let total = (term.rows() * term.cols()) as usize;
+    let mut cells = vec![
+        PackedCell {
+            codepoint: ' ' as i32,
+            fg_rgb: 0,
+            bg_rgb: -1,
+            attributes: 0,
+        };
+        total
+    ];
+    let written = term.read_grid_into(&mut cells, Palette::Default);
+
+    println!(
+        "Grid initialized at {}x{} with {} cells populated",
+        term.rows(),
+        term.cols(),
+        written
+    );
+}
+```
+
 

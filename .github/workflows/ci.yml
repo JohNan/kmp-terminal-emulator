@@ -41,3 +41,9 @@ jobs:
 
       - name: Compile TUI Native & Multiplatform Metadata
         run: ./gradlew :terminal-core:allMetadataJar :terminal-tui:allMetadataJar :terminal-tui:compileKotlinLinuxX64 --no-daemon
+
+      - name: Build Native C-ABI Shared Library & Run Native Tests
+        run: ./gradlew :terminal-core:linuxX64Test :terminal-core:linkReleaseSharedLinuxX64 --no-daemon
+
+      - name: Run Rust FFI Integration Tests (demo-rust)
+        run: cargo test --manifest-path demo-rust/Cargo.toml
