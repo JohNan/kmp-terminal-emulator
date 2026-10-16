@@ -37,8 +37,13 @@ kotlin {
         macosArm64(),
         macosX64(),
         linuxX64(),
+        linuxArm64(),
+        mingwX64(),
     ).forEach { nativeTarget ->
         nativeTarget.binaries {
+            all {
+                freeCompilerArgs += "-Xbinary=stripDebugInfoFromNativeLibs=true"
+            }
             sharedLib {
                 baseName = "terminal_core"
             }
@@ -52,7 +57,6 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
-            implementation(libs.kotlinx.serialization.json)
         }
 
         commonTest.dependencies {

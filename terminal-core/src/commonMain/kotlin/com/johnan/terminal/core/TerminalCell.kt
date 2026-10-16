@@ -3,6 +3,65 @@ package com.johnan.terminal.core
 /**
  * Character cell within the terminal grid containing glyph data and visual styling attributes.
  */
+object UnicodeWidth {
+    fun wcwidth(codepoint: Int): Int = when {
+        codepoint == 0 ||
+            codepoint < 0x20 ||
+            codepoint in 0x7F..0x9F ||
+            codepoint in 0x0300..0x036F ||
+            codepoint in 0x1AB0..0x1AFF ||
+            codepoint in 0x1DC0..0x1DFF ||
+            codepoint in 0x20D0..0x20FF ||
+            codepoint in 0xFE20..0xFE2F -> 0
+        codepoint in 0x1100..0x115F ||
+            codepoint == 0x2329 ||
+            codepoint == 0x232A ||
+            codepoint in 0x231A..0x231B ||
+            codepoint in 0x23E9..0x23F3 ||
+            codepoint in 0x23F8..0x23FA ||
+            codepoint in 0x25FD..0x25FE ||
+            codepoint in 0x2614..0x2615 ||
+            codepoint in 0x2648..0x2653 ||
+            codepoint == 0x267F ||
+            codepoint == 0x2693 ||
+            codepoint == 0x26A1 ||
+            codepoint in 0x26AA..0x26AB ||
+            codepoint in 0x26BD..0x26BE ||
+            codepoint in 0x26C4..0x26C5 ||
+            codepoint == 0x26CE ||
+            codepoint == 0x26D4 ||
+            codepoint == 0x26EA ||
+            codepoint in 0x26F2..0x26F3 ||
+            codepoint == 0x26F5 ||
+            codepoint == 0x26FA ||
+            codepoint == 0x26FD ||
+            codepoint == 0x2705 ||
+            codepoint in 0x270A..0x270B ||
+            codepoint == 0x2728 ||
+            codepoint == 0x274C ||
+            codepoint == 0x274E ||
+            codepoint in 0x2753..0x2755 ||
+            codepoint == 0x2757 ||
+            codepoint in 0x2795..0x2797 ||
+            codepoint == 0x27B0 ||
+            codepoint == 0x27BF ||
+            codepoint in 0x2B1B..0x2B1C ||
+            codepoint == 0x2B50 ||
+            codepoint == 0x2B55 ||
+            codepoint in 0x2E80..0x303E ||
+            codepoint in 0x3040..0xA4CF ||
+            codepoint in 0xAC00..0xD7A3 ||
+            codepoint in 0xF900..0xFAFF ||
+            codepoint in 0xFE10..0xFE19 ||
+            codepoint in 0xFE30..0xFE6F ||
+            codepoint in 0xFF00..0xFF60 ||
+            codepoint in 0xFFE0..0xFFE6 ||
+            codepoint in 0x1F000..0x1FAFF ||
+            codepoint in 0x20000..0x3FFFD -> 2
+        else -> 1
+    }
+}
+
 data class TerminalCell(
     val char: Char = ' ',
     val foregroundColor: TerminalColor = TerminalColor.Default,
@@ -16,6 +75,9 @@ data class TerminalCell(
     val strikethrough: Boolean = false,
     val overline: Boolean = false,
     val conceal: Boolean = false,
+    val codepoint: Int = char.code,
+    val width: Int = 1,
+    val isWideSpacer: Boolean = false,
 ) {
     /**
      * Resolves foreground color taking reverse video (inverse attribute) into account.
@@ -28,6 +90,17 @@ data class TerminalCell(
     fun getEffectiveBackgroundColor(): TerminalColor = if (reverse) foregroundColor else backgroundColor
 
     /**
+     * Helper string representation of this cell's glyph, handling surrogate pairs and spacers.
+     */
+    fun glyphString(): String {
+        if (isWideSpacer) return ""
+        if (codepoint <= 0xFFFF) return codepoint.toChar().toString()
+        val high = ((codepoint - 0x10000) shr 10) + 0xD800
+        val low = ((codepoint - 0x10000) and 0x3FF) + 0xDC00
+        return charArrayOf(high.toChar(), low.toChar()).concatToString()
+    }
+
+    /**
      * Returns true if the cell has default attributes and blank character content.
      */
     fun isDefault(): Boolean {
@@ -35,6 +108,9 @@ data class TerminalCell(
         if (char.code == 32 && this === ASCII_CACHE[32]) return true
 
         return char == ' ' &&
+            codepoint == 32 &&
+            width == 1 &&
+            !isWideSpacer &&
             foregroundColor === TerminalColor.Default &&
             backgroundColor === TerminalColor.Default &&
             !bold &&
@@ -58,6 +134,63 @@ data class TerminalCell(
         internal fun getCachedAscii(code: Int): TerminalCell = ASCII_CACHE[code]
 
         /**
+         * Creates a [TerminalCell] for a 32-bit Unicode [codepoint] with visual attributes.
+         */
+        fun createCodepoint(
+            codepoint: Int,
+            foregroundColor: TerminalColor = TerminalColor.Default,
+            backgroundColor: TerminalColor = TerminalColor.Default,
+            bold: Boolean = false,
+            italic: Boolean = false,
+            underline: Boolean = false,
+            reverse: Boolean = false,
+            dim: Boolean = false,
+            blink: Boolean = false,
+            strikethrough: Boolean = false,
+            overline: Boolean = false,
+            conceal: Boolean = false,
+            width: Int = UnicodeWidth.wcwidth(codepoint).coerceAtLeast(1),
+            isWideSpacer: Boolean = false,
+        ): TerminalCell {
+            if (codepoint in 0..127 &&
+                !isWideSpacer &&
+                width == 1 &&
+                foregroundColor === TerminalColor.Default &&
+                backgroundColor === TerminalColor.Default &&
+                !bold &&
+                !italic &&
+                !underline &&
+                !reverse &&
+                !dim &&
+                !blink &&
+                !strikethrough &&
+                !overline &&
+                !conceal
+            ) {
+                return ASCII_CACHE[codepoint]
+            }
+
+            val ch = if (codepoint in 0..0xFFFF) codepoint.toChar() else ' '
+            return TerminalCell(
+                char = ch,
+                foregroundColor = foregroundColor,
+                backgroundColor = backgroundColor,
+                bold = bold,
+                italic = italic,
+                underline = underline,
+                reverse = reverse,
+                dim = dim,
+                blink = blink,
+                strikethrough = strikethrough,
+                overline = overline,
+                conceal = conceal,
+                codepoint = codepoint,
+                width = width,
+                isWideSpacer = isWideSpacer,
+            )
+        }
+
+        /**
          * Obtains a cell instance, leveraging flyweight cached ASCII instances for plain text.
          */
         fun create(
@@ -73,38 +206,20 @@ data class TerminalCell(
             strikethrough: Boolean = false,
             overline: Boolean = false,
             conceal: Boolean = false,
-        ): TerminalCell {
-            if (char.code in 0..127 &&
-                foregroundColor === TerminalColor.Default &&
-                backgroundColor === TerminalColor.Default &&
-                !bold &&
-                !italic &&
-                !underline &&
-                !reverse &&
-                !dim &&
-                !blink &&
-                !strikethrough &&
-                !overline &&
-                !conceal
-            ) {
-                return ASCII_CACHE[char.code]
-            }
-
-            return TerminalCell(
-                char,
-                foregroundColor,
-                backgroundColor,
-                bold,
-                italic,
-                underline,
-                reverse,
-                dim,
-                blink,
-                strikethrough,
-                overline,
-                conceal,
-            )
-        }
+        ): TerminalCell = createCodepoint(
+            codepoint = char.code,
+            foregroundColor = foregroundColor,
+            backgroundColor = backgroundColor,
+            bold = bold,
+            italic = italic,
+            underline = underline,
+            reverse = reverse,
+            dim = dim,
+            blink = blink,
+            strikethrough = strikethrough,
+            overline = overline,
+            conceal = conceal,
+        )
     }
 }
 
@@ -171,6 +286,14 @@ sealed class TerminalColor {
                 palette?.getAnsiRgb(terminalColor.code) ?: getStandardRgb(terminalColor.code, isDark)
             }
             is Palette256 -> get256Rgb(terminalColor.code)
+            is Rgb -> ((terminalColor.r and 0xFF) shl 16) or ((terminalColor.g and 0xFF) shl 8) or
+                (terminalColor.b and 0xFF)
+        }
+
+        fun toRawColorInt(terminalColor: TerminalColor): Int = when (terminalColor) {
+            is Default -> -1
+            is Standard -> 0x0100_0000 or (terminalColor.code and 0xFF)
+            is Palette256 -> 0x0200_0000 or (terminalColor.code and 0xFF)
             is Rgb -> ((terminalColor.r and 0xFF) shl 16) or ((terminalColor.g and 0xFF) shl 8) or
                 (terminalColor.b and 0xFF)
         }
