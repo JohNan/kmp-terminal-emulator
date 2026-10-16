@@ -35,7 +35,8 @@ class AnsiParser(
     private var charsetTarget = 0
 
     private val currentCharset: Char get() = if (activeCharset == 0) g0Charset else g1Charset
-    private var lastPrintableChar: Char? = null
+    private var lastPrintableCodepoint: Int? = null
+    private var pendingHighSurrogate: Char? = null
 
     /**
      * Creates a copy of this parser bound to [terminalEmulator] and [screenBuffer], including any partially
@@ -59,7 +60,8 @@ class AnsiParser(
         clone.g1Charset = g1Charset
         clone.activeCharset = activeCharset
         clone.charsetTarget = charsetTarget
-        clone.lastPrintableChar = lastPrintableChar
+        clone.lastPrintableCodepoint = lastPrintableCodepoint
+        clone.pendingHighSurrogate = pendingHighSurrogate
         return clone
     }
 
@@ -96,22 +98,24 @@ class AnsiParser(
     /**
      * Decodes and parses incoming UTF-8 byte stream, buffering incomplete multi-byte sequences across chunks.
      */
-    fun processBytes(bytes: ByteArray) {
-        if (bytes.isEmpty()) return
+    fun processBytes(bytes: ByteArray, length: Int = bytes.size) {
+        val len = length.coerceIn(0, bytes.size)
+        if (len == 0 && leftoverBytes.isEmpty()) return
 
         val combinedBytes = if (leftoverBytes.isNotEmpty()) {
-            val combined = ByteArray(leftoverBytes.size + bytes.size)
+            val combined = ByteArray(leftoverBytes.size + len)
             leftoverBytes.copyInto(combined, 0)
-            bytes.copyInto(combined, leftoverBytes.size)
+            bytes.copyInto(combined, leftoverBytes.size, 0, len)
             leftoverBytes = ByteArray(0)
             combined
         } else {
             bytes
         }
 
-        var validLen = combinedBytes.size
-        for (i in 1..min(3, combinedBytes.size)) {
-            val byte = combinedBytes[combinedBytes.size - i].toInt()
+        val totalLen = if (combinedBytes === bytes) len else combinedBytes.size
+        var validLen = totalLen
+        for (i in 1..min(3, totalLen)) {
+            val byte = combinedBytes[totalLen - i].toInt()
             if ((byte and 0xC0) == 0xC0) {
                 val expectedLen = when {
                     (byte and 0xE0) == 0xC0 -> 2
@@ -120,8 +124,9 @@ class AnsiParser(
                     else -> 1
                 }
                 if (expectedLen > i) {
-                    validLen = combinedBytes.size - i
-                    leftoverBytes = combinedBytes.copyOfRange(validLen, combinedBytes.size)
+                    val splitPoint = totalLen - i
+                    leftoverBytes = combinedBytes.copyOfRange(splitPoint, totalLen)
+                    validLen = splitPoint
                 }
                 break
             }
@@ -129,7 +134,7 @@ class AnsiParser(
 
         if (validLen == 0) return
 
-        val text = combinedBytes.decodeToString(endIndex = validLen)
+        val text = combinedBytes.decodeToString(startIndex = 0, endIndex = validLen)
         var charIndex = 0
         while (charIndex < text.length) {
             if (state == State.NORMAL) {
@@ -145,6 +150,10 @@ class AnsiParser(
                     }
                 }
 
+                if (count > 0 && text[charIndex + count - 1].isHighSurrogate()) {
+                    count--
+                }
+
                 if (count > 0) {
                     val substring = text.substring(charIndex, charIndex + count)
                     if (charset == '0') {
@@ -154,10 +163,10 @@ class AnsiParser(
                         }
                         val mappedString = mapped.concatToString()
                         screenBuffer.writeText(mappedString)
-                        lastPrintableChar = mapped.lastOrNull()
+                        lastPrintableCodepoint = lastCodepoint(mappedString)
                     } else {
                         screenBuffer.writeText(substring)
-                        lastPrintableChar = substring.lastOrNull()
+                        lastPrintableCodepoint = lastCodepoint(substring)
                     }
 
                     charIndex += count
@@ -167,6 +176,17 @@ class AnsiParser(
             processChar(text[charIndex])
             charIndex++
         }
+    }
+
+    private fun lastCodepoint(text: CharSequence): Int? {
+        if (text.isEmpty()) return null
+        val last = text.last()
+        if (last.isLowSurrogate() && text.length >= 2 && text[text.length - 2].isHighSurrogate()) {
+            val high = text[text.length - 2].code
+            val low = last.code
+            return ((high - 0xD800) shl 10) + (low - 0xDC00) + 0x10000
+        }
+        return last.code
     }
 
     private fun mapCharset(char: Char, charset: Char): Char {
@@ -203,23 +223,60 @@ class AnsiParser(
     private fun processNormal(char: Char) {
         when (char) {
             '\u001B' -> {
+                pendingHighSurrogate = null
                 state = State.ESC
                 paramBuffer.clear()
                 paramsParsed = false
             }
-            '\r' -> screenBuffer.carriageReturn()
-            '\n' -> screenBuffer.lineFeed()
-            '\b' -> screenBuffer.moveCursor(0, -1)
+            '\r' -> {
+                pendingHighSurrogate = null
+                screenBuffer.carriageReturn()
+            }
+            '\n' -> {
+                pendingHighSurrogate = null
+                screenBuffer.lineFeed()
+            }
+            '\b' -> {
+                pendingHighSurrogate = null
+                screenBuffer.moveCursor(0, -1)
+            }
             '\t' -> {
+                pendingHighSurrogate = null
                 val nextTab = ((screenBuffer.cursorCol / 8) + 1) * 8
                 screenBuffer.setCursorPosition(screenBuffer.cursorRow, nextTab, terminalEmulator.originModeEnabled)
             }
-            '\u000E' -> activeCharset = 1
-            '\u000F' -> activeCharset = 0
-            '\u0007' -> terminalEmulator.triggerBell()
+            '\u000E' -> {
+                pendingHighSurrogate = null
+                activeCharset = 1
+            }
+            '\u000F' -> {
+                pendingHighSurrogate = null
+                activeCharset = 0
+            }
+            '\u0007' -> {
+                pendingHighSurrogate = null
+                terminalEmulator.triggerBell()
+            }
             in '\u0020'..'\u007E', in '\u00A0'..'\uFFFF' -> {
-                lastPrintableChar = mapCharset(char, currentCharset)
-                screenBuffer.writeChar(lastPrintableChar!!)
+                if (char.isHighSurrogate()) {
+                    pendingHighSurrogate = char
+                } else if (char.isLowSurrogate()) {
+                    val high = pendingHighSurrogate
+                    pendingHighSurrogate = null
+                    if (high != null) {
+                        val codepoint = ((high.code - 0xD800) shl 10) + (char.code - 0xDC00) + 0x10000
+                        lastPrintableCodepoint = codepoint
+                        screenBuffer.writeCodepoint(codepoint)
+                    } else {
+                        lastPrintableCodepoint = char.code
+                        screenBuffer.writeCodepoint(char.code)
+                    }
+                } else {
+                    pendingHighSurrogate = null
+                    val mapped = mapCharset(char, currentCharset)
+                    lastPrintableCodepoint = mapped.code
+                    screenBuffer.writeCodepoint(mapped.code)
+                }
             }
         }
     }
@@ -368,9 +425,9 @@ class AnsiParser(
             }
             'b' -> {
                 val count = parseParam(0, 1)
-                val charToRepeat = lastPrintableChar ?: ' '
-                log("REP") { "char='$charToRepeat', count=$count" }
-                repeat(count) { screenBuffer.writeChar(charToRepeat) }
+                val cpToRepeat = lastPrintableCodepoint ?: ' '.code
+                log("REP") { "codepoint=$cpToRepeat, count=$count" }
+                repeat(count) { screenBuffer.writeCodepoint(cpToRepeat) }
                 state = State.NORMAL
             }
             'H', 'f' -> {

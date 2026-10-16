@@ -299,4 +299,111 @@ class TerminalNativeBridgeTest {
             terminalDestroy(handle)
         }
     }
+
+    @Test
+    fun testTerminalMouseTrackingAndSgr() = memScoped {
+        val handle = terminalCreate(rows = 5, cols = 20, maxScrollback = 0, osc52PolicyOrdinal = 0)
+        try {
+            assertEquals(0, terminalGetMouseTrackingMode(handle))
+            assertEquals(0, terminalIsSgrMouseModeEnabled(handle))
+
+            // Normal tracking (1000h)
+            val clickSeq = "\u001B[?1000h"
+            terminalProcessBytes(handle, allocString(clickSeq), clickSeq.length)
+            assertEquals(1, terminalGetMouseTrackingMode(handle))
+
+            // Button event tracking (1002h)
+            val buttonSeq = "\u001B[?1002h"
+            terminalProcessBytes(handle, allocString(buttonSeq), buttonSeq.length)
+            assertEquals(2, terminalGetMouseTrackingMode(handle))
+
+            // Any event tracking (1003h)
+            val anySeq = "\u001B[?1003h"
+            terminalProcessBytes(handle, allocString(anySeq), anySeq.length)
+            assertEquals(3, terminalGetMouseTrackingMode(handle))
+
+            // SGR mouse mode (1006h)
+            val sgrOn = "\u001B[?1006h"
+            terminalProcessBytes(handle, allocString(sgrOn), sgrOn.length)
+            assertEquals(1, terminalIsSgrMouseModeEnabled(handle))
+
+            val sgrOff = "\u001B[?1006l"
+            terminalProcessBytes(handle, allocString(sgrOff), sgrOff.length)
+            assertEquals(0, terminalIsSgrMouseModeEnabled(handle))
+        } finally {
+            terminalDestroy(handle)
+        }
+    }
+
+    @Test
+    fun testTerminalReadViewportWithScrollbackAndRawColors() = memScoped {
+        val handle = terminalCreate(rows = 2, cols = 4, maxScrollback = 10, osc52PolicyOrdinal = 0)
+        try {
+            // Write 3 lines: line 1 scrolled to scrollback, line 2 in scrollback, line 3 live
+            val text = "\u001B[31mA\r\n\u001B[32mB\r\n\u001B[34mC"
+            terminalProcessBytes(handle, allocString(text), text.length)
+
+            assertTrue(terminalGetScrollbackSize(handle) >= 1)
+
+            val maxCells = 8
+            val viewBuf = allocArray<IntVar>(maxCells * 4)
+
+            // Read with scrollbackOffset = 1 and paletteOrdinal = -1 (raw ANSI colors)
+            val count = terminalReadViewport(handle, viewBuf, maxCells, scrollbackOffset = 1, paletteOrdinal = -1)
+            assertEquals(8, count)
+
+            // When offset = 1, startLine is sbSize - 1, which corresponds to the line with 'A'
+            assertEquals('A'.code, viewBuf[0])
+            // Standard Red (code 1): 0x0100_0000 or 1
+            assertEquals(0x0100_0001, viewBuf[1])
+
+            // Next row in viewport is live line 0 with 'B' (Standard Green: 0x0100_0002)
+            val row1Offset = 4 * 4
+            assertEquals('B'.code, viewBuf[row1Offset])
+            assertEquals(0x0100_0002, viewBuf[row1Offset + 1])
+
+            // Live viewport with scrollbackOffset = 0: shows 'B' and 'C'
+            terminalReadViewport(handle, viewBuf, maxCells, scrollbackOffset = 0, paletteOrdinal = -1)
+            assertEquals('B'.code, viewBuf[0])
+            assertEquals(0x0100_0002, viewBuf[1])
+            assertEquals('C'.code, viewBuf[row1Offset])
+            assertEquals(0x0100_0004, viewBuf[row1Offset + 1])
+        } finally {
+            terminalDestroy(handle)
+        }
+    }
+
+    @Test
+    fun testTerminalReadViewportWideChar() = memScoped {
+        val handle = terminalCreate(rows = 2, cols = 6, maxScrollback = 0, osc52PolicyOrdinal = 0)
+        try {
+            val text = "🚀漢"
+            terminalProcessBytes(handle, allocString(text), text.encodeToByteArray().size)
+
+            val maxCells = 12
+            val viewBuf = allocArray<IntVar>(maxCells * 4)
+            val count = terminalReadViewport(handle, viewBuf, maxCells, scrollbackOffset = 0, paletteOrdinal = 0)
+            assertEquals(12, count)
+
+            // Cell 0: Rocket emoji (0x1F680)
+            assertEquals(0x1F680, viewBuf[0])
+            assertTrue((viewBuf[3] and TerminalEmulator.ATTR_WIDE_CHAR) != 0)
+            assertEquals(0, viewBuf[3] and TerminalEmulator.ATTR_WIDE_SPACER)
+
+            // Cell 1: Wide spacer
+            assertTrue((viewBuf[7] and TerminalEmulator.ATTR_WIDE_SPACER) != 0)
+            assertEquals(0, viewBuf[7] and TerminalEmulator.ATTR_WIDE_CHAR)
+
+            // Cell 2: CJK character (0x6F22)
+            assertEquals(0x6F22, viewBuf[8])
+            assertTrue((viewBuf[11] and TerminalEmulator.ATTR_WIDE_CHAR) != 0)
+            assertEquals(0, viewBuf[11] and TerminalEmulator.ATTR_WIDE_SPACER)
+
+            // Cell 3: Wide spacer
+            assertTrue((viewBuf[15] and TerminalEmulator.ATTR_WIDE_SPACER) != 0)
+            assertEquals(0, viewBuf[15] and TerminalEmulator.ATTR_WIDE_CHAR)
+        } finally {
+            terminalDestroy(handle)
+        }
+    }
 }

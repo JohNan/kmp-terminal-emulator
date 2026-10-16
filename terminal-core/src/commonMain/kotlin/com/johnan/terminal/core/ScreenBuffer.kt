@@ -142,10 +142,29 @@ class ScreenBuffer(
         return list
     }
 
+    val scrollbackSize: Int get() = scrollback.size
+
+    internal fun getScrollbackRow(index: Int): Array<TerminalCell> = scrollback[index]
+
+    private fun cleanPairedHalf(row: TerminalRow, col: Int) {
+        if (col < 0 || col >= cols) return
+        val cell = row[col]
+        if (cell.isWideSpacer && col > 0) {
+            row.setCell(col - 1, TerminalCell.EMPTY)
+        }
+        if (cell.width == 2 && col + 1 < cols) {
+            row.setCell(col + 1, TerminalCell.EMPTY)
+        }
+    }
+
     /**
-     * Writes a single character at the current cursor position with active attributes, handling DECAWM auto-wrap.
+     * Writes a 32-bit Unicode [codepoint] at the current cursor position with active attributes,
+     * supporting fullwidth/CJK/emoji characters and handling DECAWM auto-wrap.
      */
-    fun writeChar(char: Char) {
+    fun writeCodepoint(codepoint: Int) {
+        val w = UnicodeWidth.wcwidth(codepoint)
+        if (w <= 0) return
+
         if (pendingWrap) {
             buffer[cursorRow].isWrapped = true
             cursorCol = 0
@@ -159,10 +178,54 @@ class ScreenBuffer(
             pendingWrap = false
         }
 
+        if (w == 2 && cursorCol == cols - 1 && cols >= 2) {
+            if (autoWrapMode) {
+                val row = buffer[cursorRow]
+                if (row.setCell(cursorCol, TerminalCell.EMPTY)) {
+                    row.incrementVersion()
+                }
+                row.isWrapped = true
+                cursorCol = 0
+                cursorRow++
+                if (cursorRow > scrollBottom) {
+                    scrollUp()
+                    cursorRow = scrollBottom
+                } else if (cursorRow >= rows) {
+                    cursorRow = rows - 1
+                }
+            } else {
+                return
+            }
+        }
+
         if (cursorRow in 0 until rows && cursorCol in 0 until cols) {
-            buffer[cursorRow][cursorCol] =
-                TerminalCell.create(
-                    char = char,
+            val row = buffer[cursorRow]
+            cleanPairedHalf(row, cursorCol)
+            if (w == 2 && cursorCol + 1 < cols) {
+                cleanPairedHalf(row, cursorCol + 1)
+            }
+
+            val primaryCell = TerminalCell.createCodepoint(
+                codepoint = codepoint,
+                foregroundColor = currentForeground,
+                backgroundColor = currentBackground,
+                bold = currentBold,
+                italic = currentItalic,
+                underline = currentUnderline,
+                reverse = currentReverse,
+                dim = currentDim,
+                blink = currentBlink,
+                strikethrough = currentStrikethrough,
+                overline = currentOverline,
+                conceal = currentConceal,
+                width = w,
+                isWideSpacer = false,
+            )
+            var changed = row.setCell(cursorCol, primaryCell)
+
+            if (w == 2 && cursorCol + 1 < cols) {
+                val spacerCell = TerminalCell.createCodepoint(
+                    codepoint = ' '.code,
                     foregroundColor = currentForeground,
                     backgroundColor = currentBackground,
                     bold = currentBold,
@@ -171,10 +234,23 @@ class ScreenBuffer(
                     reverse = currentReverse,
                     dim = currentDim,
                     blink = currentBlink,
+                    strikethrough = currentStrikethrough,
+                    overline = currentOverline,
+                    conceal = currentConceal,
+                    width = 0,
+                    isWideSpacer = true,
                 )
+                if (row.setCell(cursorCol + 1, spacerCell)) {
+                    changed = true
+                }
+            }
+
+            if (changed) {
+                row.incrementVersion()
+            }
         }
 
-        cursorCol++
+        cursorCol += w
 
         if (cursorCol >= cols) {
             if (autoWrapMode) {
@@ -187,12 +263,47 @@ class ScreenBuffer(
     }
 
     /**
+     * Writes a single character at the current cursor position with active attributes, handling DECAWM auto-wrap.
+     */
+    fun writeChar(char: Char) {
+        writeCodepoint(char.code)
+    }
+
+    /**
      * Writes a batch of characters sequentially starting at cursor position with active attributes.
      */
     fun writeText(text: CharSequence) {
-        var i = 0
         val len = text.length
+        if (len == 0) return
 
+        var hasWideOrSurrogate = false
+        for (k in 0 until len) {
+            val c = text[k]
+            if (c.code >= 0x1100 || c.isSurrogate()) {
+                hasWideOrSurrogate = true
+                break
+            }
+        }
+
+        if (hasWideOrSurrogate) {
+            var idx = 0
+            while (idx < len) {
+                val c = text[idx]
+                val cp = if (c.isHighSurrogate() && idx + 1 < len && text[idx + 1].isLowSurrogate()) {
+                    val high = c.code
+                    val low = text[idx + 1].code
+                    idx += 2
+                    ((high - 0xD800) shl 10) + (low - 0xDC00) + 0x10000
+                } else {
+                    idx++
+                    c.code
+                }
+                writeCodepoint(cp)
+            }
+            return
+        }
+
+        var i = 0
         while (i < len) {
             if (pendingWrap) {
                 buffer[cursorRow].isWrapped = true
@@ -247,6 +358,7 @@ class ScreenBuffer(
             var changed = false
             for (k in 0 until count) {
                 val c = text[i + k]
+                cleanPairedHalf(currentRow, cursorCol + k)
                 val cell =
                     if (isDefault && c.code in 0..127) {
                         TerminalCell.getCachedAscii(c.code)
@@ -358,6 +470,7 @@ class ScreenBuffer(
     fun clearToEndOfScreen() {
         pendingWrap = false
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
         if (currentRow.clearCells(cursorCol, cols)) {
             currentRow.incrementVersion()
         }
@@ -379,6 +492,7 @@ class ScreenBuffer(
             }
         }
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
         if (currentRow.clearCells(0, cursorCol + 1)) {
             currentRow.incrementVersion()
         }
@@ -395,6 +509,7 @@ class ScreenBuffer(
     fun clearToEndOfLine() {
         pendingWrap = false
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
         if (currentRow.clearCells(cursorCol, cols)) {
             currentRow.incrementVersion()
         }
@@ -403,6 +518,7 @@ class ScreenBuffer(
     fun clearToStartOfLine() {
         pendingWrap = false
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
         if (currentRow.clearCells(0, cursorCol + 1)) {
             currentRow.incrementVersion()
         }
@@ -575,6 +691,8 @@ class ScreenBuffer(
         if (deleteCount <= 0) return
 
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
+        cleanPairedHalf(currentRow, cursorCol + deleteCount)
         var changed = false
 
         for (col in cursorCol until (cols - deleteCount)) {
@@ -598,6 +716,8 @@ class ScreenBuffer(
         if (insertCount <= 0) return
 
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
+        cleanPairedHalf(currentRow, cols - insertCount)
         var changed = false
 
         for (col in (cols - 1) downTo (cursorCol + insertCount)) {
@@ -621,6 +741,8 @@ class ScreenBuffer(
         if (eraseCount <= 0) return
 
         val currentRow = buffer[cursorRow]
+        cleanPairedHalf(currentRow, cursorCol)
+        cleanPairedHalf(currentRow, cursorCol + eraseCount - 1)
         if (currentRow.clearCells(cursorCol, cursorCol + eraseCount)) {
             currentRow.incrementVersion()
         }

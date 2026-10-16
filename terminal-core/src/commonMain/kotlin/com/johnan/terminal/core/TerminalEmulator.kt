@@ -92,6 +92,8 @@ class TerminalEmulator(
     var sgrMouseModeEnabled = false
         internal set
 
+    var headlessMode: Boolean = false
+
     private val _clipboardEvents = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
     val clipboardEvents: SharedFlow<String> = _clipboardEvents.asSharedFlow()
 
@@ -216,6 +218,7 @@ class TerminalEmulator(
         clone.invertScreenColors = invertScreenColors
         clone.mouseTrackingMode = mouseTrackingMode
         clone.sgrMouseModeEnabled = sgrMouseModeEnabled
+        clone.headlessMode = headlessMode
         clone._windowTitle.value = _windowTitle.value
         clone.windowTitleStack.addAll(windowTitleStack)
         clone.bellCount = bellCount
@@ -228,8 +231,8 @@ class TerminalEmulator(
     /**
      * Parses and applies incoming terminal output bytes synchronously without acquiring [mutex].
      */
-    fun processOutputSync(data: ByteArray) {
-        ansiParser.processBytes(data)
+    fun processOutputSync(data: ByteArray, length: Int = data.size) {
+        ansiParser.processBytes(data, length)
         updateScreenState()
     }
 
@@ -257,8 +260,11 @@ class TerminalEmulator(
     }
 
     private fun updateScreenState() {
+        if (headlessMode && _screenState.subscriptionCount.value == 0) return
         _screenState.value = createScreenState()
     }
+
+    fun snapshotScreenState(): TerminalScreenState = createScreenState().also { _screenState.value = it }
 
     private fun createScreenState(): TerminalScreenState {
         val rows = ArrayList<Array<TerminalCell>>(screenBuffer.rows)
@@ -423,31 +429,56 @@ class TerminalEmulator(
         palette: TerminalPalette,
         isDark: Boolean,
         writeCell: (outOffset: Int, codepoint: Int, fgRgb: Int, bgRgb: Int, attrs: Int) -> Unit,
+    ): Int = packViewportCells(
+        maxCells = maxCells,
+        scrollbackOffset = 0,
+        palette = palette,
+        isDark = isDark,
+        writeCell = writeCell,
+    )
+
+    internal inline fun packViewportCells(
+        maxCells: Int,
+        scrollbackOffset: Int,
+        palette: TerminalPalette?,
+        isDark: Boolean,
+        writeCell: (outOffset: Int, codepoint: Int, fgRgb: Int, bgRgb: Int, attrs: Int) -> Unit,
     ): Int {
         if (maxCells <= 0) return 0
         val totalRows = screenBuffer.rows
         val totalCols = screenBuffer.cols
+        val sbSize = if (screenBuffer.isUsingAlternateScreen()) 0 else screenBuffer.scrollbackSize
+        val clampedOffset = scrollbackOffset.coerceIn(0, sbSize)
+        val startLine = sbSize - clampedOffset
 
         var cellsWritten = 0
         var outOffset = 0
         for (r in 0 until totalRows) {
-            val row = screenBuffer.getTerminalRow(r)
-            val wrappedBit = if (row.isWrapped) ATTR_ROW_WRAPPED else 0
+            val lineIdx = startLine + r
+            val rowCells: Array<TerminalCell>
+            val isWrapped: Boolean
+            if (lineIdx < sbSize) {
+                rowCells = screenBuffer.getScrollbackRow(lineIdx)
+                isWrapped = false
+            } else {
+                val termRow = screenBuffer.getTerminalRow(lineIdx - sbSize)
+                rowCells = termRow.cells
+                isWrapped = termRow.isWrapped
+            }
+            val wrappedBit = if (isWrapped) ATTR_ROW_WRAPPED else 0
             for (c in 0 until totalCols) {
                 if (cellsWritten >= maxCells) return cellsWritten
-                val cell = row[c]
-                val fgRgb = TerminalColor.toRgbInt(
-                    terminalColor = cell.getEffectiveForegroundColor(),
-                    palette = palette,
-                    isDark = isDark,
-                    isBackground = false,
-                )
-                val bgRgb = TerminalColor.toRgbInt(
-                    terminalColor = cell.getEffectiveBackgroundColor(),
-                    palette = palette,
-                    isDark = isDark,
-                    isBackground = true,
-                )
+                val cell = rowCells[c]
+                val fgRgb = if (palette == null) {
+                    TerminalColor.toRawColorInt(cell.foregroundColor)
+                } else {
+                    TerminalColor.toRgbInt(cell.getEffectiveForegroundColor(), palette, isDark, false)
+                }
+                val bgRgb = if (palette == null) {
+                    TerminalColor.toRawColorInt(cell.backgroundColor)
+                } else {
+                    TerminalColor.toRgbInt(cell.getEffectiveBackgroundColor(), palette, isDark, true)
+                }
                 var attrs = wrappedBit
                 if (cell.bold) attrs = attrs or ATTR_BOLD
                 if (cell.italic) attrs = attrs or ATTR_ITALIC
@@ -458,8 +489,10 @@ class TerminalEmulator(
                 if (cell.strikethrough) attrs = attrs or ATTR_STRIKETHROUGH
                 if (cell.overline) attrs = attrs or ATTR_OVERLINE
                 if (cell.conceal) attrs = attrs or ATTR_CONCEAL
+                if (cell.width == 2) attrs = attrs or ATTR_WIDE_CHAR
+                if (cell.isWideSpacer) attrs = attrs or ATTR_WIDE_SPACER
 
-                writeCell(outOffset, cell.char.code, fgRgb, bgRgb, attrs)
+                writeCell(outOffset, cell.codepoint, fgRgb, bgRgb, attrs)
                 outOffset += PACKED_CELL_INTS
                 cellsWritten++
             }
@@ -489,6 +522,8 @@ class TerminalEmulator(
         const val ATTR_OVERLINE: Int = 1 shl 7
         const val ATTR_CONCEAL: Int = 1 shl 8
         const val ATTR_ROW_WRAPPED: Int = 1 shl 9
+        const val ATTR_WIDE_CHAR: Int = 1 shl 10
+        const val ATTR_WIDE_SPACER: Int = 1 shl 11
     }
 }
 

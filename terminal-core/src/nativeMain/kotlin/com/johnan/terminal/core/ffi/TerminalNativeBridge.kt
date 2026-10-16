@@ -2,6 +2,7 @@
 
 package com.johnan.terminal.core.ffi
 
+import com.johnan.terminal.core.MouseTrackingMode
 import com.johnan.terminal.core.Osc52Policy
 import com.johnan.terminal.core.TerminalConfig
 import com.johnan.terminal.core.TerminalEmulator
@@ -13,11 +14,35 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.StableRef
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.asStableRef
-import kotlinx.cinterop.readBytes
+import kotlinx.cinterop.convert
 import kotlinx.cinterop.set
+import kotlinx.cinterop.usePinned
+import platform.posix.memcpy
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.CName
+
+internal class NativeTerminalHolder(
+    val emulator: TerminalEmulator
+) {
+    init {
+        emulator.headlessMode = true
+    }
+
+    private var scratchBuffer = ByteArray(4096)
+
+    fun borrowBuffer(len: Int): ByteArray {
+        if (len > scratchBuffer.size) {
+            var newSize = scratchBuffer.size
+            while (newSize < len) {
+                newSize = newSize shl 1
+            }
+            scratchBuffer = ByteArray(newSize)
+        }
+        return scratchBuffer
+    }
+}
 
 @CName("terminal_create")
 fun terminalCreate(
@@ -42,19 +67,21 @@ fun terminalCreate(
         osc52Policy = policy,
     )
     val emulator = TerminalEmulator(config)
-    return StableRef.create(emulator).asCPointer()
+    val holder = NativeTerminalHolder(emulator)
+    return StableRef.create(holder).asCPointer()
 }
 
 @CName("terminal_copy")
 fun terminalCopy(handle: COpaquePointer): COpaquePointer {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
-    val clone = emulator.copy()
-    return StableRef.create(clone).asCPointer()
+    val holder = handle.asStableRef<NativeTerminalHolder>().get()
+    val clone = holder.emulator.copy()
+    val cloneHolder = NativeTerminalHolder(clone)
+    return StableRef.create(cloneHolder).asCPointer()
 }
 
 @CName("terminal_destroy")
 fun terminalDestroy(handle: COpaquePointer) {
-    handle.asStableRef<TerminalEmulator>().dispose()
+    handle.asStableRef<NativeTerminalHolder>().dispose()
 }
 
 @CName("terminal_process_bytes")
@@ -64,9 +91,12 @@ fun terminalProcessBytes(
     len: Int,
 ) {
     if (bytes == null || len <= 0) return
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
-    val data = bytes.readBytes(len)
-    emulator.processOutputSync(data)
+    val holder = handle.asStableRef<NativeTerminalHolder>().get()
+    val buf = holder.borrowBuffer(len)
+    buf.usePinned { pinned ->
+        memcpy(pinned.addressOf(0), bytes, len.convert())
+    }
+    holder.emulator.processOutputSync(buf, len)
 }
 
 @CName("terminal_resize")
@@ -76,68 +106,85 @@ fun terminalResize(
     cols: Int,
 ): Int {
     if (rows <= 0 || cols <= 0) return 0
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return if (emulator.resizeSync(rows, cols)) 1 else 0
 }
 
 @CName("terminal_clear")
 fun terminalClear(handle: COpaquePointer) {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     emulator.clearSync()
 }
 
 @CName("terminal_reset")
 fun terminalReset(handle: COpaquePointer) {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     emulator.resetSync()
 }
 
 @CName("terminal_get_rows")
 fun terminalGetRows(handle: COpaquePointer): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return emulator.getScreenBuffer().rows
 }
 
 @CName("terminal_get_cols")
 fun terminalGetCols(handle: COpaquePointer): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return emulator.getScreenBuffer().cols
 }
 
 @CName("terminal_get_cursor_row")
 fun terminalGetCursorRow(handle: COpaquePointer): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return emulator.getScreenBuffer().cursorRow
 }
 
 @CName("terminal_get_cursor_col")
 fun terminalGetCursorCol(handle: COpaquePointer): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return emulator.getScreenBuffer().cursorCol
 }
 
 @CName("terminal_is_cursor_visible")
 fun terminalIsCursorVisible(handle: COpaquePointer): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return if (emulator.getScreenBuffer().cursorVisible) 1 else 0
 }
 
 @CName("terminal_get_bell_count")
 fun terminalGetBellCount(handle: COpaquePointer): Long {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return emulator.bellCount
 }
 
 @CName("terminal_get_clipboard_write_count")
 fun terminalGetClipboardWriteCount(handle: COpaquePointer): Long {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     return emulator.clipboardWriteCount
 }
 
 @CName("terminal_get_scrollback_size")
 fun terminalGetScrollbackSize(handle: COpaquePointer): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
-    return emulator.getScreenBuffer().getScrollback().size
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return emulator.getScreenBuffer().scrollbackSize
+}
+
+@CName("terminal_get_mouse_tracking_mode")
+fun terminalGetMouseTrackingMode(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return when (emulator.mouseTrackingMode) {
+        MouseTrackingMode.None -> 0
+        MouseTrackingMode.Click -> 1
+        MouseTrackingMode.CellMotion -> 2
+        MouseTrackingMode.AllMotion -> 3
+    }
+}
+
+@CName("terminal_is_sgr_mouse_mode_enabled")
+fun terminalIsSgrMouseModeEnabled(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return if (emulator.sgrMouseModeEnabled) 1 else 0
 }
 
 @CName("terminal_read_grid")
@@ -148,7 +195,7 @@ fun terminalReadGrid(
     paletteOrdinal: Int,
 ): Int {
     if (outBuffer == null || maxCells <= 0) return 0
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     val palette = when (paletteOrdinal) {
         0 -> TerminalPalette.DEFAULT
         1 -> TerminalPalette.SOLARIZED_DARK
@@ -159,6 +206,42 @@ fun terminalReadGrid(
     }
     val isDark = paletteOrdinal != 2
     return emulator.packGridCells(maxCells, palette, isDark) { outOffset, codepoint, fgRgb, bgRgb, attrs ->
+        outBuffer[outOffset] = codepoint
+        outBuffer[outOffset + 1] = fgRgb
+        outBuffer[outOffset + 2] = bgRgb
+        outBuffer[outOffset + 3] = attrs
+    }
+}
+
+@CName("terminal_read_viewport")
+fun terminalReadViewport(
+    handle: COpaquePointer,
+    outBuffer: CPointer<IntVar>?,
+    maxCells: Int,
+    scrollbackOffset: Int,
+    paletteOrdinal: Int,
+): Int {
+    if (outBuffer == null || maxCells <= 0) return 0
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    val palette = if (paletteOrdinal < 0) {
+        null
+    } else {
+        when (paletteOrdinal) {
+            0 -> TerminalPalette.DEFAULT
+            1 -> TerminalPalette.SOLARIZED_DARK
+            2 -> TerminalPalette.SOLARIZED_LIGHT
+            3 -> TerminalPalette.MONOKAI
+            4 -> TerminalPalette.NORD
+            else -> TerminalPalette.DEFAULT
+        }
+    }
+    val isDark = paletteOrdinal != 2
+    return emulator.packViewportCells(
+        maxCells = maxCells,
+        scrollbackOffset = scrollbackOffset,
+        palette = palette,
+        isDark = isDark,
+    ) { outOffset, codepoint, fgRgb, bgRgb, attrs ->
         outBuffer[outOffset] = codepoint
         outBuffer[outOffset + 1] = fgRgb
         outBuffer[outOffset + 2] = bgRgb
@@ -191,7 +274,7 @@ fun terminalExtractSelection(
     outUtf8: CPointer<ByteVar>?,
     capacity: Int,
 ): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     val text = TerminalSelection(startRow, startCol, endRow, endCol).extractText(emulator.getScreenBuffer())
     return writeUtf8ToBuffer(text, outUtf8, capacity)
 }
@@ -202,7 +285,7 @@ fun terminalGetWindowTitle(
     outUtf8: CPointer<ByteVar>?,
     capacity: Int,
 ): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     val title = emulator.windowTitle.value ?: return -1
     return writeUtf8ToBuffer(title, outUtf8, capacity)
 }
@@ -213,7 +296,7 @@ fun terminalGetLastClipboardWrite(
     outUtf8: CPointer<ByteVar>?,
     capacity: Int,
 ): Int {
-    val emulator = handle.asStableRef<TerminalEmulator>().get()
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     val text = emulator.lastClipboardWrite ?: return -1
     return writeUtf8ToBuffer(text, outUtf8, capacity)
 }

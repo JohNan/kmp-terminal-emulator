@@ -44,7 +44,10 @@ fn main() {
     ];
 
     let filled = term.read_grid_into(&mut buffer, Palette::Nord);
-    println!("\n[Grid Render: {}x{} ({} cells populated)]", rows, cols, filled);
+    println!(
+        "\n[Grid Render: {}x{} ({} cells populated)]",
+        rows, cols, filled
+    );
 
     // Render Unicode box frame
     println!("┌{}┐", "─".repeat(cols as usize));
@@ -62,7 +65,11 @@ fn main() {
     // 4. Inspect terminal state & diagnostics
     let (cursor_r, cursor_c) = term.cursor_pos();
     println!("\n--- Terminal State Diagnostics ---");
-    println!("• Dimensions:           {} rows x {} cols", term.rows(), term.cols());
+    println!(
+        "• Dimensions:           {} rows x {} cols",
+        term.rows(),
+        term.cols()
+    );
     println!("• Cursor Position:      ({}, {})", cursor_r, cursor_c);
     println!("• Cursor Visible:       {}", term.cursor_visible());
     println!("• Bell Event Count:     {}", term.bell_count());

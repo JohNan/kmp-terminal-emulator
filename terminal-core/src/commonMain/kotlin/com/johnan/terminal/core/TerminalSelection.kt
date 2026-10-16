@@ -58,7 +58,9 @@ data class TerminalSelection(
 
             val lineBuilder = StringBuilder()
             for (col in startCol..endCol.coerceAtMost(cells.lastIndex)) {
-                lineBuilder.append(cells[col].char)
+                val cell = cells[col]
+                if (cell.isWideSpacer) continue
+                lineBuilder.append(cell.glyphString())
             }
 
             lines.add(lineBuilder.toString().trimEnd())
