@@ -163,4 +163,23 @@ class TerminalRenderBatchTest {
         assertEquals(red, batches[1].fgColor)
         assertEquals(2, batches[1].startCol)
     }
+
+    @Test
+    fun testSupplementaryCodepointContent() {
+        val robotCodepoint = 0xF06A9 // Nerd Font md-robot (Plane 15)
+        val row = Array(3) {
+            when (it) {
+                0 -> TerminalCell.createCodepoint(codepoint = robotCodepoint)
+                1 -> TerminalCell(char = ' ')
+                else -> TerminalCell(char = 'A')
+            }
+        }
+        val sb = StringBuilder()
+        val batches = ArrayList<RenderBatch>()
+        calculateBatches(row, sb, batches)
+
+        assertEquals(1, batches.size)
+        assertEquals("\uDB81\uDEA9 A", batches[0].text)
+        assertEquals(3, batches[0].length)
+    }
 }
