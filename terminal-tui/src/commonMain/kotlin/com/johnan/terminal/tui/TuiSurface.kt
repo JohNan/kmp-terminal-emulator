@@ -29,6 +29,7 @@ class TuiSurface(
 ) {
     private val totalCells = rows * cols
     private val chars = CharArray(totalCells)
+    private val codepoints = IntArray(totalCells)
     private val fgRgbArray = IntArray(totalCells)
     private val bgRgbArray = IntArray(totalCells)
     private val styleArray = IntArray(totalCells)
@@ -46,6 +47,7 @@ class TuiSurface(
      */
     fun clear(fgRgb: Int = 0xE2E8F0, bgRgb: Int = 0x090D16) {
         chars.fill(' ')
+        codepoints.fill(' '.code)
         fgRgbArray.fill(fgRgb)
         bgRgbArray.fill(bgRgb)
         styleArray.fill(TuiCellStyle.NONE)
@@ -60,11 +62,13 @@ class TuiSurface(
         char: Char,
         fgRgb: Int,
         bgRgb: Int,
-        style: Int = TuiCellStyle.NONE
+        style: Int = TuiCellStyle.NONE,
+        codepoint: Int = char.code,
     ) {
         if (row in 0 until rows && col in 0 until cols) {
             val index = row * cols + col
             chars[index] = char
+            codepoints[index] = codepoint
             fgRgbArray[index] = fgRgb
             bgRgbArray[index] = bgRgb
             styleArray[index] = style
@@ -73,6 +77,9 @@ class TuiSurface(
 
     fun getChar(row: Int, col: Int): Char =
         if (row in 0 until rows && col in 0 until cols) chars[row * cols + col] else ' '
+
+    fun getCodepoint(row: Int, col: Int): Int =
+        if (row in 0 until rows && col in 0 until cols) codepoints[row * cols + col] else ' '.code
 
     fun getFgRgb(row: Int, col: Int): Int =
         if (row in 0 until rows && col in 0 until cols) fgRgbArray[row * cols + col] else 0
@@ -221,8 +228,15 @@ class TuiSurface(
                 if (cell.reverse) style = style or TuiCellStyle.REVERSE
                 if (cell.strikethrough) style = style or TuiCellStyle.STRIKETHROUGH
 
-                val ch = if (cell.char == '\u0000') ' ' else cell.char
-                setCell(destRow + r, destCol + c, ch, fg, bg, style)
+                val cp = if (cell.isWideSpacer) {
+                    0
+                } else if (cell.codepoint <= 0) {
+                    ' '.code
+                } else {
+                    cell.codepoint
+                }
+                val ch = if (cp in 1..0xFFFF) cp.toChar() else ' '
+                setCell(destRow + r, destCol + c, ch, fg, bg, style, cp)
             }
         }
 
@@ -249,6 +263,7 @@ class TuiSurface(
     fun copyFrom(other: TuiSurface) {
         val count = minOf(totalCells, other.totalCells)
         other.chars.copyInto(chars, 0, 0, count)
+        other.codepoints.copyInto(codepoints, 0, 0, count)
         other.fgRgbArray.copyInto(fgRgbArray, 0, 0, count)
         other.bgRgbArray.copyInto(bgRgbArray, 0, 0, count)
         other.styleArray.copyInto(styleArray, 0, 0, count)

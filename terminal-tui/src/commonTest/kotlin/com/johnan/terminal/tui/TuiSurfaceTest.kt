@@ -151,6 +151,28 @@ class TuiSurfaceTest {
     }
 
     @Test
+    fun testBlitScreenStateWithSupplementaryCodepoint() {
+        val buffer = ScreenBuffer(initialRows = 1, initialCols = 5)
+        buffer.writeCodepoint(0xF06A9)
+        buffer.writeText("A")
+
+        val state = TerminalScreenState.from(buffer)
+        val surface = TuiSurface(rows = 1, cols = 5)
+        surface.blitScreenState(
+            state = state,
+            destRow = 0,
+            destCol = 0,
+            height = 1,
+            width = 5,
+        )
+
+        assertEquals(' ', surface.getChar(0, 0))
+        assertEquals(0xF06A9, surface.getCodepoint(0, 0))
+        assertEquals('A', surface.getChar(0, 1))
+        assertEquals('A'.code, surface.getCodepoint(0, 1))
+    }
+
+    @Test
     fun testBlitScreenStateWithScrollback() {
         val buffer = ScreenBuffer(initialRows = 3, initialCols = 10)
         for (i in 1..5) {

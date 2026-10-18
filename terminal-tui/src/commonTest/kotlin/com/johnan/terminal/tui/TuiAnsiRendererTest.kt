@@ -83,4 +83,15 @@ class TuiAnsiRendererTest {
         val output = renderer.render(surface)
         assertTrue(output.contains("\u001b[?25l"))
     }
+
+    @Test
+    fun testSupplementaryCodepointRendering() {
+        val renderer = TuiAnsiRenderer()
+        val surface = TuiSurface(rows = 1, cols = 4)
+        surface.setCell(0, 0, ' ', 0xFFFFFF, 0x000000, codepoint = 0xF06A9)
+        surface.setCell(0, 1, 'X', 0xFFFFFF, 0x000000)
+
+        val output = renderer.render(surface)
+        assertTrue(output.contains("\uDB81\uDEA9X"))
+    }
 }

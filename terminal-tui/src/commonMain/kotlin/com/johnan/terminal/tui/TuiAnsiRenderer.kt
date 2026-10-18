@@ -45,17 +45,20 @@ class TuiAnsiRenderer {
         for (r in 0 until surface.rows) {
             for (c in 0 until surface.cols) {
                 val char = surface.getChar(r, c)
+                val cp = surface.getCodepoint(r, c)
                 val fg = surface.getFgRgb(r, c)
                 val bg = surface.getBgRgb(r, c)
                 val style = surface.getStyle(r, c)
 
                 val changed = isFull ||
                     char != prev.getChar(r, c) ||
+                    cp != prev.getCodepoint(r, c) ||
                     fg != prev.getFgRgb(r, c) ||
                     bg != prev.getBgRgb(r, c) ||
                     style != prev.getStyle(r, c)
 
                 if (changed) {
+                    if (cp == 0) continue
                     if (r != lastCursorRow || c != lastCursorCol) {
                         sb.append("\u001b[").append(r + 1).append(';').append(c + 1).append('H')
                         lastCursorRow = r
@@ -69,8 +72,15 @@ class TuiAnsiRenderer {
                         currentStyle = style
                     }
 
-                    sb.append(char)
-                    lastCursorCol++
+                    if (cp <= 0xFFFF) {
+                        sb.append(cp.toChar())
+                    } else {
+                        val high = ((cp - 0x10000) shr 10) + 0xD800
+                        val low = ((cp - 0x10000) and 0x3FF) + 0xDC00
+                        sb.append(high.toChar()).append(low.toChar())
+                    }
+                    val advance = if (c + 1 < surface.cols && surface.getCodepoint(r, c + 1) == 0) 2 else 1
+                    lastCursorCol += advance
                 }
             }
         }

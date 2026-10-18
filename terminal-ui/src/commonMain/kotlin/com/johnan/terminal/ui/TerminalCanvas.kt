@@ -491,19 +491,30 @@ fun TerminalCanvas(
                                 )
                             }
 
-                        // Optimization: Cache TextLayoutResult for each character to avoid expensive measurement on every frame
+                        // Optimization: Cache TextLayoutResult for each column to avoid expensive measurement on every frame
                         val layoutResults = batch.charLayoutResults ?: run {
-                            val results = arrayOfNulls<TextLayoutResult>(batch.text.length)
-                            for (j in 0 until batch.text.length) {
-                                val c = batch.text[j]
-                                val isBox = c.code in 0x2500..0x257F
-                                val isBlock = c.code in 0x2580..0x259F
+                            val results = arrayOfNulls<TextLayoutResult>(batch.length)
+                            var charIdx = 0
+                            var colIdx = 0
+                            val textLen = batch.text.length
+                            while (colIdx < batch.length && charIdx < textLen) {
+                                val c = batch.text[charIdx]
+                                val hasLow =
+                                    c.isHighSurrogate() &&
+                                        charIdx + 1 < textLen &&
+                                        batch.text[charIdx + 1].isLowSurrogate()
+                                val isBox = !hasLow && c.code in 0x2500..0x257F
+                                val isBlock = !hasLow && c.code in 0x2580..0x259F
                                 if (!isBox && !isBlock && c != ' ') {
-                                    results[j] = textMeasurer.measure(
-                                        text = c.toString(),
-                                        style = textStyle
+                                    val glyphText =
+                                        if (hasLow) batch.text.substring(charIdx, charIdx + 2) else c.toString()
+                                    results[colIdx] = textMeasurer.measure(
+                                        text = glyphText,
+                                        style = textStyle,
                                     )
                                 }
+                                charIdx += if (hasLow) 2 else 1
+                                colIdx++
                             }
                             batch.charLayoutResults = results
                             results
@@ -514,12 +525,19 @@ fun TerminalCanvas(
                         val strokeWidthLight = 1.dp.toPx()
                         val strokeWidthHeavy = 2.5.dp.toPx()
 
-                        for (j in 0 until batch.text.length) {
-                            val c = batch.text[j]
-                            val charX = x + j * cellWidth
+                        var charIdx = 0
+                        var colIdx = 0
+                        val textLen = batch.text.length
+                        while (colIdx < batch.length && charIdx < textLen) {
+                            val c = batch.text[charIdx]
+                            val hasLow =
+                                c.isHighSurrogate() &&
+                                    charIdx + 1 < textLen &&
+                                    batch.text[charIdx + 1].isLowSurrogate()
+                            val charX = x + colIdx * cellWidth
 
-                            val isBox = c.code in 0x2500..0x257F
-                            val isBlock = c.code in 0x2580..0x259F
+                            val isBox = !hasLow && c.code in 0x2500..0x257F
+                            val isBlock = !hasLow && c.code in 0x2580..0x259F
 
                             if (isBox) {
                                 drawBoxDrawing(
@@ -530,12 +548,12 @@ fun TerminalCanvas(
                                     cellHeight,
                                     textColor,
                                     strokeWidthLight,
-                                    strokeWidthHeavy
+                                    strokeWidthHeavy,
                                 )
                             } else if (isBlock) {
                                 drawBlockElement(c, charX, y, cellWidth, cellHeight, textColor)
                             } else if (c != ' ') {
-                                val charLayout = layoutResults.getOrNull(j)
+                                val charLayout = layoutResults.getOrNull(colIdx)
                                 if (charLayout != null) {
                                     drawText(
                                         textLayoutResult = charLayout,
@@ -543,6 +561,8 @@ fun TerminalCanvas(
                                     )
                                 }
                             }
+                            charIdx += if (hasLow) 2 else 1
+                            colIdx++
                         }
                     }
 
@@ -663,6 +683,25 @@ private fun calculateAnsiColors(
     )
 }
 
+private fun isBlankCell(cell: TerminalCell): Boolean =
+    cell.isWideSpacer || cell.codepoint == 32 || cell.codepoint == 0
+
+private fun appendCellGlyph(
+    sb: StringBuilder,
+    cell: TerminalCell,
+) {
+    val cp = cell.codepoint
+    if (cell.isWideSpacer || cp <= 0) {
+        sb.append(' ')
+    } else if (cp <= 0xFFFF) {
+        sb.append(cp.toChar())
+    } else {
+        val high = ((cp - 0x10000) shr 10) + 0xD800
+        val low = ((cp - 0x10000) and 0x3FF) + 0xDC00
+        sb.append(high.toChar()).append(low.toChar())
+    }
+}
+
 /**
  * Groups contiguous row cells with matching visual attributes into render batches.
  */
@@ -685,10 +724,10 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
 
         var k = colIndex + 1
 
-        if (cell.char != ' ') {
+        if (!isBlankCell(cell)) {
             // Path A: Content Start - optimized loop for content-heavy batches
             sb.setLength(0)
-            sb.append(cell.char)
+            appendCellGlyph(sb, cell)
 
             while (k < rowSize) {
                 val nextCell = row[k]
@@ -707,7 +746,7 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                 ) {
                     break
                 }
-                sb.append(nextCell.char)
+                appendCellGlyph(sb, nextCell)
                 k++
             }
 
@@ -748,7 +787,7 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                     break
                 }
 
-                if (nextCell.char != ' ') {
+                if (!isBlankCell(nextCell)) {
                     switchedToBuild = true
                     break
                 }
@@ -785,7 +824,7 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                     ) {
                         break
                     }
-                    sb.append(nextCell.char)
+                    appendCellGlyph(sb, nextCell)
                     k++
                 }
 
