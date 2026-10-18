@@ -1,3 +1,28 @@
+buildscript {
+    configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            when (requested.group) {
+                "com.google.protobuf" -> if (
+                    requested.name == "protobuf-java" ||
+                    requested.name == "protobuf-java-util" ||
+                    requested.name == "protobuf-kotlin"
+                ) {
+                    useVersion("3.25.8")
+                    because("Patch transitive AGP buildscript protobuf vulnerabilities")
+                }
+                "org.jdom" -> if (requested.name == "jdom2") {
+                    useVersion("2.0.6.1")
+                    because("Patch CVE-2021-33813 in transitive AGP buildscript JDOM2")
+                }
+                "org.bitbucket.b_c" -> if (requested.name == "jose4j") {
+                    useVersion("0.9.6")
+                    because("Patch transitive AGP buildscript jose4j")
+                }
+            }
+        }
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
