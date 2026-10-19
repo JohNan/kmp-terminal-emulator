@@ -13,6 +13,8 @@ jobs:
   build-and-release:
     runs-on: ubuntu-latest
     environment: prod
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
@@ -32,6 +34,7 @@ jobs:
             VERSION_NAME=${VERSION_NAME%%-*}
           fi
           echo "version_name=$VERSION_NAME" >> $GITHUB_ENV
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "Calculated Production Version: $VERSION_NAME"
 
       - name: Set up JDK 21
@@ -136,13 +139,94 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build Native Linux and Windows Libraries
+        run: ./gradlew :terminal-core:linkReleaseStaticLinuxX64 :terminal-core:linkReleaseSharedLinuxX64 :terminal-core:linkReleaseStaticLinuxArm64 :terminal-core:linkReleaseSharedLinuxArm64 :terminal-core:linkReleaseStaticMingwX64 :terminal-core:linkReleaseSharedMingwX64 --no-daemon
+
+      - name: Prepare Native Linux and Windows Release Assets
+        run: |
+          mkdir -p native-assets
+          cp terminal-core/build/bin/linuxX64/releaseStatic/libterminal_core.a native-assets/libterminal_core-linuxX64.a
+          cp terminal-core/build/bin/linuxX64/releaseShared/libterminal_core.so native-assets/libterminal_core-linuxX64.so
+          cp terminal-core/build/bin/linuxArm64/releaseStatic/libterminal_core.a native-assets/libterminal_core-linuxArm64.a
+          cp terminal-core/build/bin/linuxArm64/releaseShared/libterminal_core.so native-assets/libterminal_core-linuxArm64.so
+          cp terminal-core/build/bin/mingwX64/releaseStatic/libterminal_core.a native-assets/libterminal_core-mingwX64.a
+          if [ -f terminal-core/build/bin/mingwX64/releaseShared/terminal_core.dll ]; then
+            cp terminal-core/build/bin/mingwX64/releaseShared/terminal_core.dll native-assets/libterminal_core-mingwX64.dll
+          fi
+
       - name: Update GitHub Release Assets
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ env.version_name }}
           name: v${{ env.version_name }}
-          files: kmp-terminal-wasm.zip
+          files: |
+            kmp-terminal-wasm.zip
+            native-assets/libterminal_core-linuxX64.a
+            native-assets/libterminal_core-linuxX64.so
+            native-assets/libterminal_core-linuxArm64.a
+            native-assets/libterminal_core-linuxArm64.so
+            native-assets/libterminal_core-mingwX64.a
+            native-assets/libterminal_core-mingwX64.dll
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-native-macos:
+    needs: build-and-release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_NAME="${{ needs.build-and-release.outputs.version_name }}"
+          if [ -z "$VERSION_NAME" ]; then
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+            if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+              VERSION_NAME="0.1.0"
+            else
+              VERSION_NAME=${LATEST_TAG#v}
+              VERSION_NAME=${VERSION_NAME%%-*}
+            fi
+          fi
+          echo "version_name=$VERSION_NAME" >> $GITHUB_ENV
+          echo "Calculated Production Version: $VERSION_NAME"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build Native macOS Targets
+        run: ./gradlew :terminal-core:linkReleaseStaticMacosArm64 :terminal-core:linkReleaseStaticMacosX64 :terminal-core:linkReleaseSharedMacosArm64 :terminal-core:linkReleaseSharedMacosX64 --no-daemon
+
+      - name: Prepare Native macOS Release Assets
+        run: |
+          mkdir -p macos-assets
+          cp terminal-core/build/bin/macosArm64/releaseStatic/libterminal_core.a macos-assets/libterminal_core-macosArm64.a
+          cp terminal-core/build/bin/macosX64/releaseStatic/libterminal_core.a macos-assets/libterminal_core-macosX64.a
+          cp terminal-core/build/bin/macosArm64/releaseShared/libterminal_core.dylib macos-assets/libterminal_core-macosArm64.dylib
+          cp terminal-core/build/bin/macosX64/releaseShared/libterminal_core.dylib macos-assets/libterminal_core-macosX64.dylib
+
+      - name: Upload macOS Release Assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.version_name }}
+          files: |
+            macos-assets/libterminal_core-macosArm64.a
+            macos-assets/libterminal_core-macosX64.a
+            macos-assets/libterminal_core-macosArm64.dylib
+            macos-assets/libterminal_core-macosX64.dylib
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
