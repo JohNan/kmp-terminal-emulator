@@ -2,7 +2,7 @@ package com.johnan.terminal.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +36,7 @@ import com.johnan.terminal.core.TerminalColor
 import com.johnan.terminal.core.TerminalScreenState
 import com.johnan.terminal.core.UrlRange
 import com.johnan.terminal.core.toComposeColor
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Calculates the index range of rows visible within the viewport, including an overscan margin.
@@ -52,6 +53,8 @@ fun calculateVisibleRowRange(
     val lastVisible = (((scrollOffset + viewportHeight) / cellHeight).toInt() + 1 + overscanRows).coerceIn(0, totalRows)
     return firstVisible until lastVisible
 }
+
+private val DefaultStartDirectTouchSelection: (Int, Int) -> Unit = { _, _ -> }
 
 /**
  * Renders terminal character grid cells, cursor styles, highlights, and gesture overlays via hardware-accelerated Canvas.
@@ -78,6 +81,9 @@ fun TerminalCanvas(
     selectionState: SelectionState = SelectionState.None,
     searchState: SearchState = SearchState(),
     touchScrollSendsWheelOnly: Boolean = false,
+    gestureConfig: TerminalGestureConfig = TerminalGestureConfig(
+        touchScrollSendsWheelOnly = touchScrollSendsWheelOnly,
+    ),
     // Copy mode gesture callbacks
     onSingleTap: (row: Int, col: Int) -> Unit = { _, _ -> },
     onStartDraggingStartCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
@@ -91,6 +97,8 @@ fun TerminalCanvas(
     onUrlClick: (String) -> Unit = {},
     onMouseEvent: (MouseEvent, Int, Int) -> Unit = { _, _, _ -> },
     onLog: (String) -> Unit = {},
+    selectionController: SelectionController? = null,
+    onStartDirectTouchSelection: (row: Int, col: Int) -> Unit = DefaultStartDirectTouchSelection,
 ) {
     // Get terminal dimensions
     val terminalCols = terminalState.cols
@@ -108,6 +116,39 @@ fun TerminalCanvas(
     val currentOnUrlClick by rememberUpdatedState(onUrlClick)
     val currentOnMouseEvent by rememberUpdatedState(onMouseEvent)
     val currentTouchScrollSendsWheelOnly by rememberUpdatedState(touchScrollSendsWheelOnly)
+    val currentOnStartDirectTouchSelection by rememberUpdatedState(onStartDirectTouchSelection)
+
+    val effectiveGestureConfig = remember(gestureConfig, touchScrollSendsWheelOnly) {
+        gestureConfig.copy(
+            touchScrollSendsWheelOnly = gestureConfig.touchScrollSendsWheelOnly || touchScrollSendsWheelOnly,
+        )
+    }
+
+    val activeSelectionController = selectionController ?: remember(
+        onUpdateStartCursor,
+        onFinalizeStartCursor,
+        onStartDraggingEndCursor,
+        onUpdateEndCursor,
+        onFinalizeEndCursorAndCopy,
+        onExitCopyMode,
+        onStartDirectTouchSelection,
+    ) {
+        SelectionController(
+            onUpdateStartCursor = onUpdateStartCursor,
+            onFinalizeStartCursor = onFinalizeStartCursor,
+            onStartDraggingEndCursor = onStartDraggingEndCursor,
+            onUpdateEndCursor = onUpdateEndCursor,
+            onFinalizeEndCursorAndCopy = onFinalizeEndCursorAndCopy,
+            onClearSelection = onExitCopyMode,
+            onStartDirectTouchSelection =
+                if (onStartDirectTouchSelection !== DefaultStartDirectTouchSelection) {
+                    onStartDirectTouchSelection
+                } else {
+                    onStartDraggingEndCursor
+                },
+        )
+    }
+    val currentSelectionController by rememberUpdatedState(activeSelectionController)
 
     // Auto-scroll to search match
     LaunchedEffect(searchState.currentMatchIndex, searchState.isVisible) {
@@ -161,6 +202,9 @@ fun TerminalCanvas(
     val currentCellWidth by rememberUpdatedState(cellWidth)
     val currentCellHeight by rememberUpdatedState(cellHeight)
     val currentVerticalOffset by rememberUpdatedState(verticalOffset)
+    val currentTerminalState by rememberUpdatedState(terminalState)
+    val currentSelectionState by rememberUpdatedState(selectionState)
+    val currentAllRows by rememberUpdatedState(allRows)
 
     // Scrollable container with terminal background from color scheme
     Box(
@@ -168,187 +212,333 @@ fun TerminalCanvas(
             modifier
                 .fillMaxSize()
                 .semantics { contentDescription = "Terminal canvas" }
-                .verticalScroll(
-                    scrollState,
-                    enabled =
-                        selectionState is SelectionState.None ||
-                            selectionState is SelectionState.CopyModeActive ||
-                            selectionState is SelectionState.StartCursorPlaced ||
-                            selectionState is SelectionState.SelectionComplete,
-                )
+                .verticalScroll(scrollState, enabled = selectionState is SelectionState.None)
                 .background(terminalBackgroundColor)
-                // Standard mode gestures - only active when NOT in copy mode
-                .pointerInput(isCopyMode, terminalState.mouseTrackingMode, touchScrollSendsWheelOnly) {
-                    if (isCopyMode) return@pointerInput
-
-                    if (terminalState.mouseTrackingMode != MouseTrackingMode.None) {
-                        // Mouse tracking active - consume taps and drags
+                // Standard mode gestures - long-press direct selection and mouse tracking
+                .pointerInput(
+                    terminalState.mouseTrackingMode,
+                    effectiveGestureConfig,
+                ) {
+                    val isMouseTracking = currentTerminalState.mouseTrackingMode != MouseTrackingMode.None
+                    if (isMouseTracking) {
                         awaitPointerEventScope {
-                            var lastRow = -1
-                            var lastCol = -1
-                            var startOffsetY = 0f
-                            var accumulatedDeltaY = 0f
-                            var initialPressX = 0f
-                            var initialPressY = 0f
-                            var pressVisibleRow = -1
-                            var pressCol = -1
-                            var isScrolling = false
-
                             while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: continue
-                                val offset = change.position
-                                val (row, col) =
-                                    TerminalCoordinateConverter.screenToTerminal(
-                                        offset = offset,
-                                        cellWidth = currentCellWidth,
-                                        cellHeight = currentCellHeight,
-                                        scrollbackLineCount = currentScrollbackLineCount,
-                                        totalRows = currentTotalRows,
-                                        cols = currentTerminalCols,
-                                        verticalOffset = currentVerticalOffset,
-                                    )
+                                val downEvent = awaitFirstDown(requireUnconsumed = false)
+                                val downPos = downEvent.position
+                                val (downRow, downCol) = TerminalCoordinateConverter.screenToTerminal(
+                                    offset = downPos,
+                                    cellWidth = currentCellWidth,
+                                    cellHeight = currentCellHeight,
+                                    scrollbackLineCount = currentScrollbackLineCount,
+                                    totalRows = currentTotalRows,
+                                    cols = currentTerminalCols,
+                                    verticalOffset = currentVerticalOffset,
+                                )
+                                val downVisibleRow = downRow - currentScrollbackLineCount
 
-                                val visibleRow = row - currentScrollbackLineCount
-                                if (visibleRow in 0 until terminalState.rows.size) {
-                                    when (event.type) {
-                                        androidx.compose.ui.input.pointer.PointerEventType.Press -> {
-                                            startOffsetY = offset.y
-                                            initialPressX = offset.x
-                                            initialPressY = offset.y
-                                            accumulatedDeltaY = 0f
-                                            pressVisibleRow = visibleRow
-                                            pressCol = col
-                                            isScrolling = false
-                                            if (!currentTouchScrollSendsWheelOnly) {
-                                                currentOnMouseEvent(MouseEvent.Press, visibleRow, col)
-                                            }
-                                        }
-                                        androidx.compose.ui.input.pointer.PointerEventType.Release -> {
-                                            if (currentTouchScrollSendsWheelOnly) {
-                                                if (!isScrolling && pressVisibleRow >= 0 && pressCol >= 0) {
-                                                    currentOnMouseEvent(MouseEvent.Press, pressVisibleRow, pressCol)
-                                                    currentOnMouseEvent(MouseEvent.Release, pressVisibleRow, pressCol)
+                                if (effectiveGestureConfig.touchScrollSendsWheelOnly) {
+                                    val selController = currentSelectionController
+                                    var isScrolling = false
+                                    var accumulatedDy = 0f
+                                    var lastOffsetY = downPos.y
+                                    var tapCompleted = false
+
+                                    val timeoutResult =
+                                        withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                                    ?: event.changes.firstOrNull()
+                                                if (change == null || !change.pressed) {
+                                                    // Released before longPressTimeoutMillis -> Tap
+                                                    if (downVisibleRow in 0 until currentTerminalState.rows.size) {
+                                                        currentOnMouseEvent(
+                                                            MouseEvent.Press,
+                                                            downVisibleRow,
+                                                            downCol,
+                                                        )
+                                                        currentOnMouseEvent(
+                                                            MouseEvent.Release,
+                                                            downVisibleRow,
+                                                            downCol,
+                                                        )
+                                                    }
+                                                    tapCompleted = true
+                                                    return@withTimeoutOrNull false
                                                 }
-                                                isScrolling = false
-                                                pressVisibleRow = -1
-                                                pressCol = -1
-                                                accumulatedDeltaY = 0f
-                                            } else {
-                                                lastRow = -1
-                                                lastCol = -1
-                                                accumulatedDeltaY = 0f
-                                                currentOnMouseEvent(MouseEvent.Release, visibleRow, col)
-                                            }
-                                        }
-                                        androidx.compose.ui.input.pointer.PointerEventType.Move -> {
-                                            if (change.pressed) {
-                                                val deltaY = offset.y - startOffsetY
-                                                startOffsetY = offset.y
-                                                accumulatedDeltaY += deltaY
-                                                val threshold = currentCellHeight.coerceAtLeast(10f)
-
-                                                if (currentTouchScrollSendsWheelOnly) {
-                                                    if (kotlin.math.abs(offset.y - initialPressY) >= threshold ||
-                                                        kotlin.math.abs(offset.x - initialPressX) >= threshold
-                                                    ) {
-                                                        isScrolling = true
-                                                    }
-
-                                                    if (accumulatedDeltaY >= threshold) {
-                                                        val steps = (accumulatedDeltaY / threshold).toInt()
-                                                        accumulatedDeltaY -= steps * threshold
-                                                        repeat(steps) {
-                                                            currentOnMouseEvent(MouseEvent.WheelUp, visibleRow, col)
-                                                        }
-                                                    } else if (accumulatedDeltaY <= -threshold) {
-                                                        val steps = (-accumulatedDeltaY / threshold).toInt()
-                                                        accumulatedDeltaY += steps * threshold
-                                                        repeat(steps) {
-                                                            currentOnMouseEvent(MouseEvent.WheelDown, visibleRow, col)
-                                                        }
-                                                    }
-                                                } else {
-                                                    if (accumulatedDeltaY >= threshold) {
-                                                        // Scrolled downward -> Wheel Up in terminal apps (e.g. tmux/vim/less)
-                                                        val steps = (accumulatedDeltaY / threshold).toInt()
-                                                        accumulatedDeltaY -= steps * threshold
-                                                        repeat(steps) {
-                                                            currentOnMouseEvent(MouseEvent.WheelUp, visibleRow, col)
-                                                        }
-                                                    } else if (accumulatedDeltaY <= -threshold) {
-                                                        // Scrolled upward -> Wheel Down
-                                                        val steps = (-accumulatedDeltaY / threshold).toInt()
-                                                        accumulatedDeltaY += steps * threshold
-                                                        repeat(steps) {
-                                                            currentOnMouseEvent(MouseEvent.WheelDown, visibleRow, col)
-                                                        }
-                                                    }
-
-                                                    if (terminalState.mouseTrackingMode != MouseTrackingMode.Click) {
-                                                        if (visibleRow != lastRow || col != lastCol) {
-                                                            currentOnMouseEvent(MouseEvent.Drag, visibleRow, col)
-                                                            lastRow = visibleRow
-                                                            lastCol = col
-                                                        }
-                                                    }
+                                                val distance = (change.position - downPos).getDistance()
+                                                if (distance > viewConfiguration.touchSlop) {
+                                                    isScrolling = true
+                                                    val deltaY = change.position.y - lastOffsetY
+                                                    lastOffsetY = change.position.y
+                                                    accumulatedDy += deltaY
+                                                    change.consume()
+                                                    return@withTimeoutOrNull true
                                                 }
                                             }
+                                            @Suppress("UNREACHABLE_CODE")
+                                            false
+                                        }
+
+                                    if (tapCompleted) {
+                                        continue
+                                    }
+
+                                    if (timeoutResult == null && !isScrolling) {
+                                        // Long press timeout elapsed within touchSlop -> Direct Touch Selection
+                                        // Note: downPos and change.position are already translated by verticalScroll
+                                        val (startCol, startRow) = pixelToCellCoordinates(
+                                            pixelX = downPos.x,
+                                            pixelY = downPos.y,
+                                            scrollOffset = 0f,
+                                            cellWidth = currentCellWidth,
+                                            cellHeight = currentCellHeight,
+                                            verticalOffset = currentVerticalOffset,
+                                            cols = currentTerminalCols,
+                                            visibleRows = currentTerminalState.rows.size,
+                                            scrollbackSize = currentTerminalState.scrollback.size,
+                                        )
+                                        selController.onStartDirectTouchSelection(startRow, startCol)
+
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                                ?: event.changes.firstOrNull()
+                                            if (change == null || !change.pressed) break
+                                            val (col, row) = pixelToCellCoordinates(
+                                                pixelX = change.position.x,
+                                                pixelY = change.position.y,
+                                                scrollOffset = 0f,
+                                                cellWidth = currentCellWidth,
+                                                cellHeight = currentCellHeight,
+                                                verticalOffset = currentVerticalOffset,
+                                                cols = currentTerminalCols,
+                                                visibleRows = currentTerminalState.rows.size,
+                                                scrollbackSize = currentTerminalState.scrollback.size,
+                                            )
+                                            selController.onUpdateEndCursor(row, col)
+                                            change.consume()
+                                        }
+                                        selController.onFinalizeEndCursorAndCopy()
+                                        continue
+                                    }
+
+                                    // Wheel scroll loop
+                                    if (isScrolling) {
+                                        val threshold = currentCellHeight.coerceAtLeast(10f)
+                                        if (accumulatedDy >= threshold) {
+                                            val steps = (accumulatedDy / threshold).toInt()
+                                            accumulatedDy -= steps * threshold
+                                            repeat(steps) {
+                                                currentOnMouseEvent(MouseEvent.WheelUp, downVisibleRow, downCol)
+                                            }
+                                        } else if (accumulatedDy <= -threshold) {
+                                            val steps = (-accumulatedDy / threshold).toInt()
+                                            accumulatedDy += steps * threshold
+                                            repeat(steps) {
+                                                currentOnMouseEvent(MouseEvent.WheelDown, downVisibleRow, downCol)
+                                            }
+                                        }
+
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                                ?: event.changes.firstOrNull()
+                                            if (change == null || !change.pressed) break
+                                            val deltaY = change.position.y - lastOffsetY
+                                            lastOffsetY = change.position.y
+                                            accumulatedDy += deltaY
+
+                                            val (curRow, curCol) = TerminalCoordinateConverter.screenToTerminal(
+                                                offset = change.position,
+                                                cellWidth = currentCellWidth,
+                                                cellHeight = currentCellHeight,
+                                                scrollbackLineCount = currentScrollbackLineCount,
+                                                totalRows = currentTotalRows,
+                                                cols = currentTerminalCols,
+                                                verticalOffset = currentVerticalOffset,
+                                            )
+                                            val curVisibleRow = curRow - currentScrollbackLineCount
+
+                                            if (accumulatedDy >= threshold) {
+                                                val steps = (accumulatedDy / threshold).toInt()
+                                                accumulatedDy -= steps * threshold
+                                                repeat(steps) {
+                                                    currentOnMouseEvent(MouseEvent.WheelUp, curVisibleRow, curCol)
+                                                }
+                                            } else if (accumulatedDy <= -threshold) {
+                                                val steps = (-accumulatedDy / threshold).toInt()
+                                                accumulatedDy += steps * threshold
+                                                repeat(steps) {
+                                                    currentOnMouseEvent(MouseEvent.WheelDown, curVisibleRow, curCol)
+                                                }
+                                            }
+                                            change.consume()
                                         }
                                     }
-                                }
+                                } else {
+                                    // Not touchScrollSendsWheelOnly (standard mouse tracking mode)
+                                    var lastRow = downVisibleRow
+                                    var lastCol = downCol
+                                    var startOffsetY = downPos.y
+                                    var accumulatedDeltaY = 0f
+                                    val threshold = currentCellHeight.coerceAtLeast(10f)
 
-                                // Consume event to prevent native actions
-                                change.consume()
+                                    if (downVisibleRow in 0 until currentTerminalState.rows.size) {
+                                        currentOnMouseEvent(MouseEvent.Press, downVisibleRow, downCol)
+                                    }
+
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                            ?: event.changes.firstOrNull()
+                                        if (change == null || !change.pressed) {
+                                            if (lastRow in 0 until currentTerminalState.rows.size) {
+                                                currentOnMouseEvent(MouseEvent.Release, lastRow, lastCol)
+                                            }
+                                            break
+                                        }
+
+                                        val deltaY = change.position.y - startOffsetY
+                                        startOffsetY = change.position.y
+                                        accumulatedDeltaY += deltaY
+
+                                        val (curRow, curCol) = TerminalCoordinateConverter.screenToTerminal(
+                                            offset = change.position,
+                                            cellWidth = currentCellWidth,
+                                            cellHeight = currentCellHeight,
+                                            scrollbackLineCount = currentScrollbackLineCount,
+                                            totalRows = currentTotalRows,
+                                            cols = currentTerminalCols,
+                                            verticalOffset = currentVerticalOffset,
+                                        )
+                                        val curVisibleRow = curRow - currentScrollbackLineCount
+
+                                        if (accumulatedDeltaY >= threshold) {
+                                            val steps = (accumulatedDeltaY / threshold).toInt()
+                                            accumulatedDeltaY -= steps * threshold
+                                            repeat(steps) {
+                                                currentOnMouseEvent(MouseEvent.WheelUp, curVisibleRow, curCol)
+                                            }
+                                        } else if (accumulatedDeltaY <= -threshold) {
+                                            val steps = (-accumulatedDeltaY / threshold).toInt()
+                                            accumulatedDeltaY -= steps * threshold
+                                            repeat(steps) {
+                                                currentOnMouseEvent(MouseEvent.WheelDown, curVisibleRow, curCol)
+                                            }
+                                        }
+
+                                        if (currentTerminalState.mouseTrackingMode != MouseTrackingMode.Click) {
+                                            if (curVisibleRow != lastRow || curCol != lastCol) {
+                                                currentOnMouseEvent(MouseEvent.Drag, curVisibleRow, curCol)
+                                                lastRow = curVisibleRow
+                                                lastCol = curCol
+                                            }
+                                        }
+                                        change.consume()
+                                    }
+                                }
                             }
                         }
                     } else {
-                        // Native mode gestures
-                        detectTapGestures(
-                            onTap = { offset ->
-                                // Ensure input has focus and keyboard is visible
-                                onRequestFocus()
+                        // MouseTrackingMode.None
+                        val selController = currentSelectionController
+                        awaitPointerEventScope {
+                            while (true) {
+                                val downEvent = awaitFirstDown(requireUnconsumed = false)
+                                val downPos = downEvent.position
+                                var isMovedBeyondSlop = false
+                                var tapCompleted = false
 
-                                val (row, col) =
-                                    TerminalCoordinateConverter.screenToTerminal(
-                                        offset = offset,
-                                        cellWidth = currentCellWidth,
-                                        cellHeight = currentCellHeight,
-                                        scrollbackLineCount = currentScrollbackLineCount,
-                                        totalRows = currentTotalRows,
-                                        cols = currentTerminalCols,
-                                        verticalOffset = currentVerticalOffset,
-                                    )
-
-                                // Check for URL click
-                                val clickedRowData = allRows.getOrNull(row)
-                                if (clickedRowData != null) {
-                                    val ranges = ScreenBuffer.getUrlRanges(clickedRowData)
-                                    val clickedRange =
-                                        ranges.find { range ->
-                                            col >= range.startCol && col < range.endCol
+                                val timeoutResult = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                            ?: event.changes.firstOrNull()
+                                        if (change == null || !change.pressed) {
+                                            // Pointer released before longPressTimeoutMillis -> Tap
+                                            onRequestFocus()
+                                            if (currentSelectionState !is SelectionState.None) {
+                                                selController.onClearSelection()
+                                            }
+                                            val (row, col) = TerminalCoordinateConverter.screenToTerminal(
+                                                offset = downPos,
+                                                cellWidth = currentCellWidth,
+                                                cellHeight = currentCellHeight,
+                                                scrollbackLineCount = currentScrollbackLineCount,
+                                                totalRows = currentTotalRows,
+                                                cols = currentTerminalCols,
+                                                verticalOffset = currentVerticalOffset,
+                                            )
+                                            val clickedRowData = currentAllRows.getOrNull(row)
+                                            if (clickedRowData != null) {
+                                                val ranges = ScreenBuffer.getUrlRanges(clickedRowData)
+                                                val clickedRange = ranges.find { range ->
+                                                    col >= range.startCol && col < range.endCol
+                                                }
+                                                if (clickedRange != null) {
+                                                    val url = ScreenBuffer.extractUrl(clickedRowData, clickedRange)
+                                                    currentOnUrlClick(url)
+                                                }
+                                            }
+                                            currentOnSingleTap(row, col)
+                                            tapCompleted = true
+                                            return@withTimeoutOrNull false
                                         }
-                                    if (clickedRange != null) {
-                                        val url = ScreenBuffer.extractUrl(clickedRowData, clickedRange)
-                                        currentOnUrlClick(url)
+                                        val distance = (change.position - downPos).getDistance()
+                                        if (distance > viewConfiguration.touchSlop) {
+                                            isMovedBeyondSlop = true
+                                            return@withTimeoutOrNull true
+                                        }
                                     }
+                                    @Suppress("UNREACHABLE_CODE")
+                                    false
                                 }
-                            },
-                            onLongPress = { offset ->
-                                onRequestFocus()
-                                val (row, col) =
-                                    TerminalCoordinateConverter.screenToTerminal(
-                                        offset = offset,
+
+                                if (tapCompleted) {
+                                    continue
+                                }
+
+                                if (timeoutResult == null && !isMovedBeyondSlop) {
+                                    // Held for longPressTimeoutMillis within touchSlop -> Direct selection
+                                    onRequestFocus()
+                                    val (startCol, startRow) = pixelToCellCoordinates(
+                                        pixelX = downPos.x,
+                                        pixelY = downPos.y,
+                                        scrollOffset = 0f,
                                         cellWidth = currentCellWidth,
                                         cellHeight = currentCellHeight,
-                                        scrollbackLineCount = currentScrollbackLineCount,
-                                        totalRows = currentTotalRows,
-                                        cols = currentTerminalCols,
                                         verticalOffset = currentVerticalOffset,
+                                        cols = currentTerminalCols,
+                                        visibleRows = currentTerminalState.rows.size,
+                                        scrollbackSize = currentTerminalState.scrollback.size,
                                     )
-                                currentOnLongPress(offset, row, col)
-                            },
-                        )
+                                    currentOnLongPress(downPos, startRow, startCol)
+                                    selController.onStartDirectTouchSelection(startRow, startCol)
+
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                            ?: event.changes.firstOrNull()
+                                        if (change == null || !change.pressed) break
+                                        val (col, row) = pixelToCellCoordinates(
+                                            pixelX = change.position.x,
+                                            pixelY = change.position.y,
+                                            scrollOffset = 0f,
+                                            cellWidth = currentCellWidth,
+                                            cellHeight = currentCellHeight,
+                                            verticalOffset = currentVerticalOffset,
+                                            cols = currentTerminalCols,
+                                            visibleRows = currentTerminalState.rows.size,
+                                            scrollbackSize = currentTerminalState.scrollback.size,
+                                        )
+                                        selController.onUpdateEndCursor(row, col)
+                                        change.consume()
+                                    }
+                                    selController.onFinalizeEndCursorAndCopy()
+                                }
+                            }
+                        }
                     }
                 }
                 // Selection gestures - only active in copy mode
