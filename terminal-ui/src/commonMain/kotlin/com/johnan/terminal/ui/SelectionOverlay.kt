@@ -29,8 +29,8 @@ fun SelectionOverlay(
     val normalized = selection.normalized()
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        val contentHeight = totalRows * cellHeight
-        val verticalOffset = if (contentHeight < size.height) size.height - contentHeight else 0f
+        // Enforce Zero Vertical Canvas Offset rule (matching TerminalRenderer.kt)
+        val verticalOffset = 0f
 
         drawSelection(
             selection = normalized,

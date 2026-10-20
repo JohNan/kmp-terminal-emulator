@@ -62,6 +62,8 @@ fun TerminalRenderer(
     onResize: (rows: Int, cols: Int) -> Unit = { _, _ -> },
     onMouseEvent: ((com.johnan.terminal.core.MouseEvent, Int, Int) -> Unit)? = null,
     onCellMeasured: (Float, Float) -> Unit = { _, _ -> },
+    selectionController: SelectionController? = null,
+    onStartDirectTouchSelection: (row: Int, col: Int) -> Unit = { _, _ -> },
 ) {
     val textMeasurer = rememberTextMeasurer()
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -274,6 +276,26 @@ fun TerminalRenderer(
 
         val effectiveOnMouseEvent = onMouseEvent ?: defaultOnMouseEvent
 
+        val effectiveSelectionController = selectionController ?: remember(
+            onUpdateStartCursor,
+            onFinalizeStartCursor,
+            onStartDraggingEndCursor,
+            onUpdateEndCursor,
+            onFinalizeEndCursorAndCopy,
+            onExitCopyMode,
+            onStartDirectTouchSelection,
+        ) {
+            SelectionController(
+                onUpdateStartCursor = onUpdateStartCursor,
+                onFinalizeStartCursor = onFinalizeStartCursor,
+                onStartDraggingEndCursor = onStartDraggingEndCursor,
+                onUpdateEndCursor = onUpdateEndCursor,
+                onFinalizeEndCursorAndCopy = onFinalizeEndCursorAndCopy,
+                onClearSelection = onExitCopyMode,
+                onStartDirectTouchSelection = onStartDraggingEndCursor,
+            )
+        }
+
         TerminalCanvas(
             modifier = Modifier.fillMaxSize(),
             terminalState = terminalState,
@@ -295,6 +317,7 @@ fun TerminalRenderer(
             selectionState = selectionState,
             searchState = searchState,
             touchScrollSendsWheelOnly = config.gestures.touchScrollSendsWheelOnly,
+            gestureConfig = config.gestures,
             onSingleTap = onSingleTap,
             onStartDraggingStartCursor = onStartDraggingStartCursor,
             onUpdateStartCursor = onUpdateStartCursor,
@@ -307,6 +330,8 @@ fun TerminalRenderer(
             onUrlClick = onUrlClick,
             onMouseEvent = effectiveOnMouseEvent,
             onLog = onLog,
+            selectionController = effectiveSelectionController,
+            onStartDirectTouchSelection = onStartDirectTouchSelection,
         )
     }
 }

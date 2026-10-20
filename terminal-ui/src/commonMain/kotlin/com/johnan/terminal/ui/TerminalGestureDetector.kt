@@ -3,6 +3,7 @@ package com.johnan.terminal.ui
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -10,6 +11,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.johnan.terminal.core.SelectionState
 import com.johnan.terminal.core.TerminalCell
 import kotlin.math.roundToInt
+
+/**
+ * Controller encapsulating text selection gesture callbacks.
+ */
+@Immutable
+class SelectionController(
+    val onUpdateStartCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
+    val onFinalizeStartCursor: () -> Unit = {},
+    val onStartDraggingEndCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
+    val onUpdateEndCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
+    val onFinalizeEndCursorAndCopy: () -> Unit = {},
+    val onClearSelection: () -> Unit = {},
+    val onStartDirectTouchSelection: (row: Int, col: Int) -> Unit = { _, _ -> },
+)
 
 /**
  * Attaches pointer gesture recognizers for touch selection placement and long-press handle dragging.
@@ -140,3 +155,35 @@ fun Modifier.terminalGestures(
             )
         }
 }
+
+/**
+ * Attaches pointer gesture recognizers for touch selection placement and long-press handle dragging using SelectionController.
+ */
+@Composable
+fun Modifier.terminalGestures(
+    selectionState: SelectionState,
+    terminalCols: Int,
+    allRows: List<Array<TerminalCell>>,
+    cellWidth: Float,
+    cellHeight: Float,
+    scrollbackLineCount: Int,
+    verticalOffset: Float,
+    selectionController: SelectionController,
+    onSingleTap: (row: Int, col: Int) -> Unit = { _, _ -> },
+): Modifier = terminalGestures(
+    selectionState = selectionState,
+    terminalCols = terminalCols,
+    allRows = allRows,
+    cellWidth = cellWidth,
+    cellHeight = cellHeight,
+    scrollbackLineCount = scrollbackLineCount,
+    verticalOffset = verticalOffset,
+    onSingleTap = onSingleTap,
+    onStartDraggingStartCursor = selectionController.onStartDraggingEndCursor,
+    onUpdateStartCursor = selectionController.onUpdateStartCursor,
+    onFinalizeStartCursor = selectionController.onFinalizeStartCursor,
+    onStartDraggingEndCursor = selectionController.onStartDraggingEndCursor,
+    onUpdateEndCursor = selectionController.onUpdateEndCursor,
+    onFinalizeEndCursor = selectionController.onFinalizeEndCursorAndCopy,
+    onExitCopyMode = selectionController.onClearSelection,
+)
