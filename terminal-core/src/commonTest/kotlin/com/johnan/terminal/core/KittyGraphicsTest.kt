@@ -717,4 +717,158 @@ class KittyGraphicsTest {
         assertEquals(originalState.imagePlacements.size, cloneState.imagePlacements.size)
         assertEquals(originalState.images[50]?.id, cloneState.images[50]?.id)
     }
+
+    @Test
+    fun testZlibCompressedRgbAndRgbaAndMultiChunk() {
+        val emulator = TerminalEmulator(config = TerminalConfig(initialRows = 10, initialCols = 20))
+
+        // 1. RGBA with o=z
+        val rgba = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+        val zlibRgba = makeUncompressedZlib(rgba)
+        emulator.processOutputSync(
+            "\u001B_Ga=t,f=32,s=2,v=2,o=z,i=101;${base64Encode(zlibRgba)}\u001B\\"
+        )
+        val img101 = emulator.snapshotScreenState().images[101]
+        assertNotNull(img101)
+        assertEquals(2, img101.widthPx)
+        assertEquals(2, img101.heightPx)
+        assertTrue(rgba.contentEquals(img101.rgbaBytes))
+
+        // 2. RGB with o=z
+        val rgb = byteArrayOf(10, 20, 30, 40, 50, 60)
+        val zlibRgb = makeUncompressedZlib(rgb)
+        emulator.processOutputSync(
+            "\u001B_Ga=t,f=24,s=2,v=1,o=z,i=102;${base64Encode(zlibRgb)}\u001B\\"
+        )
+        val img102 = emulator.snapshotScreenState().images[102]
+        assertNotNull(img102)
+        assertEquals(2, img102.widthPx)
+        assertEquals(1, img102.heightPx)
+        assertEquals(8, img102.rgbaBytes.size)
+        assertEquals(10, img102.rgbaBytes[0])
+        assertEquals(20, img102.rgbaBytes[1])
+        assertEquals(30, img102.rgbaBytes[2])
+        assertEquals(0xFF.toByte(), img102.rgbaBytes[3])
+
+        // 3. Multi-chunk transmission (m=1 followed by m=0) with o=z
+        val raw64 = ByteArray(64) { (it * 3).toByte() }
+        val zlib64 = makeUncompressedZlib(raw64)
+        val b64All = base64Encode(zlib64)
+        val mid = b64All.length / 2
+        val chunk1 = b64All.substring(0, mid)
+        val chunk2 = b64All.substring(mid)
+
+        emulator.processOutputSync(
+            "\u001B_Ga=t,f=32,s=4,v=4,o=z,i=103,m=1;$chunk1\u001B\\"
+        )
+        assertNull(emulator.snapshotScreenState().images[103])
+
+        emulator.processOutputSync("\u001B_Gm=0;$chunk2\u001B\\")
+        val img103 = emulator.snapshotScreenState().images[103]
+        assertNotNull(img103)
+        assertEquals(4, img103.widthPx)
+        assertEquals(4, img103.heightPx)
+        assertTrue(raw64.contentEquals(img103.rgbaBytes))
+    }
+
+    @Test
+    fun testZlibDecompressionBombRejection() {
+        val responses = mutableListOf<String>()
+        val emulator = TerminalEmulator(
+            config = TerminalConfig(initialRows = 10, initialCols = 20, maxImageMemoryBytes = 50),
+            onTerminalResponse = { responses.add(it) },
+        )
+
+        val payload = ByteArray(200) { 0x42.toByte() }
+        val zlib = makeUncompressedZlib(payload)
+        emulator.processOutputSync(
+            "\u001B_Ga=t,f=32,s=5,v=10,o=z,i=104,q=0;${base64Encode(zlib)}\u001B\\"
+        )
+
+        assertNull(emulator.snapshotScreenState().images[104])
+        assertTrue(responses.any { it.contains("EINVAL") })
+    }
+
+    @Test
+    fun testVirtualPlacementU1() {
+        val emulator = TerminalEmulator(config = TerminalConfig(initialRows = 10, initialCols = 20))
+        val rgba = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+
+        // a=T, U=1
+        emulator.processOutputSync(
+            "\u001B_Ga=T,f=32,s=2,v=2,i=105,c=5,r=3,U=1;${base64Encode(rgba)}\u001B\\"
+        )
+        // Cursor position must NOT move for virtual placements
+        assertEquals(0, emulator.screenState.value.cursorRow)
+        assertEquals(0, emulator.screenState.value.cursorCol)
+
+        val state1 = emulator.snapshotScreenState()
+        val p1 = state1.imagePlacements.firstOrNull { it.imageId == 105 }
+        assertNotNull(p1)
+        assertTrue(p1.isVirtual)
+        assertEquals(5, p1.cols)
+        assertEquals(3, p1.rows)
+
+        // a=p, U=1
+        emulator.processOutputSync("\u001B_Ga=p,i=105,p=1,c=4,r=2,U=1\u001B\\")
+        assertEquals(0, emulator.screenState.value.cursorRow)
+        assertEquals(0, emulator.screenState.value.cursorCol)
+
+        val state2 = emulator.snapshotScreenState()
+        val p2 = state2.imagePlacements.firstOrNull { it.imageId == 105 && it.placementId == 1 }
+        assertNotNull(p2)
+        assertTrue(p2.isVirtual)
+        assertEquals(4, p2.cols)
+        assertEquals(2, p2.rows)
+    }
+
+    @Test
+    fun testKittyUnicodePlaceholdersAndDiacritics() {
+        val emulator = TerminalEmulator(config = TerminalConfig(initialRows = 10, initialCols = 20))
+
+        assertEquals(297, KittyUnicodePlaceholders.DIACRITICS.size)
+        assertEquals(0, KittyUnicodePlaceholders.diacriticToIndex(0x0305))
+        assertEquals(1, KittyUnicodePlaceholders.diacriticToIndex(0x030D))
+        assertEquals(2, KittyUnicodePlaceholders.diacriticToIndex(0x030E))
+        assertEquals(0x0305, KittyUnicodePlaceholders.indexToDiacritic(0))
+        assertEquals(0x030D, KittyUnicodePlaceholders.indexToDiacritic(1))
+
+        // 1. Write placeholder with 3 diacritics (row=0, col=1, idMsb=2)
+        // FG = SGR 38;2;12;34;56 -> low 24 bits: 0x0C2238
+        // Underline color = SGR 58;2;1;2;3 -> placement ID: 0x010203
+        emulator.processOutputSync("\u001B[38;2;12;34;56m\u001B[58;2;1;2;3m\uDBFB\uDEEE\u0305\u030D\u030E")
+
+        val state = emulator.snapshotScreenState()
+        val cell0 = state.rows[0][0]
+        assertEquals(KITTY_PLACEHOLDER_CODEPOINT, cell0.codepoint)
+        assertEquals(3, KittyUnicodePlaceholders.getDiacriticCount(cell0.kittyPlaceholderInfo))
+        assertEquals(0, KittyUnicodePlaceholders.getRowIndex(cell0.kittyPlaceholderInfo))
+        assertEquals(1, KittyUnicodePlaceholders.getColIndex(cell0.kittyPlaceholderInfo))
+        assertEquals(2, KittyUnicodePlaceholders.getIdMsb(cell0.kittyPlaceholderInfo))
+
+        val expectedImageId = (2 shl 24) or 0x0C2238
+        assertEquals(
+            expectedImageId,
+            KittyUnicodePlaceholders.resolveImageId(cell0.foregroundColor, cell0.kittyPlaceholderInfo)
+        )
+        assertEquals(0x010203, KittyUnicodePlaceholders.resolvePlacementId(cell0.underlineColor))
+        assertEquals(1, emulator.screenState.value.cursorCol)
+
+        // 2. Write placeholder with 1 diacritic (row=1, col unset, idMsb unset)
+        emulator.processOutputSync("\u001B[38;2;0;0;42m\uDBFB\uDEEE\u030D")
+        val cell1 = emulator.snapshotScreenState().rows[0][1]
+        assertEquals(KITTY_PLACEHOLDER_CODEPOINT, cell1.codepoint)
+        assertEquals(1, KittyUnicodePlaceholders.getDiacriticCount(cell1.kittyPlaceholderInfo))
+        assertEquals(1, KittyUnicodePlaceholders.getRowIndex(cell1.kittyPlaceholderInfo))
+        assertEquals(-1, KittyUnicodePlaceholders.getColIndex(cell1.kittyPlaceholderInfo))
+        assertEquals(-1, KittyUnicodePlaceholders.getIdMsb(cell1.kittyPlaceholderInfo))
+        assertEquals(42, KittyUnicodePlaceholders.resolveImageId(cell1.foregroundColor, cell1.kittyPlaceholderInfo))
+
+        // 3. Reset underline color with SGR 59
+        emulator.processOutputSync("\u001B[59m\uDBFB\uDEEE")
+        val cell2 = emulator.snapshotScreenState().rows[0][2]
+        assertEquals(KITTY_PLACEHOLDER_CODEPOINT, cell2.codepoint)
+        assertEquals(0, KittyUnicodePlaceholders.getDiacriticCount(cell2.kittyPlaceholderInfo))
+        assertEquals(0, KittyUnicodePlaceholders.resolvePlacementId(cell2.underlineColor))
+    }
 }

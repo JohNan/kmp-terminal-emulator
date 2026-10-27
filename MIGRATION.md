@@ -317,4 +317,45 @@ fn main() {
 }
 ```
 
+---
+
+### Recipe 10: Kitty Graphics Protocol & Unicode Placeholders
+
+`:terminal-core` and `:terminal-ui` provide comprehensive support for the Kitty Graphics Protocol, enabling inline terminal images with hardware-accelerated canvas rendering across JVM, Android, iOS, and WasmJS.
+
+Key capabilities include:
+- **Formats & Compression**: Direct RGBA (`f=32`), RGB (`f=24`), and raw PNG (`f=100`) with RFC 1950/1951 Deflate/zlib decompression (`o=z`).
+- **Control Actions**: Transmit (`a=t`), Transmit & Display (`a=T`), Place (`a=p`), Delete (`a=d`), and Query (`a=q`).
+- **Multiplexer Compatibility**: Unicode Placeholders (`U=1`, `U+10EEEE`) with combining diacritics table encoding for smooth reflow inside `tmux` and `zellij`.
+- **Memory Safety**: LRU memory eviction constrained by `maxImageMemoryBytes` with decompression bomb safeguards.
+
+#### Configuring Terminal Emulator
+
+Enable graphics support and configure cache limits in `terminalConfig`:
+
+```kotlin
+val emulator = TerminalEmulator(
+    config = terminalConfig {
+        initialRows = 24
+        initialCols = 80
+        kittyGraphicsEnabled = true // Enabled by default
+        maxImageMemoryBytes = 32 * 1024 * 1024 // 32MB LRU image cache
+    }
+)
+```
+
+#### Wiring Pixel Geometry in Compose Multiplatform
+
+Connect `TerminalRenderer`'s `onCellMeasured` callback to `emulator.setCellDimensionsPx` so the emulator accurately maps image pixel dimensions to grid cells:
+
+```kotlin
+TerminalRenderer(
+    emulator = emulator,
+    onCellMeasured = { widthPx, heightPx ->
+        emulator.setCellDimensionsPx(widthPx.toInt(), heightPx.toInt())
+    }
+)
+```
+
+
 

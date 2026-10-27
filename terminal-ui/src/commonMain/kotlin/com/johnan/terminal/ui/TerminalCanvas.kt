@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.johnan.terminal.core.KITTY_PLACEHOLDER_CODEPOINT
+import com.johnan.terminal.core.KittyUnicodePlaceholders
 import com.johnan.terminal.core.MouseEvent
 import com.johnan.terminal.core.MouseTrackingMode
 import com.johnan.terminal.core.ScreenBuffer
@@ -698,6 +700,125 @@ fun TerminalCanvas(
                         )
                     }
                 }
+
+                // Draw Kitty Unicode placeholders (U=1, U+10EEEE)
+                if (terminalState.images.isNotEmpty()) {
+                    var prevWasPlaceholder = false
+                    var prevRowIdx = -1
+                    var prevColIdx = -1
+                    var prevImageId = -1
+                    var prevPlacementId = -1
+
+                    for (col in 0 until row.size) {
+                        val cell = row[col]
+                        if (cell.codepoint != KITTY_PLACEHOLDER_CODEPOINT) {
+                            prevWasPlaceholder = false
+                            prevRowIdx = -1
+                            prevColIdx = -1
+                            prevImageId = -1
+                            prevPlacementId = -1
+                            continue
+                        }
+
+                        val imageId = KittyUnicodePlaceholders.resolveImageId(
+                            cell.foregroundColor,
+                            cell.kittyPlaceholderInfo,
+                        )
+                        val placementId = KittyUnicodePlaceholders.resolvePlacementId(cell.underlineColor)
+
+                        val infoRow = KittyUnicodePlaceholders.getRowIndex(cell.kittyPlaceholderInfo)
+                        val curRowIdx = if (infoRow >= 0) {
+                            infoRow
+                        } else if (prevWasPlaceholder) {
+                            prevRowIdx
+                        } else {
+                            0
+                        }
+
+                        val infoCol = KittyUnicodePlaceholders.getColIndex(cell.kittyPlaceholderInfo)
+                        val curColIdx = if (infoCol >= 0) {
+                            infoCol
+                        } else if (prevWasPlaceholder && prevImageId == imageId && prevPlacementId == placementId) {
+                            prevColIdx + 1
+                        } else {
+                            0
+                        }
+
+                        prevWasPlaceholder = true
+                        prevRowIdx = curRowIdx
+                        prevColIdx = curColIdx
+                        prevImageId = imageId
+                        prevPlacementId = placementId
+
+                        val image = terminalState.images[imageId] ?: continue
+                        val bitmap = imageBitmapCache[imageId]?.second ?: continue
+
+                        // Look up matching virtual placement
+                        var matchingPlacement: TerminalImagePlacement? = null
+                        for (pIdx in 0 until placements.size) {
+                            val p = placements[pIdx]
+                            if (p.isVirtual &&
+                                p.imageId == imageId &&
+                                (placementId == 0 || p.placementId == placementId)
+                            ) {
+                                matchingPlacement = p
+                                break
+                            }
+                        }
+
+                        val cW = cellWidth.toInt().coerceAtLeast(1)
+                        val cH = cellHeight.toInt().coerceAtLeast(1)
+                        val totalCols = (matchingPlacement?.cols ?: ((image.widthPx + cW - 1) / cW)).coerceAtLeast(1)
+                        val totalRows = (matchingPlacement?.rows ?: ((image.heightPx + cH - 1) / cH)).coerceAtLeast(1)
+
+                        if (curColIdx >= totalCols || curRowIdx >= totalRows) continue
+
+                        val baseSrcX = matchingPlacement?.srcX?.coerceIn(0, bitmap.width) ?: 0
+                        val baseSrcY = matchingPlacement?.srcY?.coerceIn(0, bitmap.height) ?: 0
+                        val effSrcW = (
+                            if (matchingPlacement != null && matchingPlacement.srcWidth > 0) {
+                                matchingPlacement.srcWidth
+                            } else {
+                                bitmap.width - baseSrcX
+                            }
+                        ).coerceIn(0, bitmap.width - baseSrcX)
+                        val effSrcH = (
+                            if (matchingPlacement != null && matchingPlacement.srcHeight > 0) {
+                                matchingPlacement.srcHeight
+                            } else {
+                                bitmap.height - baseSrcY
+                            }
+                        ).coerceIn(0, bitmap.height - baseSrcY)
+
+                        if (effSrcW <= 0 || effSrcH <= 0) continue
+
+                        val sliceSrcX = baseSrcX + (curColIdx * effSrcW) / totalCols
+                        val sliceSrcY = baseSrcY + (curRowIdx * effSrcH) / totalRows
+                        val nextSliceSrcX = baseSrcX + ((curColIdx + 1) * effSrcW) / totalCols
+                        val nextSliceSrcY = baseSrcY + ((curRowIdx + 1) * effSrcH) / totalRows
+
+                        val sliceSrcW = (nextSliceSrcX - sliceSrcX).coerceAtLeast(1)
+                        val sliceSrcH = (nextSliceSrcY - sliceSrcY).coerceAtLeast(1)
+
+                        val finalSrcX = sliceSrcX.coerceIn(0, bitmap.width)
+                        val finalSrcY = sliceSrcY.coerceIn(0, bitmap.height)
+                        val finalSrcW = sliceSrcW.coerceIn(1, bitmap.width - finalSrcX)
+                        val finalSrcH = sliceSrcH.coerceIn(1, bitmap.height - finalSrcY)
+
+                        val dstX = (col * cellWidth).toInt()
+                        val dstY = y.toInt()
+                        val dstW = cellWidth.toInt().coerceAtLeast(1)
+                        val dstH = cellHeight.toInt().coerceAtLeast(1)
+
+                        drawImage(
+                            image = bitmap,
+                            srcOffset = IntOffset(finalSrcX, finalSrcY),
+                            srcSize = IntSize(finalSrcW, finalSrcH),
+                            dstOffset = IntOffset(dstX, dstY),
+                            dstSize = IntSize(dstW, dstH),
+                        )
+                    }
+                }
             }
 
             // Pass 2: -1_073_741_824 <= zIndex < 0 (after cell background rects, before text glyphs)
@@ -758,9 +879,11 @@ fun TerminalCanvas(
                                     c.isHighSurrogate() &&
                                         charIdx + 1 < textLen &&
                                         batch.text[charIdx + 1].isLowSurrogate()
+                                val isPlaceholder =
+                                    hasLow && c == '\uDBFB' && batch.text[charIdx + 1] == '\uDEEE'
                                 val isBox = !hasLow && c.code in 0x2500..0x257F
                                 val isBlock = !hasLow && c.code in 0x2580..0x259F
-                                if (!isBox && !isBlock && c != ' ') {
+                                if (!isBox && !isBlock && !isPlaceholder && c != ' ') {
                                     val glyphText =
                                         if (hasLow) batch.text.substring(charIdx, charIdx + 2) else c.toString()
                                     results[colIdx] = textMeasurer.measure(
@@ -789,6 +912,8 @@ fun TerminalCanvas(
                                 c.isHighSurrogate() &&
                                     charIdx + 1 < textLen &&
                                     batch.text[charIdx + 1].isLowSurrogate()
+                            val isPlaceholder =
+                                hasLow && c == '\uDBFB' && batch.text[charIdx + 1] == '\uDEEE'
                             val charX = x + colIdx * cellWidth
 
                             val isBox = !hasLow && c.code in 0x2500..0x257F
@@ -807,6 +932,8 @@ fun TerminalCanvas(
                                 )
                             } else if (isBlock) {
                                 drawBlockElement(c, charX, y, cellWidth, cellHeight, textColor)
+                            } else if (isPlaceholder) {
+                                // Skip placeholder glyph so no tofu is drawn
                             } else if (c != ' ') {
                                 val charLayout = layoutResults.getOrNull(colIdx)
                                 if (charLayout != null) {

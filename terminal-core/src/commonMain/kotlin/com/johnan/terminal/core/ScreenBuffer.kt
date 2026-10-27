@@ -34,6 +34,9 @@ class ScreenBuffer(
     var scrollbackVersion: Long = 0
         private set
 
+    var graphicsVersion: Long = 0
+        private set
+
     var cursorRow: Int = 0
         private set
     var cursorCol: Int = 0
@@ -55,6 +58,7 @@ class ScreenBuffer(
     private var currentStrikethrough: Boolean = false
     private var currentOverline: Boolean = false
     private var currentConceal: Boolean = false
+    private var currentUnderlineColor: TerminalColor = TerminalColor.Default
 
     /**
      * Returns a deep, fully independent copy of this buffer: primary and alternate rows, scrollback, cursor,
@@ -73,6 +77,7 @@ class ScreenBuffer(
         clone.scrollBottom = scrollBottom
         clone.scrollback.addAll(scrollback)
         clone.scrollbackVersion = scrollbackVersion
+        clone.graphicsVersion = graphicsVersion
         clone.cursorRow = cursorRow
         clone.cursorCol = cursorCol
         clone.cursorVisible = cursorVisible
@@ -89,6 +94,7 @@ class ScreenBuffer(
         clone.currentStrikethrough = currentStrikethrough
         clone.currentOverline = currentOverline
         clone.currentConceal = currentConceal
+        clone.currentUnderlineColor = currentUnderlineColor
         clone.savedCursorRow = savedCursorRow
         clone.savedCursorCol = savedCursorCol
         clone.images.putAll(images)
@@ -158,7 +164,8 @@ class ScreenBuffer(
 
     val scrollbackSize: Int get() = scrollback.size
 
-    fun getImages(): Map<Int, TerminalImage> = LinkedHashMap(images)
+    fun getImages(): Map<Int, TerminalImage> =
+        if (images.isEmpty()) emptyMap() else LinkedHashMap(images)
 
     fun getImage(id: Int): TerminalImage? = images[id]
 
@@ -169,8 +176,10 @@ class ScreenBuffer(
 
     fun nextVersion(): Long = nextImageVersion++
 
-    fun getPlacements(): List<TerminalImagePlacement> =
-        if (isAlternateScreen) alternatePlacements.toList() else primaryPlacements.toList()
+    fun getPlacements(): List<TerminalImagePlacement> {
+        val list = if (isAlternateScreen) alternatePlacements else primaryPlacements
+        return if (list.isEmpty()) emptyList() else list.toList()
+    }
 
     fun storeImage(image: TerminalImage): Boolean {
         if (image.byteSize > maxImageMemoryBytes) return false
@@ -187,6 +196,7 @@ class ScreenBuffer(
         }
         images[image.id] = image
         totalImageBytes += image.byteSize
+        graphicsVersion++
         return true
     }
 
@@ -196,6 +206,7 @@ class ScreenBuffer(
             activePlacements.removeAll { it.imageId == placement.imageId && it.placementId == placement.placementId }
         }
         activePlacements.add(placement)
+        graphicsVersion++
     }
 
     fun deleteKittyGraphics(
@@ -267,6 +278,7 @@ class ScreenBuffer(
                 }
             }
         }
+        graphicsVersion++
     }
 
     internal fun getScrollbackRow(index: Int): Array<TerminalCell> = scrollback[index]
@@ -288,7 +300,27 @@ class ScreenBuffer(
      */
     fun writeCodepoint(codepoint: Int) {
         val w = UnicodeWidth.wcwidth(codepoint)
-        if (w <= 0) return
+        if (w <= 0) {
+            val diagIdx = KittyUnicodePlaceholders.diacriticToIndex(codepoint)
+            if (diagIdx >= 0 && cursorRow in 0 until rows) {
+                val targetCol = if (pendingWrap) cursorCol else cursorCol - 1
+                if (targetCol in 0 until cols) {
+                    val prevCell = buffer[cursorRow][targetCol]
+                    if (prevCell.codepoint == KITTY_PLACEHOLDER_CODEPOINT &&
+                        KittyUnicodePlaceholders.getDiacriticCount(prevCell.kittyPlaceholderInfo) < 3
+                    ) {
+                        buffer[cursorRow][targetCol] = prevCell.copy(
+                            kittyPlaceholderInfo = KittyUnicodePlaceholders.appendDiacriticIndex(
+                                prevCell.kittyPlaceholderInfo,
+                                diagIdx,
+                            ),
+                        )
+                        buffer[cursorRow].incrementVersion()
+                    }
+                }
+            }
+            return
+        }
 
         if (pendingWrap) {
             buffer[cursorRow].isWrapped = true
@@ -345,6 +377,7 @@ class ScreenBuffer(
                 conceal = currentConceal,
                 width = w,
                 isWideSpacer = false,
+                underlineColor = currentUnderlineColor,
             )
             var changed = row.setCell(cursorCol, primaryCell)
 
@@ -364,6 +397,7 @@ class ScreenBuffer(
                     conceal = currentConceal,
                     width = 0,
                     isWideSpacer = true,
+                    underlineColor = currentUnderlineColor,
                 )
                 if (row.setCell(cursorCol + 1, spacerCell)) {
                     changed = true
@@ -465,10 +499,12 @@ class ScreenBuffer(
             val st = currentStrikethrough
             val ov = currentOverline
             val co = currentConceal
+            val uc = currentUnderlineColor
 
             val isDefault =
                 fg === TerminalColor.Default &&
                     bg === TerminalColor.Default &&
+                    uc === TerminalColor.Default &&
                     !b &&
                     !it &&
                     !u &&
@@ -488,7 +524,7 @@ class ScreenBuffer(
                     if (isDefault && c.code in 0..127) {
                         TerminalCell.getCachedAscii(c.code)
                     } else {
-                        TerminalCell.create(c, fg, bg, b, it, u, r, d, bl, st, ov, co)
+                        TerminalCell.create(c, fg, bg, b, it, u, r, d, bl, st, ov, co, underlineColor = uc)
                     }
                 if (currentRow.setCell(cursorCol + k, cell)) {
                     changed = true
@@ -585,7 +621,9 @@ class ScreenBuffer(
     fun clearScreen() {
         pendingWrap = false
         val activePlacements = if (isAlternateScreen) alternatePlacements else primaryPlacements
-        activePlacements.removeAll { !it.isVirtual }
+        if (activePlacements.removeAll { !it.isVirtual }) {
+            graphicsVersion++
+        }
         for (row in 0 until rows) {
             val terminalRow = buffer[row]
             if (terminalRow.clearCells(0, cols)) {
@@ -659,19 +697,22 @@ class ScreenBuffer(
     private fun scrollUp() {
         if (scrollTop == 0 && scrollBottom == rows - 1) {
             if (isAlternateScreen) {
-                val iter = alternatePlacements.listIterator()
-                while (iter.hasNext()) {
-                    val p = iter.next()
-                    val updated = p.copy(anchorLine = p.anchorLine - 1)
-                    if (updated.anchorLine + updated.rows <= 0) {
-                        iter.remove()
-                    } else {
-                        iter.set(updated)
+                if (alternatePlacements.isNotEmpty()) {
+                    val iter = alternatePlacements.listIterator()
+                    while (iter.hasNext()) {
+                        val p = iter.next()
+                        val updated = p.copy(anchorLine = p.anchorLine - 1)
+                        if (updated.anchorLine + updated.rows <= 0) {
+                            iter.remove()
+                        } else {
+                            iter.set(updated)
+                        }
                     }
+                    graphicsVersion++
                 }
             } else {
                 val droppingScrollback = maxScrollback == 0 || scrollback.size >= maxScrollback
-                if (droppingScrollback) {
+                if (droppingScrollback && primaryPlacements.isNotEmpty()) {
                     val iter = primaryPlacements.listIterator()
                     while (iter.hasNext()) {
                         val p = iter.next()
@@ -682,6 +723,7 @@ class ScreenBuffer(
                             iter.set(updated)
                         }
                     }
+                    graphicsVersion++
                 }
             }
 
@@ -734,6 +776,7 @@ class ScreenBuffer(
         strikethrough: Boolean? = null,
         overline: Boolean? = null,
         conceal: Boolean? = null,
+        underlineColor: TerminalColor? = null,
     ) {
         foreground?.let { currentForeground = it }
         background?.let { currentBackground = it }
@@ -746,6 +789,7 @@ class ScreenBuffer(
         strikethrough?.let { currentStrikethrough = it }
         overline?.let { currentOverline = it }
         conceal?.let { currentConceal = it }
+        underlineColor?.let { currentUnderlineColor = it }
     }
 
     fun resetTextAttributes() {
@@ -760,6 +804,7 @@ class ScreenBuffer(
         currentStrikethrough = false
         currentOverline = false
         currentConceal = false
+        currentUnderlineColor = TerminalColor.Default
     }
 
     fun setAutoWrapMode(enabled: Boolean) {
@@ -787,6 +832,7 @@ class ScreenBuffer(
             saveCursor()
             buffer = alternateBuffer
             isAlternateScreen = true
+            graphicsVersion++
             clearScreen()
             cursorRow = 0
             cursorCol = 0
@@ -798,6 +844,7 @@ class ScreenBuffer(
         if (isAlternateScreen) {
             buffer = primaryBuffer
             isAlternateScreen = false
+            graphicsVersion++
             restoreCursor()
             resetScrollingRegion()
         }

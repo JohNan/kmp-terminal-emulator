@@ -184,6 +184,7 @@ object PngDecoder {
                     for (x in 0 until width) {
                         val idx = currScanline[x].toInt() and 0xFF
                         val plteIdx = idx * 3
+                        require(plteIdx + 2 < plte.size) { "Palette index out of bounds: $idx" }
                         val dstIdx = rowDstOffset + x * 4
                         val r = plte[plteIdx]
                         val g = plte[plteIdx + 1]

@@ -72,6 +72,9 @@ class TerminalEmulator(
 
     private var cachedScrollback: List<Array<TerminalCell>> = emptyList()
     private var cachedScrollbackVersion: Long = -1
+    private var cachedImages: Map<Int, TerminalImage> = emptyMap()
+    private var cachedPlacements: List<TerminalImagePlacement> = emptyList()
+    private var cachedGraphicsVersion: Long = -1
 
     private val _screenState = MutableStateFlow(TerminalScreenState.from(screenBuffer))
     val screenState: StateFlow<TerminalScreenState> = _screenState.asStateFlow()
@@ -317,6 +320,28 @@ class TerminalEmulator(
             list
         }
 
+        val currentGraphicsVersion = screenBuffer.graphicsVersion
+        if (currentGraphicsVersion != cachedGraphicsVersion) {
+            cachedImages = screenBuffer.getImages()
+            cachedPlacements = screenBuffer.getPlacements()
+            cachedGraphicsVersion = currentGraphicsVersion
+        }
+        val images = cachedImages
+        val placements = cachedPlacements
+
+        if (placements.isNotEmpty()) {
+            val sbOffset = if (screenBuffer.isUsingAlternateScreen()) 0 else scrollback.size
+            for (i in 0 until placements.size) {
+                val p = placements[i]
+                if (!p.isVirtual) {
+                    val endScreenRow = p.anchorLine - sbOffset + p.rows
+                    if (endScreenRow > contentHeight) {
+                        contentHeight = endScreenRow.coerceAtMost(screenBuffer.rows)
+                    }
+                }
+            }
+        }
+
         return TerminalScreenState(
             rows = rows,
             cols = screenBuffer.cols,
@@ -329,8 +354,8 @@ class TerminalEmulator(
             mouseTrackingMode = mouseTrackingMode,
             sgrMouseModeEnabled = sgrMouseModeEnabled,
             bracketedPasteModeEnabled = bracketedPasteModeEnabled,
-            images = screenBuffer.getImages(),
-            imagePlacements = screenBuffer.getPlacements(),
+            images = images,
+            imagePlacements = placements,
         )
     }
 

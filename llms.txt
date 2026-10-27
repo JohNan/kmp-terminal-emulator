@@ -21,6 +21,11 @@
 - [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable
 - [Text Selection](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalSelection.kt): `TerminalSelection`, `SelectionState`
 - [Native C-ABI FFI Bridge](terminal-core/src/nativeMain/kotlin/com/johnan/terminal/core/ffi/TerminalNativeBridge.kt): `terminal_create`, `terminal_copy`, `terminal_destroy`, `terminal_process_bytes`, `terminal_read_grid`, `terminal_extract_selection`
+- [Kitty Graphics Engine](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/KittyGraphics.kt): `TerminalImage`, `TerminalImagePlacement`, `KittyImageFormat`
+- [Kitty Unicode Placeholders](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/KittyUnicodePlaceholders.kt): `KittyUnicodePlaceholders`, `KITTY_PLACEHOLDER_CODEPOINT`, combining diacritics encoding
+- [PNG Decoder](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/PngDecoder.kt): `PngDecoder`, zero-dependency pure KMP chunk parser
+- [Zlib Decompressor](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/ZlibInflater.kt): `ZlibInflater`, RFC 1950/1951 Deflate/Inflate implementation
+- [Terminal Image Decoder](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalImageDecoder.kt): `createTerminalImageBitmap`, platform-native ImageBitmap bridge
 
 
 ## Interactive Demos & Previews
