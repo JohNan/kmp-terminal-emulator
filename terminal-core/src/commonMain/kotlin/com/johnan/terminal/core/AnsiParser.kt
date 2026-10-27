@@ -43,6 +43,9 @@ class AnsiParser(
     private var lastPrintableCodepoint: Int? = null
     private var pendingHighSurrogate: Char? = null
 
+    private var kittyChunkHeader: Map<String, String>? = null
+    private val kittyChunkPayload = StringBuilder()
+
     /**
      * Creates a copy of this parser bound to [terminalEmulator] and [screenBuffer], including any partially
      * parsed escape sequence, buffered parameters and incomplete UTF-8 bytes.
@@ -68,6 +71,8 @@ class AnsiParser(
         clone.lastPrintableCodepoint = lastPrintableCodepoint
         clone.pendingHighSurrogate = pendingHighSurrogate
         clone.escapeInStringState = escapeInStringState
+        clone.kittyChunkHeader = kittyChunkHeader?.toMap()
+        clone.kittyChunkPayload.append(kittyChunkPayload)
         return clone
     }
 
@@ -708,6 +713,294 @@ class AnsiParser(
 
     private fun finishApc() {
         log("APC") { "len=${paramBuffer.length}" }
+        if (paramBuffer.isNotEmpty() && paramBuffer[0] == 'G' && terminalEmulator.config.kittyGraphicsEnabled) {
+            processKittyApc(paramBuffer.substring(1))
+        }
+    }
+
+    private fun processKittyApc(content: String) {
+        val semiIdx = content.indexOf(';')
+        val headerStr = if (semiIdx >= 0) content.substring(0, semiIdx) else content
+        val payloadChunk = if (semiIdx >= 0) content.substring(semiIdx + 1) else ""
+
+        val currentHeader = mutableMapOf<String, String>()
+        if (headerStr.isNotEmpty()) {
+            val pairs = headerStr.split(',')
+            for (pair in pairs) {
+                val eqIdx = pair.indexOf('=')
+                if (eqIdx >= 0) {
+                    val key = pair.substring(0, eqIdx).trim()
+                    val value = pair.substring(eqIdx + 1).trim()
+                    currentHeader[key] = value
+                }
+            }
+        }
+
+        val isChunked = currentHeader["m"] == "1"
+        val fullHeader: Map<String, String>
+        val fullPayload: String
+
+        if (isChunked) {
+            val existingHeader = kittyChunkHeader?.toMutableMap() ?: mutableMapOf()
+            existingHeader.putAll(currentHeader)
+            kittyChunkHeader = existingHeader
+            kittyChunkPayload.append(payloadChunk)
+            return
+        } else if (kittyChunkHeader != null) {
+            val existingHeader = kittyChunkHeader!!.toMutableMap()
+            existingHeader.putAll(currentHeader)
+            kittyChunkPayload.append(payloadChunk)
+            fullHeader = existingHeader
+            fullPayload = kittyChunkPayload.toString()
+            kittyChunkHeader = null
+            kittyChunkPayload.clear()
+        } else {
+            fullHeader = currentHeader
+            fullPayload = payloadChunk
+        }
+
+        val action = fullHeader["a"]?.firstOrNull() ?: 'T'
+        val medium = fullHeader["t"] ?: "d"
+        val quiet = fullHeader["q"]?.toIntOrNull() ?: 0
+        val id = fullHeader["i"]?.toIntOrNull() ?: 0
+        val imageNumber = fullHeader["I"]?.toIntOrNull() ?: 0
+        val placementId = fullHeader["p"]?.toIntOrNull() ?: 0
+
+        fun sendError(message: String) {
+            if (quiet < 2) {
+                val keys = mutableListOf<String>()
+                if (id > 0) keys.add("i=$id")
+                if (imageNumber > 0) keys.add("I=$imageNumber")
+                if (placementId > 0) keys.add("p=$placementId")
+                val keyStr = if (keys.isNotEmpty()) keys.joinToString(",") + ";" else ";"
+                terminalEmulator.sendResponse("\u001B_G$keyStr$message\u001B\\")
+            }
+        }
+
+        fun sendOk() {
+            if (quiet == 0 && (id > 0 || imageNumber > 0)) {
+                val keys = mutableListOf<String>()
+                if (id > 0) keys.add("i=$id")
+                if (imageNumber > 0) keys.add("I=$imageNumber")
+                if (placementId > 0) keys.add("p=$placementId")
+                val keyStr = if (keys.isNotEmpty()) keys.joinToString(",") + ";" else ";"
+                terminalEmulator.sendResponse("\u001B_G${keyStr}OK\u001B\\")
+            }
+        }
+
+        if (medium != "d") {
+            sendError("EBADF:Unsupported transmission medium")
+            return
+        }
+
+        when (action) {
+            'q', 't', 'T' -> {
+                var targetImage: TerminalImage? = null
+                if (fullPayload.isNotEmpty()) {
+                    val rawBytes: ByteArray
+                    try {
+                        var decoded = Base64Decoder.decode(fullPayload)
+                        if (fullHeader["o"] == "z") {
+                            decoded = ZlibInflater.inflate(decoded, terminalEmulator.config.maxImageMemoryBytes)
+                        }
+                        rawBytes = decoded
+                    } catch (e: Exception) {
+                        sendError("EINVAL:Failed to decode payload: ${e.message}")
+                        return
+                    }
+
+                    val formatCode = fullHeader["f"]?.toIntOrNull() ?: 32
+                    val widthPx: Int
+                    val heightPx: Int
+                    val rgbaBytes: ByteArray
+                    var encodedPng: ByteArray? = null
+
+                    try {
+                        when (formatCode) {
+                            100 -> {
+                                val decodedPng = PngDecoder.decode(
+                                    rawBytes,
+                                    terminalEmulator.config.maxImageMemoryBytes
+                                )
+                                widthPx = decodedPng.width
+                                heightPx = decodedPng.height
+                                rgbaBytes = decodedPng.rgbaBytes
+                                encodedPng = rawBytes
+                            }
+                            32 -> {
+                                val s = fullHeader["s"]?.toIntOrNull() ?: 0
+                                val v = fullHeader["v"]?.toIntOrNull() ?: 0
+                                require(s > 0 && v > 0 && rawBytes.size >= s * v * 4) {
+                                    "Invalid RGBA payload dimensions"
+                                }
+                                widthPx = s
+                                heightPx = v
+                                rgbaBytes = rawBytes
+                            }
+                            24 -> {
+                                val s = fullHeader["s"]?.toIntOrNull() ?: 0
+                                val v = fullHeader["v"]?.toIntOrNull() ?: 0
+                                require(s > 0 && v > 0 && rawBytes.size >= s * v * 3) {
+                                    "Invalid RGB payload dimensions"
+                                }
+                                widthPx = s
+                                heightPx = v
+                                val rgba = ByteArray(s * v * 4)
+                                for (p in 0 until s * v) {
+                                    val src = p * 3
+                                    val dst = p * 4
+                                    rgba[dst] = rawBytes[src]
+                                    rgba[dst + 1] = rawBytes[src + 1]
+                                    rgba[dst + 2] = rawBytes[src + 2]
+                                    rgba[dst + 3] = 0xFF.toByte()
+                                }
+                                rgbaBytes = rgba
+                            }
+                            else -> {
+                                sendError("EINVAL:Unsupported image format: $formatCode")
+                                return
+                            }
+                        }
+                    } catch (e: Exception) {
+                        sendError("EINVAL:Invalid image data: ${e.message}")
+                        return
+                    }
+
+                    if (action == 'q') {
+                        sendOk()
+                        return
+                    }
+
+                    val imageId = if (id > 0) id else screenBuffer.allocateInternalImageId()
+                    val version = screenBuffer.nextVersion()
+                    val img = TerminalImage(
+                        id = imageId,
+                        imageNumber = imageNumber,
+                        widthPx = widthPx,
+                        heightPx = heightPx,
+                        rgbaBytes = rgbaBytes,
+                        encodedPngBytes = encodedPng,
+                        version = version,
+                    )
+                    screenBuffer.storeImage(img)
+                    targetImage = img
+                }
+
+                if (action == 't') {
+                    sendOk()
+                    return
+                }
+
+                // If action == 'T'
+                if (targetImage == null) {
+                    targetImage = if (id > 0) {
+                        screenBuffer.getImage(id)
+                    } else if (imageNumber > 0) {
+                        screenBuffer.findLatestImageByNumber(imageNumber)
+                    } else {
+                        null
+                    }
+                }
+
+                if (targetImage == null) {
+                    sendError("ENOENT:Image not found")
+                    return
+                }
+
+                placeKittyImage(targetImage, fullHeader, placementId)
+                sendOk()
+            }
+            'p' -> {
+                val targetImage = if (id > 0) {
+                    screenBuffer.getImage(id)
+                } else if (imageNumber > 0) {
+                    screenBuffer.findLatestImageByNumber(imageNumber)
+                } else {
+                    null
+                }
+                if (targetImage == null) {
+                    sendError("ENOENT:Image not found")
+                    return
+                }
+
+                placeKittyImage(targetImage, fullHeader, placementId)
+                sendOk()
+            }
+            'd' -> {
+                val deleteMode = fullHeader["d"]?.firstOrNull() ?: 'a'
+                val x = fullHeader["x"]?.toIntOrNull() ?: 0
+                val y = fullHeader["y"]?.toIntOrNull() ?: 0
+                val z = fullHeader["z"]?.toIntOrNull() ?: 0
+                screenBuffer.deleteKittyGraphics(
+                    mode = deleteMode,
+                    id = id,
+                    imageNumber = imageNumber,
+                    placementId = placementId,
+                    x = x,
+                    y = y,
+                    z = z,
+                )
+            }
+        }
+    }
+
+    private fun placeKittyImage(
+        image: TerminalImage,
+        header: Map<String, String>,
+        placementId: Int,
+    ) {
+        val cellW = terminalEmulator.cellWidthPx.coerceAtLeast(1)
+        val cellH = terminalEmulator.cellHeightPx.coerceAtLeast(1)
+
+        val srcX = header["x"]?.toIntOrNull() ?: 0
+        val srcY = header["y"]?.toIntOrNull() ?: 0
+        val srcW = header["w"]?.toIntOrNull() ?: 0
+        val srcH = header["h"]?.toIntOrNull() ?: 0
+        val cellOffsetX = header["X"]?.toIntOrNull() ?: 0
+        val cellOffsetY = header["Y"]?.toIntOrNull() ?: 0
+        val zIndex = header["z"]?.toIntOrNull() ?: 0
+        val isVirtual = header["U"]?.toIntOrNull() == 1
+        val cursorPolicy = header["C"]?.toIntOrNull() ?: 0
+
+        val effWidthPx = if (srcW > 0) srcW else image.widthPx
+        val effHeightPx = if (srcH > 0) srcH else image.heightPx
+
+        val cols = (header["c"]?.toIntOrNull() ?: ((effWidthPx + cellW - 1) / cellW)).coerceAtLeast(1)
+        val rows = (header["r"]?.toIntOrNull() ?: ((effHeightPx + cellH - 1) / cellH)).coerceAtLeast(1)
+
+        val anchorLine = (if (screenBuffer.isUsingAlternateScreen()) 0 else screenBuffer.scrollbackSize) +
+            screenBuffer.cursorRow
+        val col = screenBuffer.cursorCol
+
+        val placement = TerminalImagePlacement(
+            imageId = image.id,
+            placementId = placementId,
+            anchorLine = anchorLine,
+            col = col,
+            cols = cols,
+            rows = rows,
+            srcX = srcX,
+            srcY = srcY,
+            srcWidth = srcW,
+            srcHeight = srcH,
+            cellOffsetX = cellOffsetX,
+            cellOffsetY = cellOffsetY,
+            zIndex = zIndex,
+            isVirtual = isVirtual,
+        )
+        screenBuffer.addPlacement(placement)
+
+        if (!isVirtual && cursorPolicy == 0) {
+            val startCol = col
+            repeat(rows - 1) {
+                screenBuffer.lineFeed()
+            }
+            screenBuffer.setCursorPosition(
+                screenBuffer.cursorRow,
+                (startCol + cols).coerceAtMost(screenBuffer.cols - 1),
+                terminalEmulator.originModeEnabled,
+            )
+        }
     }
 
     private fun processCharset(char: Char) {

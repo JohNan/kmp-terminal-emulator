@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
@@ -25,6 +26,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.johnan.terminal.core.MouseEvent
 import com.johnan.terminal.core.MouseTrackingMode
@@ -33,6 +36,7 @@ import com.johnan.terminal.core.SearchState
 import com.johnan.terminal.core.SelectionState
 import com.johnan.terminal.core.TerminalCell
 import com.johnan.terminal.core.TerminalColor
+import com.johnan.terminal.core.TerminalImagePlacement
 import com.johnan.terminal.core.TerminalScreenState
 import com.johnan.terminal.core.UrlRange
 import com.johnan.terminal.core.toComposeColor
@@ -566,6 +570,28 @@ fun TerminalCanvas(
                     },
                 ),
     ) {
+        val imageBitmapCache = remember { LinkedHashMap<Int, Pair<Long, ImageBitmap>>() }
+        for ((id, img) in terminalState.images) {
+            val cached = imageBitmapCache[id]
+            if (cached == null || cached.first != img.version) {
+                val bmp = createTerminalImageBitmap(img)
+                if (bmp != null) {
+                    imageBitmapCache[id] = Pair(img.version, bmp)
+                }
+            }
+        }
+        val cacheIterator = imageBitmapCache.entries.iterator()
+        while (cacheIterator.hasNext()) {
+            val entry = cacheIterator.next()
+            if (!terminalState.images.containsKey(entry.key)) {
+                cacheIterator.remove()
+            }
+        }
+        while (imageBitmapCache.size > 128) {
+            val oldestKey = imageBitmapCache.keys.first()
+            imageBitmapCache.remove(oldestKey)
+        }
+
         // Terminal canvas rendering
         Canvas(
             modifier =
@@ -591,6 +617,22 @@ fun TerminalCanvas(
             )
 
             val verticalOffsetCanvas = 0f
+            val placements = terminalState.imagePlacements
+            val hasPlacements = placements.isNotEmpty()
+            val vFirst = visibleRowRange.first
+            val vLast = visibleRowRange.last
+            val isVisibleRangeValid = !visibleRowRange.isEmpty()
+
+            // Pass 1: zIndex < -1_073_741_824 (before cell background rects)
+            if (hasPlacements && isVisibleRangeValid) {
+                for (i in 0 until placements.size) {
+                    val p = placements[i]
+                    if (p.isVirtual || p.zIndex >= -1_073_741_824) continue
+                    if (p.anchorLine + p.rows - 1 < vFirst || p.anchorLine > vLast) continue
+                    val bitmap = imageBitmapCache[p.imageId]?.second ?: continue
+                    drawKittyPlacement(p, bitmap, cellWidth, cellHeight)
+                }
+            }
 
             for (rowIndex in visibleRowRange) {
                 val row = allRows.getOrNull(rowIndex) ?: continue
@@ -655,6 +697,29 @@ fun TerminalCanvas(
                             size = androidx.compose.ui.geometry.Size(batchWidth, cellHeight),
                         )
                     }
+                }
+            }
+
+            // Pass 2: -1_073_741_824 <= zIndex < 0 (after cell background rects, before text glyphs)
+            if (hasPlacements && isVisibleRangeValid) {
+                for (i in 0 until placements.size) {
+                    val p = placements[i]
+                    if (p.isVirtual || p.zIndex < -1_073_741_824 || p.zIndex >= 0) continue
+                    if (p.anchorLine + p.rows - 1 < vFirst || p.anchorLine > vLast) continue
+                    val bitmap = imageBitmapCache[p.imageId]?.second ?: continue
+                    drawKittyPlacement(p, bitmap, cellWidth, cellHeight)
+                }
+            }
+
+            for (rowIndex in visibleRowRange) {
+                val row = allRows.getOrNull(rowIndex) ?: continue
+                val y = rowIndex * cellHeight + verticalOffsetCanvas
+                val cachedData = renderBatchCache[row] ?: continue
+
+                for (i in 0 until cachedData.batches.size) {
+                    val batch = cachedData.batches[i]
+                    val x = batch.startCol * cellWidth
+                    val batchWidth = batch.length * cellWidth
 
                     // Draw Text
                     if (batch.text.isNotEmpty()) {
@@ -767,6 +832,17 @@ fun TerminalCanvas(
                             )
                         }
                     }
+                }
+            }
+
+            // Pass 3: zIndex >= 0 (after all text rows, before the cursor)
+            if (hasPlacements && isVisibleRangeValid) {
+                for (i in 0 until placements.size) {
+                    val p = placements[i]
+                    if (p.isVirtual || p.zIndex < 0) continue
+                    if (p.anchorLine + p.rows - 1 < vFirst || p.anchorLine > vLast) continue
+                    val bitmap = imageBitmapCache[p.imageId]?.second ?: continue
+                    drawKittyPlacement(p, bitmap, cellWidth, cellHeight)
                 }
             }
 
@@ -1855,4 +1931,33 @@ private fun DrawScope.drawBlockElement(
             drawRect(color.copy(alpha = 0.75f), Offset(x, y), androidx.compose.ui.geometry.Size(cellWidth, cellHeight))
         }
     }
+}
+
+private fun DrawScope.drawKittyPlacement(
+    placement: TerminalImagePlacement,
+    bitmap: ImageBitmap,
+    cellWidth: Float,
+    cellHeight: Float,
+) {
+    val dstX = (placement.col * cellWidth + placement.cellOffsetX).toInt()
+    val dstY = (placement.anchorLine * cellHeight + placement.cellOffsetY).toInt()
+    val dstW = (placement.cols * cellWidth).toInt()
+    val dstH = (placement.rows * cellHeight).toInt()
+    if (dstW <= 0 || dstH <= 0) return
+
+    val srcX = placement.srcX.coerceIn(0, bitmap.width)
+    val srcY = placement.srcY.coerceIn(0, bitmap.height)
+    val srcW = (if (placement.srcWidth > 0) placement.srcWidth else (bitmap.width - srcX))
+        .coerceIn(0, bitmap.width - srcX)
+    val srcH = (if (placement.srcHeight > 0) placement.srcHeight else (bitmap.height - srcY))
+        .coerceIn(0, bitmap.height - srcY)
+    if (srcW <= 0 || srcH <= 0) return
+
+    drawImage(
+        image = bitmap,
+        srcOffset = IntOffset(srcX, srcY),
+        srcSize = IntSize(srcW, srcH),
+        dstOffset = IntOffset(dstX, dstY),
+        dstSize = IntSize(dstW, dstH),
+    )
 }

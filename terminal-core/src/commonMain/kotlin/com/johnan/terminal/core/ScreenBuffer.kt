@@ -7,6 +7,7 @@ class ScreenBuffer(
     initialRows: Int,
     initialCols: Int,
     private val maxScrollback: Int = 1000,
+    private val maxImageMemoryBytes: Int = 32 * 1024 * 1024,
 ) {
     var rows: Int = initialRows
         private set
@@ -17,6 +18,13 @@ class ScreenBuffer(
     private var alternateBuffer: Array<TerminalRow> = Array(rows) { TerminalRow(cols) }
     private var buffer: Array<TerminalRow> = primaryBuffer
     private var isAlternateScreen: Boolean = false
+
+    private val images = LinkedHashMap<Int, TerminalImage>()
+    private var totalImageBytes: Int = 0
+    private var nextInternalImageId: Int = 0x7FFF_0000
+    private var nextImageVersion: Long = 1L
+    private val primaryPlacements = ArrayList<TerminalImagePlacement>()
+    private val alternatePlacements = ArrayList<TerminalImagePlacement>()
 
     private var scrollTop: Int = 0
     private var scrollBottom: Int = rows - 1
@@ -56,7 +64,7 @@ class ScreenBuffer(
      * stores a fresh `copyOf()` and nothing mutates a stored array afterwards, including during reflow.
      */
     fun copy(): ScreenBuffer {
-        val clone = ScreenBuffer(rows, cols, maxScrollback)
+        val clone = ScreenBuffer(rows, cols, maxScrollback, maxImageMemoryBytes)
         clone.primaryBuffer = Array(primaryBuffer.size) { primaryBuffer[it].copy() }
         clone.alternateBuffer = Array(alternateBuffer.size) { alternateBuffer[it].copy() }
         clone.isAlternateScreen = isAlternateScreen
@@ -83,6 +91,12 @@ class ScreenBuffer(
         clone.currentConceal = currentConceal
         clone.savedCursorRow = savedCursorRow
         clone.savedCursorCol = savedCursorCol
+        clone.images.putAll(images)
+        clone.totalImageBytes = totalImageBytes
+        clone.nextInternalImageId = nextInternalImageId
+        clone.nextImageVersion = nextImageVersion
+        clone.primaryPlacements.addAll(primaryPlacements)
+        clone.alternatePlacements.addAll(alternatePlacements)
         // Every var in this class is copied above; rows/cols and maxScrollback come from the constructor.
         return clone
     }
@@ -143,6 +157,117 @@ class ScreenBuffer(
     }
 
     val scrollbackSize: Int get() = scrollback.size
+
+    fun getImages(): Map<Int, TerminalImage> = LinkedHashMap(images)
+
+    fun getImage(id: Int): TerminalImage? = images[id]
+
+    fun findLatestImageByNumber(imageNumber: Int): TerminalImage? =
+        images.values.lastOrNull { it.imageNumber == imageNumber }
+
+    fun allocateInternalImageId(): Int = nextInternalImageId++
+
+    fun nextVersion(): Long = nextImageVersion++
+
+    fun getPlacements(): List<TerminalImagePlacement> =
+        if (isAlternateScreen) alternatePlacements.toList() else primaryPlacements.toList()
+
+    fun storeImage(image: TerminalImage): Boolean {
+        if (image.byteSize > maxImageMemoryBytes) return false
+        val existing = images.remove(image.id)
+        if (existing != null) {
+            totalImageBytes -= existing.byteSize
+        }
+        while (totalImageBytes + image.byteSize > maxImageMemoryBytes && images.isNotEmpty()) {
+            val oldestKey = images.keys.first()
+            val evicted = images.remove(oldestKey)!!
+            totalImageBytes -= evicted.byteSize
+            primaryPlacements.removeAll { it.imageId == oldestKey && !it.isVirtual }
+            alternatePlacements.removeAll { it.imageId == oldestKey && !it.isVirtual }
+        }
+        images[image.id] = image
+        totalImageBytes += image.byteSize
+        return true
+    }
+
+    fun addPlacement(placement: TerminalImagePlacement) {
+        val activePlacements = if (isAlternateScreen) alternatePlacements else primaryPlacements
+        if (placement.imageId > 0 && placement.placementId > 0) {
+            activePlacements.removeAll { it.imageId == placement.imageId && it.placementId == placement.placementId }
+        }
+        activePlacements.add(placement)
+    }
+
+    fun deleteKittyGraphics(
+        mode: Char,
+        id: Int = 0,
+        imageNumber: Int = 0,
+        placementId: Int = 0,
+        x: Int = 0,
+        y: Int = 0,
+        z: Int = 0,
+    ) {
+        val activePlacements = if (isAlternateScreen) alternatePlacements else primaryPlacements
+        val currentScreenRowOffset = if (isAlternateScreen) 0 else scrollback.size
+        val isUppercase = mode.isUpperCase()
+        val lowerMode = mode.lowercaseChar()
+
+        val removedCandidateIds = mutableSetOf<Int>()
+        if (lowerMode == 'i' && id > 0) {
+            removedCandidateIds.add(id)
+        } else if (lowerMode == 'n' && imageNumber > 0) {
+            for ((imgId, img) in images) {
+                if (img.imageNumber == imageNumber) {
+                    removedCandidateIds.add(imgId)
+                }
+            }
+        }
+
+        val iterator = activePlacements.iterator()
+        while (iterator.hasNext()) {
+            val p = iterator.next()
+            val matches = when (lowerMode) {
+                'a' -> !p.isVirtual
+                'i' -> p.imageId == id && (placementId == 0 || p.placementId == placementId)
+                'n' -> {
+                    val img = images[p.imageId]
+                    img != null && img.imageNumber == imageNumber
+                }
+                'c' -> {
+                    val cursorAbsLine = currentScreenRowOffset + cursorRow
+                    cursorCol in p.col until (p.col + p.cols) &&
+                        cursorAbsLine in p.anchorLine until (p.anchorLine + p.rows)
+                }
+                'p' -> {
+                    val cellCol = x - 1
+                    val cellAbsLine = currentScreenRowOffset + (y - 1)
+                    cellCol in p.col until (p.col + p.cols) &&
+                        cellAbsLine in p.anchorLine until (p.anchorLine + p.rows)
+                }
+                'x' -> (x - 1) in p.col until (p.col + p.cols)
+                'y' -> (currentScreenRowOffset + y - 1) in p.anchorLine until (p.anchorLine + p.rows)
+                'z' -> p.zIndex == z
+                else -> false
+            }
+            if (matches) {
+                iterator.remove()
+                removedCandidateIds.add(p.imageId)
+            }
+        }
+
+        if (isUppercase) {
+            for (candidateId in removedCandidateIds) {
+                val stillReferenced = primaryPlacements.any { it.imageId == candidateId } ||
+                    alternatePlacements.any { it.imageId == candidateId }
+                if (!stillReferenced) {
+                    val removed = images.remove(candidateId)
+                    if (removed != null) {
+                        totalImageBytes -= removed.byteSize
+                    }
+                }
+            }
+        }
+    }
 
     internal fun getScrollbackRow(index: Int): Array<TerminalCell> = scrollback[index]
 
@@ -459,6 +584,8 @@ class ScreenBuffer(
 
     fun clearScreen() {
         pendingWrap = false
+        val activePlacements = if (isAlternateScreen) alternatePlacements else primaryPlacements
+        activePlacements.removeAll { !it.isVirtual }
         for (row in 0 until rows) {
             val terminalRow = buffer[row]
             if (terminalRow.clearCells(0, cols)) {
@@ -531,6 +658,33 @@ class ScreenBuffer(
 
     private fun scrollUp() {
         if (scrollTop == 0 && scrollBottom == rows - 1) {
+            if (isAlternateScreen) {
+                val iter = alternatePlacements.listIterator()
+                while (iter.hasNext()) {
+                    val p = iter.next()
+                    val updated = p.copy(anchorLine = p.anchorLine - 1)
+                    if (updated.anchorLine + updated.rows <= 0) {
+                        iter.remove()
+                    } else {
+                        iter.set(updated)
+                    }
+                }
+            } else {
+                val droppingScrollback = maxScrollback == 0 || scrollback.size >= maxScrollback
+                if (droppingScrollback) {
+                    val iter = primaryPlacements.listIterator()
+                    while (iter.hasNext()) {
+                        val p = iter.next()
+                        val updated = p.copy(anchorLine = p.anchorLine - 1)
+                        if (updated.anchorLine + updated.rows <= 0) {
+                            iter.remove()
+                        } else {
+                            iter.set(updated)
+                        }
+                    }
+                }
+            }
+
             if (maxScrollback > 0) {
                 if (scrollback.size >= maxScrollback) {
                     scrollback.removeFirst()

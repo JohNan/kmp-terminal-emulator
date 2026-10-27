@@ -52,7 +52,8 @@ class TerminalEmulator(
     val osc52Policy: Osc52Policy
         get() = config.osc52Policy
 
-    private var screenBuffer = ScreenBuffer(config.initialRows, config.initialCols, config.maxScrollback)
+    private var screenBuffer =
+        ScreenBuffer(config.initialRows, config.initialCols, config.maxScrollback, config.maxImageMemoryBytes)
 
     var applicationCursorKeysEnabled = false
         internal set
@@ -328,6 +329,8 @@ class TerminalEmulator(
             mouseTrackingMode = mouseTrackingMode,
             sgrMouseModeEnabled = sgrMouseModeEnabled,
             bracketedPasteModeEnabled = bracketedPasteModeEnabled,
+            images = screenBuffer.getImages(),
+            imagePlacements = screenBuffer.getPlacements(),
         )
     }
 
@@ -560,6 +563,8 @@ data class TerminalScreenState(
     val mouseTrackingMode: MouseTrackingMode = MouseTrackingMode.None,
     val sgrMouseModeEnabled: Boolean = false,
     val bracketedPasteModeEnabled: Boolean = false,
+    val images: Map<Int, TerminalImage> = emptyMap(),
+    val imagePlacements: List<TerminalImagePlacement> = emptyList(),
 ) {
     companion object {
         fun from(
@@ -587,6 +592,8 @@ data class TerminalScreenState(
                 mouseTrackingMode = mouseTrackingMode,
                 sgrMouseModeEnabled = sgrMouseModeEnabled,
                 bracketedPasteModeEnabled = bracketedPasteModeEnabled,
+                images = buffer.getImages(),
+                imagePlacements = buffer.getPlacements(),
             )
         }
     }

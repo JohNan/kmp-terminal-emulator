@@ -23,12 +23,15 @@ data class TerminalConfig(
     val mouseTrackingEnabled: Boolean = true,
     val bracketedPasteEnabled: Boolean = true,
     val bellBehavior: BellBehavior = BellBehavior.VISUAL,
+    val kittyGraphicsEnabled: Boolean = true,
+    val maxImageMemoryBytes: Int = 32 * 1024 * 1024,
 ) {
     init {
         require(initialRows > 0) { "initialRows must be positive: $initialRows" }
         require(initialCols > 0) { "initialCols must be positive: $initialCols" }
         require(maxScrollback >= 0) { "maxScrollback cannot be negative: $maxScrollback" }
         require(tabStopInterval > 0) { "tabStopInterval must be positive: $tabStopInterval" }
+        require(maxImageMemoryBytes >= 0) { "maxImageMemoryBytes cannot be negative: $maxImageMemoryBytes" }
     }
 
     companion object {
@@ -50,6 +53,8 @@ class TerminalConfigBuilder {
     var mouseTrackingEnabled: Boolean = true
     var bracketedPasteEnabled: Boolean = true
     var bellBehavior: BellBehavior = BellBehavior.VISUAL
+    var kittyGraphicsEnabled: Boolean = true
+    var maxImageMemoryBytes: Int = 32 * 1024 * 1024
 
     fun build(): TerminalConfig =
         TerminalConfig(
@@ -63,6 +68,8 @@ class TerminalConfigBuilder {
             mouseTrackingEnabled = mouseTrackingEnabled,
             bracketedPasteEnabled = bracketedPasteEnabled,
             bellBehavior = bellBehavior,
+            kittyGraphicsEnabled = kittyGraphicsEnabled,
+            maxImageMemoryBytes = maxImageMemoryBytes,
         )
 }
 
