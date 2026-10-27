@@ -496,4 +496,119 @@ class AnsiParserTest {
             assertEquals("", notif2.message)
             job.cancel()
         }
+
+    private fun getRowText(emulator: TerminalEmulator, row: Int): String {
+        val buf = emulator.getScreenBuffer()
+        return (0 until buf.cols).map { buf.getCell(row, it).char }.joinToString("").trimEnd()
+    }
+
+    @Test
+    fun `Control string sequences APC DCS PM SOS do not leak into screen buffer`() =
+        runTest {
+            // APC sequence with ST terminator
+            terminalEmulator.processOutput("Hello\u001B_Gi=1;base64payload\u001B\\World")
+            assertEquals("HelloWorld", getRowText(terminalEmulator, 0))
+
+            // APC sequence with BEL terminator
+            terminalEmulator.processOutput("\r\nFoo\u001B_Gi=2;payload2\u0007Bar")
+            assertEquals("FooBar", getRowText(terminalEmulator, 1))
+
+            // APC sequence with 8-bit ST (\u009C) terminator
+            terminalEmulator.processOutput("\r\nBaz\u001B_Gi=3;payload3\u009CQux")
+            assertEquals("BazQux", getRowText(terminalEmulator, 2))
+
+            // DCS sequence with ST terminator
+            terminalEmulator.processOutput("\r\nBefore\u001BP\\\$qm\"p\u001B\\After")
+            assertEquals("BeforeAfter", getRowText(terminalEmulator, 3))
+
+            // PM sequence with ST terminator
+            terminalEmulator.processOutput("\r\nStart\u001B^privacy message\u001B\\End")
+            assertEquals("StartEnd", getRowText(terminalEmulator, 4))
+
+            // SOS sequence with ST terminator
+            terminalEmulator.processOutput("\r\nAlpha\u001BXstart of string\u001B\\Omega")
+            assertEquals("AlphaOmega", getRowText(terminalEmulator, 5))
+        }
+
+    @Test
+    fun `Chunk-split APC sequence where ESC and backslash arrive in separate calls`() =
+        runTest {
+            terminalEmulator.processOutputSync("Hello\u001B_Gsome_payload\u001B")
+            terminalEmulator.processOutputSync("\\World")
+            assertEquals("HelloWorld", getRowText(terminalEmulator, 0))
+        }
+
+    @Test
+    fun `TerminalEmulator copy mid-APC sequence preserves state for both original and clone`() =
+        runTest {
+            val original = TerminalEmulator(
+                TerminalConfig(initialRows = 24, initialCols = 80),
+            )
+            original.processOutputSync("Hello\u001B_Gpartial_data")
+
+            val clone = original.copy()
+
+            original.processOutputSync("_more_data\u001B\\Original")
+            clone.processOutputSync("_more_data\u001B\\Clone")
+
+            assertEquals("HelloOriginal", getRowText(original, 0))
+            assertEquals("HelloClone", getRowText(clone, 0))
+        }
+
+    @Test
+    fun `TerminalEmulator copy mid-ESC backslash terminator preserves state for both original and clone`() =
+        runTest {
+            val original = TerminalEmulator(
+                TerminalConfig(initialRows = 24, initialCols = 80),
+            )
+            original.processOutputSync("Hello\u001B_Gfull_payload\u001B")
+
+            val clone = original.copy()
+
+            original.processOutputSync("\\Original")
+            clone.processOutputSync("\\Clone")
+
+            assertEquals("HelloOriginal", getRowText(original, 0))
+            assertEquals("HelloClone", getRowText(clone, 0))
+        }
+
+    @Test
+    fun `CSI 14 t and CSI 16 t report default and updated pixel dimensions`() =
+        runTest {
+            var responseReceived: String? = null
+            val emulator = TerminalEmulator(
+                TerminalConfig(initialRows = 24, initialCols = 80),
+                onTerminalResponse = { responseReceived = it },
+            )
+
+            // Test default dimensions (8x16)
+            emulator.processOutput("\u001B[14t")
+            assertEquals("\u001B[4;384;640t", responseReceived)
+
+            responseReceived = null
+            emulator.processOutput("\u001B[16t")
+            assertEquals("\u001B[6;16;8t", responseReceived)
+
+            // Update dimensions via setCellDimensionsPx(10, 20)
+            emulator.setCellDimensionsPx(10, 20)
+            assertEquals(10, emulator.cellWidthPx)
+            assertEquals(20, emulator.cellHeightPx)
+
+            responseReceived = null
+            emulator.processOutput("\u001B[14t")
+            assertEquals("\u001B[4;480;800t", responseReceived)
+
+            responseReceived = null
+            emulator.processOutput("\u001B[16t")
+            assertEquals("\u001B[6;20;10t", responseReceived)
+
+            // Verify copy preserves cellWidthPx and cellHeightPx
+            val clone = emulator.copy(onTerminalResponse = { responseReceived = it })
+            assertEquals(10, clone.cellWidthPx)
+            assertEquals(20, clone.cellHeightPx)
+
+            responseReceived = null
+            clone.processOutput("\u001B[16t")
+            assertEquals("\u001B[6;20;10t", responseReceived)
+        }
 }

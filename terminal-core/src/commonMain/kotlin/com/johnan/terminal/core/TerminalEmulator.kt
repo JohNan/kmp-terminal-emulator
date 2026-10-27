@@ -94,6 +94,12 @@ class TerminalEmulator(
 
     var headlessMode: Boolean = false
 
+    var cellWidthPx: Int = 8
+        internal set
+
+    var cellHeightPx: Int = 16
+        internal set
+
     private val _clipboardEvents = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
     val clipboardEvents: SharedFlow<String> = _clipboardEvents.asSharedFlow()
 
@@ -170,6 +176,16 @@ class TerminalEmulator(
         onTerminalResponse?.invoke(response)
     }
 
+    /**
+     * Updates the measured character cell dimensions in pixels for CSI 14 t / CSI 16 t window manipulation reports.
+     */
+    fun setCellDimensionsPx(widthPx: Int, heightPx: Int) {
+        if (widthPx > 0 && heightPx > 0) {
+            cellWidthPx = widthPx
+            cellHeightPx = heightPx
+        }
+    }
+
     internal fun setWindowTitle(title: String) {
         _windowTitle.value = title
     }
@@ -219,6 +235,8 @@ class TerminalEmulator(
         clone.mouseTrackingMode = mouseTrackingMode
         clone.sgrMouseModeEnabled = sgrMouseModeEnabled
         clone.headlessMode = headlessMode
+        clone.cellWidthPx = cellWidthPx
+        clone.cellHeightPx = cellHeightPx
         clone._windowTitle.value = _windowTitle.value
         clone.windowTitleStack.addAll(windowTitleStack)
         clone.bellCount = bellCount

@@ -18,10 +18,15 @@ class AnsiParser(
         ESC,
         CSI,
         OSC,
+        APC,
+        DCS,
+        PM,
+        SOS,
         CHARSET,
     }
 
     private var state = State.NORMAL
+    private var escapeInStringState: State? = null
     private val paramBuffer = StringBuilder()
     private var leftoverBytes = ByteArray(0)
 
@@ -62,11 +67,13 @@ class AnsiParser(
         clone.charsetTarget = charsetTarget
         clone.lastPrintableCodepoint = lastPrintableCodepoint
         clone.pendingHighSurrogate = pendingHighSurrogate
+        clone.escapeInStringState = escapeInStringState
         return clone
     }
 
     companion object {
         const val MAX_OSC52_PAYLOAD_SIZE = 65536
+        const val MAX_CONTROL_STRING_SIZE = 16 * 1024 * 1024
     }
 
     private inline fun log(
@@ -216,6 +223,7 @@ class AnsiParser(
             State.ESC -> processEscape(char)
             State.CSI -> processCsi(char)
             State.OSC -> processOsc(char)
+            State.APC, State.DCS, State.PM, State.SOS -> processControlString(char)
             State.CHARSET -> processCharset(char)
         }
     }
@@ -282,6 +290,29 @@ class AnsiParser(
     }
 
     private fun processEscape(char: Char) {
+        if (escapeInStringState != null) {
+            val prev = escapeInStringState
+            escapeInStringState = null
+            if (char == '\\') {
+                if (prev == State.OSC) {
+                    finishOsc()
+                } else if (prev == State.APC) {
+                    finishApc()
+                } else if (prev != null) {
+                    log(prev.name) { "len=${paramBuffer.length}" }
+                }
+                state = State.NORMAL
+                paramBuffer.clear()
+                paramsParsed = false
+                return
+            }
+            if (prev == State.OSC) {
+                finishOsc()
+            }
+            paramBuffer.clear()
+            paramsParsed = false
+        }
+
         when (char) {
             '[' -> {
                 state = State.CSI
@@ -290,6 +321,26 @@ class AnsiParser(
             }
             ']' -> {
                 state = State.OSC
+                paramBuffer.clear()
+                paramsParsed = false
+            }
+            '_' -> {
+                state = State.APC
+                paramBuffer.clear()
+                paramsParsed = false
+            }
+            'P' -> {
+                state = State.DCS
+                paramBuffer.clear()
+                paramsParsed = false
+            }
+            '^' -> {
+                state = State.PM
+                paramBuffer.clear()
+                paramsParsed = false
+            }
+            'X' -> {
+                state = State.SOS
                 paramBuffer.clear()
                 paramsParsed = false
             }
@@ -380,7 +431,13 @@ class AnsiParser(
                 val mode = parseParam(0, 0)
                 log("WindowManipulation") { "mode=$mode" }
                 when (mode) {
-                    14 -> terminalEmulator.sendResponse("\u001B[4;${screenBuffer.rows * 16};${screenBuffer.cols * 8}t")
+                    14 -> terminalEmulator.sendResponse(
+                        "\u001B[4;${screenBuffer.rows * terminalEmulator.cellHeightPx};" +
+                            "${screenBuffer.cols * terminalEmulator.cellWidthPx}t",
+                    )
+                    16 -> terminalEmulator.sendResponse(
+                        "\u001B[6;${terminalEmulator.cellHeightPx};${terminalEmulator.cellWidthPx}t",
+                    )
                     18 -> terminalEmulator.sendResponse("\u001B[8;${screenBuffer.rows};${screenBuffer.cols}t")
                     22 -> terminalEmulator.pushWindowTitle()
                     23 -> terminalEmulator.popWindowTitle()
@@ -555,75 +612,102 @@ class AnsiParser(
 
     private fun processOsc(char: Char) {
         when (char) {
-            '\u0007', '\u001B' -> {
-                val oscData = paramBuffer.toString()
-                val semicolonIndex = oscData.indexOf(';')
+            '\u0007', '\u009C' -> {
+                finishOsc()
+                paramBuffer.clear()
+                paramsParsed = false
+                state = State.NORMAL
+            }
+            '\u001B' -> {
+                escapeInStringState = State.OSC
+                state = State.ESC
+            }
+            else -> {
+                if (paramBuffer.length < MAX_CONTROL_STRING_SIZE) {
+                    paramBuffer.append(char)
+                }
+            }
+        }
+    }
 
-                if (semicolonIndex != -1) {
-                    val command = oscData.substring(0, semicolonIndex)
-                    val value = oscData.substring(semicolonIndex + 1)
+    private fun finishOsc() {
+        val oscData = paramBuffer.toString()
+        val semicolonIndex = oscData.indexOf(';')
 
-                    when (command) {
-                        "52" -> {
-                            val parts = value.split(";")
-                            if (parts.size == 2) {
-                                val pd = parts[1]
-                                if (pd == "?") {
-                                    log("OSC 52") { "Read request ignored for security" }
-                                } else {
-                                    if (pd.length > MAX_OSC52_PAYLOAD_SIZE) {
-                                        log("OSC 52") {
-                                            "Write payload exceeds limit ($MAX_OSC52_PAYLOAD_SIZE bytes)"
-                                        }
-                                    } else {
-                                        try {
-                                            val decodedBytes = Base64Decoder.decode(pd)
-                                            val decodedString = decodedBytes.decodeToString()
-                                            terminalEmulator.handleOsc52Write(decodedString)
-                                        } catch (e: Exception) {
-                                            log("OSC 52") { "Failed to decode base64 payload: ${e.message}" }
-                                        }
-                                    }
+        if (semicolonIndex != -1) {
+            val command = oscData.substring(0, semicolonIndex)
+            val value = oscData.substring(semicolonIndex + 1)
+
+            when (command) {
+                "52" -> {
+                    val parts = value.split(";")
+                    if (parts.size == 2) {
+                        val pd = parts[1]
+                        if (pd == "?") {
+                            log("OSC 52") { "Read request ignored for security" }
+                        } else {
+                            if (pd.length > MAX_OSC52_PAYLOAD_SIZE) {
+                                log("OSC 52") {
+                                    "Write payload exceeds limit ($MAX_OSC52_PAYLOAD_SIZE bytes)"
                                 }
                             } else {
-                                log("OSC 52") { "Invalid payload format" }
+                                try {
+                                    val decodedBytes = Base64Decoder.decode(pd)
+                                    val decodedString = decodedBytes.decodeToString()
+                                    terminalEmulator.handleOsc52Write(decodedString)
+                                } catch (e: Exception) {
+                                    log("OSC 52") { "Failed to decode base64 payload: ${e.message}" }
+                                }
                             }
                         }
-
-                        "0", "2" -> {
-                            terminalEmulator.setWindowTitle(value)
-                            log("OSC", "Set window title: $value")
-                        }
-
-                        "9" -> {
-                            terminalEmulator.triggerNotification("Terminal Notification", value)
-                            log("OSC 9") { "Notification: $value" }
-                        }
-
-                        "777" -> {
-                            val parts = value.split(";", limit = 3)
-                            if (parts.isNotEmpty() && parts[0] == "notify") {
-                                val title = parts.getOrElse(1) { "" }
-                                val body = parts.getOrElse(2) { "" }
-                                terminalEmulator.triggerNotification(title, body)
-                                log("OSC 777") { "Notification: title='$title', body='$body'" }
-                            }
-                        }
+                    } else {
+                        log("OSC 52") { "Invalid payload format" }
                     }
                 }
 
-                if (char == '\u001B') {
-                    state = State.ESC
-                    paramBuffer.clear()
-                    paramsParsed = false
-                } else {
-                    state = State.NORMAL
+                "0", "2" -> {
+                    terminalEmulator.setWindowTitle(value)
+                    log("OSC", "Set window title: $value")
+                }
+
+                "9" -> {
+                    terminalEmulator.triggerNotification("Terminal Notification", value)
+                    log("OSC 9") { "Notification: $value" }
+                }
+
+                "777" -> {
+                    val parts = value.split(";", limit = 3)
+                    if (parts.isNotEmpty() && parts[0] == "notify") {
+                        val title = parts.getOrElse(1) { "" }
+                        val body = parts.getOrElse(2) { "" }
+                        terminalEmulator.triggerNotification(title, body)
+                        log("OSC 777") { "Notification: title='$title', body='$body'" }
+                    }
                 }
             }
-            else -> {
+        }
+    }
+
+    private fun processControlString(char: Char) {
+        if (char == '\u009C' || (char == '\u0007' && state == State.APC)) {
+            if (state == State.APC) {
+                finishApc()
+            }
+            paramBuffer.clear()
+            paramsParsed = false
+            state = State.NORMAL
+        } else if (char == '\u001B') {
+            escapeInStringState = state
+            state = State.ESC
+        } else {
+            if (paramBuffer.length < MAX_CONTROL_STRING_SIZE) {
                 paramBuffer.append(char)
             }
         }
+    }
+
+    private fun finishApc() {
+        log("APC") { "len=${paramBuffer.length}" }
     }
 
     private fun processCharset(char: Char) {
