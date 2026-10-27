@@ -5,6 +5,8 @@ package com.johnan.terminal.core
  */
 object UnicodeWidth {
     fun wcwidth(codepoint: Int): Int = when {
+        codepoint == KITTY_PLACEHOLDER_CODEPOINT -> 1
+        KittyUnicodePlaceholders.diacriticToIndex(codepoint) >= 0 -> 0
         codepoint == 0 ||
             codepoint < 0x20 ||
             codepoint in 0x7F..0x9F ||
@@ -78,6 +80,8 @@ data class TerminalCell(
     val codepoint: Int = char.code,
     val width: Int = 1,
     val isWideSpacer: Boolean = false,
+    val underlineColor: TerminalColor = TerminalColor.Default,
+    val kittyPlaceholderInfo: Int = 0,
 ) {
     /**
      * Resolves foreground color taking reverse video (inverse attribute) into account.
@@ -113,6 +117,8 @@ data class TerminalCell(
             !isWideSpacer &&
             foregroundColor === TerminalColor.Default &&
             backgroundColor === TerminalColor.Default &&
+            underlineColor === TerminalColor.Default &&
+            kittyPlaceholderInfo == 0 &&
             !bold &&
             !italic &&
             !underline &&
@@ -151,12 +157,16 @@ data class TerminalCell(
             conceal: Boolean = false,
             width: Int = UnicodeWidth.wcwidth(codepoint).coerceAtLeast(1),
             isWideSpacer: Boolean = false,
+            underlineColor: TerminalColor = TerminalColor.Default,
+            kittyPlaceholderInfo: Int = 0,
         ): TerminalCell {
             if (codepoint in 0..127 &&
                 !isWideSpacer &&
                 width == 1 &&
                 foregroundColor === TerminalColor.Default &&
                 backgroundColor === TerminalColor.Default &&
+                underlineColor === TerminalColor.Default &&
+                kittyPlaceholderInfo == 0 &&
                 !bold &&
                 !italic &&
                 !underline &&
@@ -187,6 +197,8 @@ data class TerminalCell(
                 codepoint = codepoint,
                 width = width,
                 isWideSpacer = isWideSpacer,
+                underlineColor = underlineColor,
+                kittyPlaceholderInfo = kittyPlaceholderInfo,
             )
         }
 
@@ -206,6 +218,8 @@ data class TerminalCell(
             strikethrough: Boolean = false,
             overline: Boolean = false,
             conceal: Boolean = false,
+            underlineColor: TerminalColor = TerminalColor.Default,
+            kittyPlaceholderInfo: Int = 0,
         ): TerminalCell = createCodepoint(
             codepoint = char.code,
             foregroundColor = foregroundColor,
@@ -219,6 +233,8 @@ data class TerminalCell(
             strikethrough = strikethrough,
             overline = overline,
             conceal = conceal,
+            underlineColor = underlineColor,
+            kittyPlaceholderInfo = kittyPlaceholderInfo,
         )
     }
 }

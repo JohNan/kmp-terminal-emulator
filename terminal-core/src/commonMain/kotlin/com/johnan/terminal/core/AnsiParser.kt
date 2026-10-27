@@ -741,12 +741,22 @@ class AnsiParser(
         val fullPayload: String
 
         if (isChunked) {
+            if (kittyChunkPayload.length + payloadChunk.length > MAX_CONTROL_STRING_SIZE) {
+                kittyChunkHeader = null
+                kittyChunkPayload.clear()
+                return
+            }
             val existingHeader = kittyChunkHeader?.toMutableMap() ?: mutableMapOf()
             existingHeader.putAll(currentHeader)
             kittyChunkHeader = existingHeader
             kittyChunkPayload.append(payloadChunk)
             return
         } else if (kittyChunkHeader != null) {
+            if (kittyChunkPayload.length + payloadChunk.length > MAX_CONTROL_STRING_SIZE) {
+                kittyChunkHeader = null
+                kittyChunkPayload.clear()
+                return
+            }
             val existingHeader = kittyChunkHeader!!.toMutableMap()
             existingHeader.putAll(currentHeader)
             kittyChunkPayload.append(payloadChunk)
@@ -830,23 +840,42 @@ class AnsiParser(
                             32 -> {
                                 val s = fullHeader["s"]?.toIntOrNull() ?: 0
                                 val v = fullHeader["v"]?.toIntOrNull() ?: 0
-                                require(s > 0 && v > 0 && rawBytes.size >= s * v * 4) {
+                                val totalPixels = s.toLong() * v.toLong()
+                                val maxBytes = terminalEmulator.config.maxImageMemoryBytes.toLong()
+                                require(
+                                    s > 0 &&
+                                        v > 0 &&
+                                        totalPixels * 4L <= maxBytes &&
+                                        rawBytes.size.toLong() >= totalPixels * 4L,
+                                ) {
                                     "Invalid RGBA payload dimensions"
                                 }
                                 widthPx = s
                                 heightPx = v
-                                rgbaBytes = rawBytes
+                                rgbaBytes = if (rawBytes.size == (totalPixels * 4L).toInt()) {
+                                    rawBytes
+                                } else {
+                                    rawBytes.copyOf((totalPixels * 4L).toInt())
+                                }
                             }
                             24 -> {
                                 val s = fullHeader["s"]?.toIntOrNull() ?: 0
                                 val v = fullHeader["v"]?.toIntOrNull() ?: 0
-                                require(s > 0 && v > 0 && rawBytes.size >= s * v * 3) {
+                                val totalPixels = s.toLong() * v.toLong()
+                                val maxBytes = terminalEmulator.config.maxImageMemoryBytes.toLong()
+                                require(
+                                    s > 0 &&
+                                        v > 0 &&
+                                        totalPixels * 4L <= maxBytes &&
+                                        rawBytes.size.toLong() >= totalPixels * 3L,
+                                ) {
                                     "Invalid RGB payload dimensions"
                                 }
                                 widthPx = s
                                 heightPx = v
-                                val rgba = ByteArray(s * v * 4)
-                                for (p in 0 until s * v) {
+                                val pixelCount = totalPixels.toInt()
+                                val rgba = ByteArray(pixelCount * 4)
+                                for (p in 0 until pixelCount) {
                                     val src = p * 3
                                     val dst = p * 4
                                     rgba[dst] = rawBytes[src]
@@ -882,7 +911,10 @@ class AnsiParser(
                         encodedPngBytes = encodedPng,
                         version = version,
                     )
-                    screenBuffer.storeImage(img)
+                    if (!screenBuffer.storeImage(img)) {
+                        sendError("ENOMEM:Image exceeds maxImageMemoryBytes")
+                        return
+                    }
                     targetImage = img
                 }
 
@@ -1122,6 +1154,14 @@ class AnsiParser(
                         i += result.second
                     }
                 }
+                58 -> {
+                    val result = parseColor(i, count)
+                    if (result != null) {
+                        screenBuffer.setTextAttributes(underlineColor = result.first)
+                        i += result.second
+                    }
+                }
+                59 -> screenBuffer.setTextAttributes(underlineColor = TerminalColor.Default)
             }
             i++
         }

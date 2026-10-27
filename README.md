@@ -170,6 +170,14 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - OSC 52 clipboard integration with configurable security policies (`ASK`, `ALWAYS_ALLOW`, `ALWAYS_DENY`).
   - Independent deep state cloning (`TerminalEmulator.copy()`) for headless sessions and speculative execution (e.g. Mosh).
   - Soft-wrap row querying (`ScreenBuffer.isRowWrapped(row)`).
+- **Kitty Graphics Protocol & Unicode Placeholders**:
+  - Full APC control sequence handling (`\e_G...;\e\`) for inline images with hardware-accelerated canvas rendering.
+  - Protocol formats: 24-bit RGB (`f=24`), 32-bit RGBA (`f=32`), and pure KMP zero-dependency PNG (`f=100`).
+  - Compression: Pure Kotlin RFC 1950/1951 Deflate/zlib decompressor (`o=z`) supporting single-chunk and multi-chunk (`m=1`/`m=0`) transfers.
+  - Control commands: Transmit (`a=t`), Transmit & Display (`a=T`), Place (`a=p`), Delete (`a=d`), and Query (`a=q`).
+  - Unicode Placeholders (`U=1`, `U+10EEEE`) using the canonical 297-diacritic encoding table for seamless scrolling and reflow inside `tmux` and `zellij`.
+  - Layering and z-index ordering: 3-pass draw loop respecting negative, background, text, and overlay z-indices.
+  - Safety & Geometry: Configurable `maxImageMemoryBytes` with automatic LRU texture eviction, inflation bomb protection, and subpixel cell geometry via `setCellDimensionsPx`.
 - **Mobile & Desktop Responsive Features**:
   - Soft keyboard modifier toggle integration (Ctrl, Alt, Shift states).
   - Monospace cell measurement with sub-pixel precision to eliminate column drift.
@@ -246,6 +254,8 @@ val config = terminalConfig {
     maxScrollback = 2000
     osc52Policy = Osc52Policy.ALWAYS_ALLOW
     bellBehavior = BellBehavior.VISUAL
+    kittyGraphicsEnabled = true
+    maxImageMemoryBytes = 32 * 1024 * 1024 // 32MB LRU image cache
 }
 
 val emulator = TerminalEmulator(
@@ -306,6 +316,9 @@ fun TerminalScreen(emulator: TerminalEmulator) {
         },
         onArrowKey = { arrow, shift ->
             // Forward arrow navigation
+        },
+        onCellMeasured = { widthPx, heightPx ->
+            emulator.setCellDimensionsPx(widthPx.toInt(), heightPx.toInt())
         },
         onLog = { msg -> println("[TerminalLog] $msg") },
         modifier = Modifier.fillMaxSize()
