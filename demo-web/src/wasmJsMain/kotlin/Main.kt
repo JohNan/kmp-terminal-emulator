@@ -102,6 +102,9 @@ fun main() {
             config = terminalConfig {
                 initialRows = rows
                 initialCols = cols
+            },
+            onTerminalResponse = { response ->
+                onInput(response)
             }
         )
         val focusRequester = FocusRequester()
@@ -156,6 +159,9 @@ fun main() {
                                 onLog = {},
                                 focusRequester = focusRequester,
                                 onCellMeasured = { width, height ->
+                                    val w = width.toInt().coerceAtLeast(1)
+                                    val h = height.toInt().coerceAtLeast(1)
+                                    emulator.setCellDimensionsPx(w, h)
                                     notifyCellMeasured(width.toDouble(), height.toDouble())
                                 },
                                 onResize = { r, c ->

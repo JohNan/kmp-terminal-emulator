@@ -202,6 +202,7 @@
 
             <button id="btn-colors" class="btn-showcase">Colors & 24-bit</button>
             <button id="btn-styles" class="btn-success">Styles</button>
+            <button id="btn-kitty" class="btn-showcase" style="background-color: rgba(247, 120, 186, 0.15); border-color: rgba(247, 120, 186, 0.4); color: #f778ba;">Kitty Graphics</button>
             <button id="btn-unicode" class="btn-purple">Unicode & Box</button>
             <button id="btn-progress" class="btn-warning">Progress Bar</button>
             <button id="btn-matrix" class="btn-success">Matrix Rain</button>
@@ -302,6 +303,72 @@
                 "\u001B[36m│\u001B[0m Powerline: \u001B[44;30m master \u001B[42;34m\u001B[30m ✓ clean \u001B[49;32m\u001B[0m             \u001B[36m│\u001B[0m\r\n" +
                 "\u001B[36m└──────────────────────────────────────────────┘\u001B[0m\r\n\r\n";
             if (termInstance) termInstance.write(out);
+        }
+
+        function createRgbaTestImage(w, h, pattern) {
+            const data = new Uint8Array(w * h * 4);
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    if (pattern === "gradient") {
+                        data[idx] = Math.floor((x / w) * 255);
+                        data[idx + 1] = Math.floor((y / h) * 255);
+                        data[idx + 2] = 220;
+                        data[idx + 3] = 255;
+                    } else if (pattern === "checker") {
+                        const check = ((Math.floor(x / 4) + Math.floor(y / 4)) % 2) === 0;
+                        data[idx] = check ? 88 : 247;
+                        data[idx + 1] = check ? 166 : 120;
+                        data[idx + 2] = check ? 255 : 186;
+                        data[idx + 3] = 255;
+                    } else if (pattern === "logo") {
+                        const isBorder = x === 0 || x === w - 1 || y === 0 || y === h - 1;
+                        const isPrompt = y >= 6 && y <= 10 && x >= 4 && x <= y - 2;
+                        const isCursor = y >= 8 && y <= 11 && x >= 12 && x <= 16;
+                        if (isBorder) {
+                            data[idx] = 88; data[idx + 1] = 166; data[idx + 2] = 255; data[idx + 3] = 255;
+                        } else if (isPrompt) {
+                            data[idx] = 63; data[idx + 1] = 185; data[idx + 2] = 80; data[idx + 3] = 255;
+                        } else if (isCursor) {
+                            data[idx] = 247; data[idx + 1] = 120; data[idx + 2] = 186; data[idx + 3] = 255;
+                        } else {
+                            data[idx] = 22; data[idx + 1] = 27; data[idx + 2] = 34; data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            let binary = "";
+            for (let i = 0; i < data.length; i++) {
+                binary += String.fromCharCode(data[i]);
+            }
+            return btoa(binary);
+        }
+
+        function runKittyDemo() {
+            stopActiveAnimation();
+            if (!termInstance) return;
+
+            const logoB64 = createRgbaTestImage(24, 24, "logo");
+            const checkerB64 = createRgbaTestImage(32, 32, "checker");
+            const gradientB64 = createRgbaTestImage(32, 32, "gradient");
+            const pngB64 = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABKklEQVR4nBXM0bRtIQAAwG1wEEIIIYQQQgghhBBCCCGEBN5aIYRw3/Qxv/N937+/H4FIIlOoNDqDyWJzuHzfT0AgksgUKo3OYLLYHO7vBUFAIJLIFCqNzmCy2BxueEEUEIgkMoVKozOYLDaHG1+QBAQiiUyh0ugMJovN4aYXZAGBSCJTqDQ6g8lic7j5BUVAIJLIFCqNzmCy2BxueUEVEIgkMoVKozOYLDaHW1/QBAQiiUyh0ugMJovN4bYXdAGBSCJTqDQ6g8lic7j9BUNAIJLIFCqNzmCy2BzueMEUEIgkMoVKozOYLDaHO1+wBAQiiUyh0ugMJovN4a4XbAGBSCJTqDQ6g8lic7j7BUdAIJLIFCqNzmCy2BzuecEVEIgkMoVKozOYLDaHy39afMk/Z8rkpgAAAABJRU5ErkJggg==";
+
+            let out = "\r\n\u001B[1;35m=== Kitty Graphics Protocol Demonstration ===\u001B[0m\r\n\r\n" +
+                "\u001B[1;36m1. Inline RGBA Transmission (a=T, f=32, 24x24 px, 4x2 cells):\u001B[0m\r\n" +
+                `\u001B_Ga=T,f=32,s=24,v=24,c=4,r=2,i=1;${logoB64}\u001B\\\r\n\r\n` +
+                "\u001B[1;36m2. PNG Image Decoding (a=T, f=100, 16x16 px, 4x2 cells):\u001B[0m\r\n" +
+                `\u001B_Ga=T,f=100,c=4,r=2,i=2;${pngB64}\u001B\\\r\n\r\n` +
+                "\u001B[1;36m3. Z-Index Layering: Image Under Text (z=-1):\u001B[0m\r\n" +
+                `\u001B_Ga=T,f=32,s=32,v=32,c=8,r=3,z=-1,C=0,i=3;${checkerB64}\u001B\\` +
+                "  \u001B[1;37m[TEXT OVERLAY]\u001B[0m\r\n  \u001B[1;33mTerminal Text Layer\u001B[0m\r\n\r\n" +
+                "\u001B[1;36m4. Unicode Placeholders (a=t, U=1 with diacritics):\u001B[0m\r\n" +
+                `\u001B_Ga=t,f=32,s=32,v=32,i=4,U=1,c=6,r=2;${gradientB64}\u001B\\` +
+                "Virtual Placement Cells: " +
+                "\u001B[38;2;0;0;4m\uDBFB\uDEEE\u0305\u0305\uDBFB\uDEEE\u0305\u030D\uDBFB\uDEEE\u0305\u030E\u0305\u0310\uDBFB\uDEEE\u0305\u0312\uDBFB\uDEEE\u0305\u033D\u001B[0m\r\n" +
+                "                         \u001B[38;2;0;0;4m\uDBFB\uDEEE\u030D\u0305\uDBFB\uDEEE\u030D\u030D\uDBFB\uDEEE\u030D\u030E\u0305\u0310\uDBFB\uDEEE\u030D\u0312\uDBFB\uDEEE\u030D\u033D\u001B[0m\r\n\r\n" +
+                "\u001B[32m✔ Kitty Graphics Protocol rendered natively via Compose Canvas!\u001B[0m\r\n\r\n";
+
+            termInstance.write(out);
         }
 
         function runProgressDemo() {
@@ -424,6 +491,7 @@
                         "\u001B[1;36mKMP Terminal Emulator Showcase - Commands Catalog\u001B[0m\r\n" +
                         "  \u001B[1;33mcolors\u001B[0m   - Showcase 16 ANSI colors, 256 colors & 24-bit TrueColor\r\n" +
                         "  \u001B[1;33mstyles\u001B[0m   - Test bold, italic, underline, strikethrough, inverse\r\n" +
+                        "  \u001B[1;33mkitty\u001B[0m    - Render Kitty Graphics Protocol images (RGBA, PNG, z-layering)\r\n" +
                         "  \u001B[1;33municode\u001B[0m  - Display box drawing, trees, braille & powerline symbols\r\n" +
                         "  \u001B[1;33mprogress\u001B[0m - Run animated progress bars and live spinners\r\n" +
                         "  \u001B[1;33mmatrix\u001B[0m   - Digital rain animation with real-time cursor positioning\r\n" +
@@ -438,6 +506,11 @@
                     break;
                 case "styles":
                     runStylesDemo();
+                    break;
+                case "kitty":
+                case "graphics":
+                case "image":
+                    runKittyDemo();
                     break;
                 case "unicode":
                 case "box":
@@ -516,8 +589,8 @@
                 // Welcome message
                 termInstance.write("\u001B[1;36m╭─────────────────────────────────────────────────────────────────────────────╮\u001B[0m\r\n");
                 termInstance.write("\u001B[1;36m│\u001B[0m  \u001B[1;32m⚡ KMP Terminal Emulator (WebAssembly & Compose Multiplatform Demo)\u001B[0m       \u001B[1;36m│\u001B[0m\r\n");
-                termInstance.write("\u001B[1;36m│\u001B[0m  Features: 24-bit TrueColor, DECSTBM margins, Alt-Buffer, Unicode, Matrix     \u001B[1;36m│\u001B[0m\r\n");
-                termInstance.write("\u001B[1;36m│\u001B[0m  Try toolbar buttons above or type '\u001B[33mhelp\u001B[0m', '\u001B[33mcolors\u001B[0m', '\u001B[33mhtop\u001B[0m', '\u001B[33mmatrix\u001B[0m'.      \u001B[1;36m│\u001B[0m\r\n");
+                termInstance.write("\u001B[1;36m│\u001B[0m  Features: Kitty Graphics, 24-bit TrueColor, DECSTBM, Alt-Buffer, Unicode      \u001B[1;36m│\u001B[0m\r\n");
+                termInstance.write("\u001B[1;36m│\u001B[0m  Try toolbar buttons above or type '\u001B[33mhelp\u001B[0m', '\u001B[33mkitty\u001B[0m', '\u001B[33mcolors\u001B[0m', '\u001B[33mhtop\u001B[0m'.         \u001B[1;36m│\u001B[0m\r\n");
                 termInstance.write("\u001B[1;36m╰─────────────────────────────────────────────────────────────────────────────╯\u001B[0m\r\n\r\n");
                 termInstance.write("kmp-wasm-shell$ ");
             }, 300);
@@ -550,6 +623,11 @@
 
             document.getElementById('btn-styles').addEventListener('click', () => {
                 runStylesDemo();
+                if (termInstance) termInstance.write("kmp-wasm-shell$ ");
+            });
+
+            document.getElementById('btn-kitty').addEventListener('click', () => {
+                runKittyDemo();
                 if (termInstance) termInstance.write("kmp-wasm-shell$ ");
             });
 
