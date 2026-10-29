@@ -63,7 +63,7 @@ kotlin {
 
 android {
     namespace = "com.johnan.terminal.ui"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         minSdk = 24
     }
