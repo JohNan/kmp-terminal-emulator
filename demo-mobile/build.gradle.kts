@@ -44,7 +44,7 @@ kotlin {
 
 android {
     namespace = "com.johnan.terminal.demomobile"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.johnan.terminal.demomobile"
