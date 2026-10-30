@@ -54,9 +54,15 @@ class TerminalEmulatorCopyTest {
                     e.invertScreenColors,
                     e.mouseTrackingMode,
                     e.sgrMouseModeEnabled,
+                    e.synchronizedOutputEnabled,
+                    e.focusReportingEnabled,
+                    e.cursorShape,
                     s.mouseTrackingMode,
                     s.sgrMouseModeEnabled,
                     s.bracketedPasteModeEnabled,
+                    s.synchronizedOutputEnabled,
+                    s.focusReportingEnabled,
+                    s.cursorShape,
                     e.getScreenBuffer().isUsingAlternateScreen(),
                 ),
             title = e.windowTitle.value,
@@ -344,6 +350,9 @@ class TerminalEmulatorCopyTest {
                     "tab\tstop\r\u001B[2P\u001B[3@ins\u001B[4X\u001B[2K\u001B[1J\u001B[0Kend\u001B[?7l" + "z".repeat(
                         30
                     ),
+                    "\u001B[4:3mcurly\u001B[4:0m \u001B[58:2::200:100:50m\u001B[4:1munder\u001B[0m " +
+                        "\u001B[?1004h\u001B[3 q\u001B[38:5:196mred\u001B[0m" +
+                        "\u001B[?2026hbatch1\r\nbatch2\u001B[?2026l",
                 )
             for ((streamIndex, stream) in streams.withIndex()) {
                 val bytes = stream.encodeToByteArray()
@@ -388,5 +397,27 @@ class TerminalEmulatorCopyTest {
             assertEquals(snapshot(original), snapshot(copy))
             copy.processOutput("x")
             assertNotEquals(snapshot(original), snapshot(copy))
+        }
+
+    @Test
+    fun `copy preserves synchronized output mode and initial snapshot matches`() =
+        runTest {
+            val original = newEmulator()
+            original.processOutput("\u001B[?2026hinitial\u001B[?1004h\u001B[5 q")
+            assertTrue(original.synchronizedOutputEnabled)
+            assertTrue(original.focusReportingEnabled)
+            assertEquals(CursorShape.BEAM, original.cursorShape)
+
+            val copy = original.copy()
+            assertTrue(copy.synchronizedOutputEnabled)
+            assertTrue(copy.focusReportingEnabled)
+            assertEquals(CursorShape.BEAM, copy.cursorShape)
+            assertEquals(snapshot(original), snapshot(copy))
+
+            copy.processOutput(" more\u001B[?2026l")
+            assertFalse(copy.synchronizedOutputEnabled)
+            assertTrue(original.synchronizedOutputEnabled)
+            val copyRowText = copy.screenState.value.rows[0].take(12).joinToString("") { it.char.toString() }
+            assertEquals("initial more", copyRowText)
         }
 }

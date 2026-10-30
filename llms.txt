@@ -18,7 +18,11 @@
 - [Terminal I/O](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TerminalIo.kt): `TerminalIo`, `TerminalSize`, `createPlatformTerminalIo`
 - [Terminal Emulator](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalEmulator.kt): `TerminalEmulator`, `screenState`, `processOutput`, `processOutputSync`, `packGridToBuffer`, `copyToClipboard`, `copy()` (deep fork), `bellCount`, `clipboardWriteCount`, `lastClipboardWrite`
 - [Screen Buffer](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/ScreenBuffer.kt): `ScreenBuffer`, `getScrollback`, `isRowWrapped(row)`
-- [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable
+- [Terminal Screen State](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalScreenState.kt): `TerminalScreenState`, `synchronizedOutputEnabled` (DEC 2026), `focusReportingEnabled` (DEC 1004), `cursorShape` (DECSCUSR)
+- [Terminal Cell & Underline Styles](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalCell.kt): `TerminalCell`, `UnderlineStyle` (`NONE`, `SINGLE`, `DOUBLE`, `CURLY`, `DOTTED`, `DASHED`), `underlineColor`, SGR 4:x / 21 / 58:2
+- [Cursor Shapes](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/CursorShape.kt): `CursorShape` (`BLOCK`, `UNDERLINE`, `BEAM`)
+- [Terminal Canvas & Batching](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalCanvas.kt): `TerminalCanvas`, `RenderBatch` (`underlineStyle`, `underlineColor`), zero-allocation styled underlines
+- [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable, DEC 1004 focus reporting
 - [Text Selection](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalSelection.kt): `TerminalSelection`, `SelectionState`
 - [Native C-ABI FFI Bridge](terminal-core/src/nativeMain/kotlin/com/johnan/terminal/core/ffi/TerminalNativeBridge.kt): `terminal_create`, `terminal_copy`, `terminal_destroy`, `terminal_process_bytes`, `terminal_read_grid`, `terminal_extract_selection`
 - [Kitty Graphics Engine](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/KittyGraphics.kt): `TerminalImage`, `TerminalImagePlacement`, `KittyImageFormat`

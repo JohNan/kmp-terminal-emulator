@@ -31,6 +31,8 @@ class AnsiParser(
     private var leftoverBytes = ByteArray(0)
 
     private val paramValues = IntArray(64)
+    private val subParamCounts = IntArray(64)
+    private val subParamValues = IntArray(64 * 8)
     private var paramCount = 0
     private var paramsParsed = false
 
@@ -62,6 +64,8 @@ class AnsiParser(
         clone.paramBuffer.append(paramBuffer)
         clone.leftoverBytes = leftoverBytes.copyOf()
         paramValues.copyInto(clone.paramValues)
+        subParamCounts.copyInto(clone.subParamCounts)
+        subParamValues.copyInto(clone.subParamValues)
         clone.paramCount = paramCount
         clone.paramsParsed = paramsParsed
         clone.g0Charset = g0Charset
@@ -396,6 +400,9 @@ class AnsiParser(
                 screenBuffer.clearScreen()
                 screenBuffer.setCursorPosition(0, 0)
                 screenBuffer.resetTextAttributes()
+                terminalEmulator.synchronizedOutputEnabled = false
+                terminalEmulator.focusReportingEnabled = false
+                terminalEmulator.cursorShape = CursorShape.BLOCK
                 state = State.NORMAL
             }
             '=' -> {
@@ -417,8 +424,10 @@ class AnsiParser(
 
     private fun processCsi(char: Char) {
         when (char) {
-            in '0'..'9', ';', '?' -> {
-                paramBuffer.append(char)
+            in '0'..'9', ';', ':', '?', '>', '<', '=', ' ', '$', '!' -> {
+                if (paramBuffer.length < 256) {
+                    paramBuffer.append(char)
+                }
             }
             'd' -> {
                 val row = parseParam(0, 1) - 1
@@ -502,8 +511,13 @@ class AnsiParser(
             }
             'c' -> {
                 val param = parseParam(0, 0)
-                log("DA") { "param=$param" }
-                if (param == 0) {
+                val prefix = if (paramBuffer.isNotEmpty()) paramBuffer[0] else ' '
+                log("DA") { "prefix=$prefix, param=$param" }
+                if (prefix == '>') {
+                    if (param == 0) {
+                        terminalEmulator.sendResponse("\u001B[>0;10;0c")
+                    }
+                } else if (prefix != '<' && prefix != '=' && param == 0) {
                     terminalEmulator.sendResponse("\u001B[?1;0c")
                 }
                 state = State.NORMAL
@@ -606,6 +620,72 @@ class AnsiParser(
                 val count = parseParam(0, 1)
                 log("ECH") { "count=$count" }
                 screenBuffer.eraseCharacters(count)
+                state = State.NORMAL
+            }
+            'q' -> {
+                val param = parseParam(0, 0)
+                if (paramBuffer.startsWith(">")) {
+                    if (param == 0) {
+                        terminalEmulator.sendResponse("\u001BP>|kmp-terminal(0.3.11)\u001B\\")
+                    }
+                } else if (paramBuffer.endsWith(" ")) {
+                    when (param) {
+                        0, 1 -> {
+                            terminalEmulator.cursorShape = CursorShape.BLOCK
+                            terminalEmulator.cursorBlinking = true
+                        }
+                        2 -> {
+                            terminalEmulator.cursorShape = CursorShape.BLOCK
+                            terminalEmulator.cursorBlinking = false
+                        }
+                        3 -> {
+                            terminalEmulator.cursorShape = CursorShape.UNDERLINE
+                            terminalEmulator.cursorBlinking = true
+                        }
+                        4 -> {
+                            terminalEmulator.cursorShape = CursorShape.UNDERLINE
+                            terminalEmulator.cursorBlinking = false
+                        }
+                        5 -> {
+                            terminalEmulator.cursorShape = CursorShape.BEAM
+                            terminalEmulator.cursorBlinking = true
+                        }
+                        6 -> {
+                            terminalEmulator.cursorShape = CursorShape.BEAM
+                            terminalEmulator.cursorBlinking = false
+                        }
+                    }
+                }
+                state = State.NORMAL
+            }
+            'p' -> {
+                if (paramBuffer.contentEquals("!")) {
+                    log("DECSTR", "Soft Terminal Reset")
+                    screenBuffer.resetTextAttributes()
+                    terminalEmulator.originModeEnabled = false
+                    screenBuffer.setAutoWrapMode(true)
+                } else if (paramBuffer.startsWith("?") && paramBuffer.endsWith("$")) {
+                    val mode = parseParam(0, 0)
+                    log("DECRQM") { "mode=$mode" }
+                    val status = when (mode) {
+                        1 -> if (terminalEmulator.applicationCursorKeysEnabled) 1 else 2
+                        5 -> if (terminalEmulator.invertScreenColors) 1 else 2
+                        6 -> if (terminalEmulator.originModeEnabled) 1 else 2
+                        7 -> if (screenBuffer.autoWrapMode) 1 else 2
+                        12 -> if (terminalEmulator.cursorBlinking) 1 else 2
+                        25 -> if (screenBuffer.cursorVisible) 1 else 2
+                        47, 1047, 1049 -> if (screenBuffer.isUsingAlternateScreen()) 1 else 2
+                        1000 -> if (terminalEmulator.mouseTrackingMode == MouseTrackingMode.Click) 1 else 2
+                        1002 -> if (terminalEmulator.mouseTrackingMode == MouseTrackingMode.CellMotion) 1 else 2
+                        1003 -> if (terminalEmulator.mouseTrackingMode == MouseTrackingMode.AllMotion) 1 else 2
+                        1004 -> if (terminalEmulator.focusReportingEnabled) 1 else 2
+                        1006 -> if (terminalEmulator.sgrMouseModeEnabled) 1 else 2
+                        2004 -> if (terminalEmulator.bracketedPasteModeEnabled) 1 else 2
+                        2026 -> if (terminalEmulator.synchronizedOutputEnabled) 1 else 2
+                        else -> 0
+                    }
+                    terminalEmulator.sendResponse("\u001B[?$mode;${status}\$y")
+                }
                 state = State.NORMAL
             }
             else -> {
@@ -1048,39 +1128,98 @@ class AnsiParser(
         if (paramsParsed) return paramCount
         paramsParsed = true
         paramCount = 0
+        subParamCounts.fill(0)
         if (paramBuffer.isEmpty()) return 0
 
-        var currentVal = 0
-        var hasDigit = false
-        var i = 0
-
-        if (paramBuffer.isNotEmpty() && paramBuffer[0] == '?') {
-            i++
+        var start = 0
+        val len = paramBuffer.length
+        if (start < len) {
+            val first = paramBuffer[start]
+            if (first == '?' || first == '>' || first == '<' || first == '=') {
+                start++
+            }
         }
 
-        while (i < paramBuffer.length) {
-            val c = paramBuffer[i]
-            if (c in '0'..'9') {
-                currentVal = currentVal * 10 + (c - '0')
-                hasDigit = true
-            } else if (c == ';') {
-                if (hasDigit) {
-                    if (paramCount < paramValues.size) {
-                        paramValues[paramCount++] = currentVal
+        var end = start
+        while (end < len) {
+            val c = paramBuffer[end]
+            if (c == ' ' || c == '$' || c == '!') {
+                break
+            }
+            end++
+        }
+
+        if (start >= end) {
+            return 0
+        }
+
+        var paramStart = start
+        var paramIdx = 0
+
+        while (paramStart < end && paramIdx < paramValues.size) {
+            var nextSemicolon = end
+            for (j in paramStart until end) {
+                if (paramBuffer[j] == ';') {
+                    nextSemicolon = j
+                    break
+                }
+            }
+
+            var tokenStart = paramStart
+            var isPrimary = true
+            var subIdx = 0
+
+            while (tokenStart <= nextSemicolon) {
+                var nextColon = nextSemicolon
+                for (j in tokenStart until nextSemicolon) {
+                    if (paramBuffer[j] == ':') {
+                        nextColon = j
+                        break
                     }
                 }
-                currentVal = 0
-                hasDigit = false
+
+                var hasDigit = false
+                var num = 0
+                for (j in tokenStart until nextColon) {
+                    val c = paramBuffer[j]
+                    if (c in '0'..'9') {
+                        num = num * 10 + (c - '0')
+                        hasDigit = true
+                    }
+                }
+
+                if (isPrimary) {
+                    paramValues[paramIdx] = if (hasDigit) num else 0
+                    isPrimary = false
+                } else {
+                    if (subIdx < 8) {
+                        subParamValues[paramIdx * 8 + subIdx] = if (hasDigit) num else -1
+                        subIdx++
+                    }
+                }
+
+                if (nextColon == nextSemicolon) {
+                    break
+                }
+                tokenStart = nextColon + 1
             }
-            i++
+
+            subParamCounts[paramIdx] = subIdx
+            paramIdx++
+
+            if (nextSemicolon == end) {
+                break
+            }
+            paramStart = nextSemicolon + 1
+            if (paramStart == end && paramIdx < paramValues.size) {
+                paramValues[paramIdx] = 0
+                subParamCounts[paramIdx] = 0
+                paramIdx++
+                break
+            }
         }
 
-        if (hasDigit) {
-            if (paramCount < paramValues.size) {
-                paramValues[paramCount++] = currentVal
-            }
-        }
-
+        paramCount = paramIdx
         return paramCount
     }
 
@@ -1105,14 +1244,23 @@ class AnsiParser(
                 1 -> screenBuffer.setTextAttributes(bold = true)
                 2 -> screenBuffer.setTextAttributes(dim = true)
                 3 -> screenBuffer.setTextAttributes(italic = true)
-                4 -> screenBuffer.setTextAttributes(underline = true)
+                4 -> {
+                    if (subParamCounts[i] > 0) {
+                        val sub = subParamValues[i * 8].coerceAtLeast(0)
+                        val style = UnderlineStyle.fromSubParam(sub)
+                        screenBuffer.setTextAttributes(underline = style != UnderlineStyle.NONE, underlineStyle = style)
+                    } else {
+                        screenBuffer.setTextAttributes(underline = true, underlineStyle = UnderlineStyle.SINGLE)
+                    }
+                }
                 5, 6 -> screenBuffer.setTextAttributes(blink = true)
                 7 -> screenBuffer.setTextAttributes(reverse = true)
                 8 -> screenBuffer.setTextAttributes(conceal = true)
                 9 -> screenBuffer.setTextAttributes(strikethrough = true)
+                21 -> screenBuffer.setTextAttributes(underline = true, underlineStyle = UnderlineStyle.DOUBLE)
                 22 -> screenBuffer.setTextAttributes(bold = false, dim = false)
                 23 -> screenBuffer.setTextAttributes(italic = false)
-                24 -> screenBuffer.setTextAttributes(underline = false)
+                24 -> screenBuffer.setTextAttributes(underline = false, underlineStyle = UnderlineStyle.NONE)
                 25 -> screenBuffer.setTextAttributes(blink = false)
                 27 -> screenBuffer.setTextAttributes(reverse = false)
                 28 -> screenBuffer.setTextAttributes(conceal = false)
@@ -1171,6 +1319,33 @@ class AnsiParser(
         i: Int,
         count: Int,
     ): Pair<TerminalColor, Int>? {
+        if (subParamCounts[i] > 0) {
+            if (subParamValues[i * 8] == 5 && subParamCounts[i] >= 2) {
+                val colorCode = subParamValues[i * 8 + 1].coerceAtLeast(0)
+                return TerminalColor.buildPalette256(colorCode) to 0
+            }
+            if (subParamValues[i * 8] == 2) {
+                val (r, g, b) = when {
+                    subParamCounts[i] >= 5 -> Triple(
+                        subParamValues[i * 8 + 2],
+                        subParamValues[i * 8 + 3],
+                        subParamValues[i * 8 + 4],
+                    )
+                    subParamCounts[i] == 4 -> Triple(
+                        subParamValues[i * 8 + 1],
+                        subParamValues[i * 8 + 2],
+                        subParamValues[i * 8 + 3],
+                    )
+                    else -> return null
+                }
+                return TerminalColor.Rgb(
+                    r.coerceIn(0, 255),
+                    g.coerceIn(0, 255),
+                    b.coerceIn(0, 255),
+                ) to 0
+            }
+            return null
+        }
         if (i + 2 < count && paramValues[i + 1] == 5) {
             val colorCode = paramValues[i + 2]
             val color =
@@ -1239,6 +1414,10 @@ class AnsiParser(
                         log("MouseTracking", "AllMotion (1003)")
                         terminalEmulator.mouseTrackingMode = MouseTrackingMode.AllMotion
                     }
+                    1004 -> {
+                        log("FocusReporting", "Enabled (1004)")
+                        terminalEmulator.focusReportingEnabled = true
+                    }
                     1006 -> {
                         log("MouseTracking", "SGR Format (1006)")
                         terminalEmulator.sgrMouseModeEnabled = true
@@ -1246,6 +1425,10 @@ class AnsiParser(
                     2004 -> {
                         log("BracketedPaste", "Enabled")
                         terminalEmulator.bracketedPasteModeEnabled = true
+                    }
+                    2026 -> {
+                        log("SynchronizedOutput", "Enabled (2026)")
+                        terminalEmulator.synchronizedOutputEnabled = true
                     }
                     else -> log("UNKNOWN_DEC_SET") { "mode=$mode" }
                 }
@@ -1302,6 +1485,10 @@ class AnsiParser(
                         log("MouseTracking", "Disabled")
                         terminalEmulator.mouseTrackingMode = MouseTrackingMode.None
                     }
+                    1004 -> {
+                        log("FocusReporting", "Disabled (1004)")
+                        terminalEmulator.focusReportingEnabled = false
+                    }
                     1006 -> {
                         log("MouseTracking", "SGR Format Disabled (1006)")
                         terminalEmulator.sgrMouseModeEnabled = false
@@ -1309,6 +1496,10 @@ class AnsiParser(
                     2004 -> {
                         log("BracketedPaste", "Disabled")
                         terminalEmulator.bracketedPasteModeEnabled = false
+                    }
+                    2026 -> {
+                        log("SynchronizedOutput", "Disabled (2026)")
+                        terminalEmulator.synchronizedOutputEnabled = false
                     }
                     else -> log("UNKNOWN_DEC_RESET") { "mode=$mode" }
                 }

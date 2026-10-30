@@ -44,7 +44,8 @@ class ScreenBuffer(
 
     var cursorVisible: Boolean = true
 
-    private var autoWrapMode: Boolean = true
+    var autoWrapMode: Boolean = true
+        private set
     private var pendingWrap: Boolean = false
 
     private var currentForeground: TerminalColor = TerminalColor.Default
@@ -52,6 +53,7 @@ class ScreenBuffer(
     private var currentBold: Boolean = false
     private var currentItalic: Boolean = false
     private var currentUnderline: Boolean = false
+    private var currentUnderlineStyle: UnderlineStyle = UnderlineStyle.NONE
     private var currentReverse: Boolean = false
     private var currentDim: Boolean = false
     private var currentBlink: Boolean = false
@@ -88,6 +90,7 @@ class ScreenBuffer(
         clone.currentBold = currentBold
         clone.currentItalic = currentItalic
         clone.currentUnderline = currentUnderline
+        clone.currentUnderlineStyle = currentUnderlineStyle
         clone.currentReverse = currentReverse
         clone.currentDim = currentDim
         clone.currentBlink = currentBlink
@@ -378,6 +381,7 @@ class ScreenBuffer(
                 width = w,
                 isWideSpacer = false,
                 underlineColor = currentUnderlineColor,
+                underlineStyle = currentUnderlineStyle,
             )
             var changed = row.setCell(cursorCol, primaryCell)
 
@@ -398,6 +402,7 @@ class ScreenBuffer(
                     width = 0,
                     isWideSpacer = true,
                     underlineColor = currentUnderlineColor,
+                    underlineStyle = currentUnderlineStyle,
                 )
                 if (row.setCell(cursorCol + 1, spacerCell)) {
                     changed = true
@@ -493,6 +498,7 @@ class ScreenBuffer(
             val b = currentBold
             val it = currentItalic
             val u = currentUnderline
+            val us = currentUnderlineStyle
             val r = currentReverse
             val d = currentDim
             val bl = currentBlink
@@ -508,6 +514,7 @@ class ScreenBuffer(
                     !b &&
                     !it &&
                     !u &&
+                    us == UnderlineStyle.NONE &&
                     !r &&
                     !d &&
                     !bl &&
@@ -524,7 +531,22 @@ class ScreenBuffer(
                     if (isDefault && c.code in 0..127) {
                         TerminalCell.getCachedAscii(c.code)
                     } else {
-                        TerminalCell.create(c, fg, bg, b, it, u, r, d, bl, st, ov, co, underlineColor = uc)
+                        TerminalCell.create(
+                            c,
+                            fg,
+                            bg,
+                            b,
+                            it,
+                            u,
+                            r,
+                            d,
+                            bl,
+                            st,
+                            ov,
+                            co,
+                            underlineColor = uc,
+                            underlineStyle = us,
+                        )
                     }
                 if (currentRow.setCell(cursorCol + k, cell)) {
                     changed = true
@@ -777,12 +799,24 @@ class ScreenBuffer(
         overline: Boolean? = null,
         conceal: Boolean? = null,
         underlineColor: TerminalColor? = null,
+        underlineStyle: UnderlineStyle? = null,
     ) {
         foreground?.let { currentForeground = it }
         background?.let { currentBackground = it }
         bold?.let { currentBold = it }
         italic?.let { currentItalic = it }
-        underline?.let { currentUnderline = it }
+        underline?.let {
+            currentUnderline = it
+            if (!it) {
+                currentUnderlineStyle = UnderlineStyle.NONE
+            } else if (underlineStyle == null && currentUnderlineStyle == UnderlineStyle.NONE) {
+                currentUnderlineStyle = UnderlineStyle.SINGLE
+            }
+        }
+        underlineStyle?.let {
+            currentUnderlineStyle = it
+            currentUnderline = it != UnderlineStyle.NONE
+        }
         reverse?.let { currentReverse = it }
         dim?.let { currentDim = it }
         blink?.let { currentBlink = it }
@@ -798,6 +832,7 @@ class ScreenBuffer(
         currentBold = false
         currentItalic = false
         currentUnderline = false
+        currentUnderlineStyle = UnderlineStyle.NONE
         currentReverse = false
         currentDim = false
         currentBlink = false
