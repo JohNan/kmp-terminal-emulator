@@ -166,6 +166,11 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 - **ANSI & Modern Terminal Standards**:
   - 16 standard/bright ANSI colors, 256 indexed colors, 24-bit TrueColor RGB.
   - Cursor movement, scrolling regions (DECSTBM), alternate screen buffer (`altBuffer` for vim/htop/less).
+  - Extended Underline Styles & Colors (SGR 4:x / 21 / 58:2): ITU-T T.416 sub-parameter styled underlines (`4:0` none, `4:1` single, `4:2`/`21` double, `4:3` curly, `4:4` dotted, `4:5` dashed) with 24-bit TrueColor underline coloring (`58:2::r:g:b` / `58:5:c` and reset `59`).
+  - Dynamic Cursor Shapes (DECSCUSR `\e[ q`): Dynamic cursor shape switching between blinking/steady block, underline, and beam shapes (`CursorShape.BLOCK`, `CursorShape.UNDERLINE`, `CursorShape.BEAM`).
+  - Synchronized Output (DEC Mode 2026 `\e[?2026h` / `\e[?2026l`): Atomic screen updates eliminating tearing and flickering during high-frequency frame rendering in modern CLI and TUI apps.
+  - Focus Reporting (DEC Mode 1004 `\e[?1004h` / `\e[?1004l`): Emits `\e[I` on terminal window/input focus gain and `\e[O` on focus loss.
+  - Terminal Capabilities & Query Modes: Primary & Secondary Device Attributes (DA1 / DA2 `\e[>c`), Terminal Version reporting (XTVERSION `\e[>0q`), and DEC Request Mode (DECRQM `\e[?<mode>$p`).
   - SGR Mouse Tracking (1006) and legacy xterm mouse tracking (press, release, drag, wheel).
   - OSC 52 clipboard integration with configurable security policies (`ASK`, `ALWAYS_ALLOW`, `ALWAYS_DENY`).
   - Independent deep state cloning (`TerminalEmulator.copy()`) for headless sessions and speculative execution (e.g. Mosh).

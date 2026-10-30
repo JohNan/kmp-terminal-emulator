@@ -17,7 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -40,6 +42,7 @@ import com.johnan.terminal.core.TerminalCell
 import com.johnan.terminal.core.TerminalColor
 import com.johnan.terminal.core.TerminalImagePlacement
 import com.johnan.terminal.core.TerminalScreenState
+import com.johnan.terminal.core.UnderlineStyle
 import com.johnan.terminal.core.UrlRange
 import com.johnan.terminal.core.toComposeColor
 import kotlinx.coroutines.withTimeoutOrNull
@@ -594,6 +597,8 @@ fun TerminalCanvas(
             imageBitmapCache.remove(oldestKey)
         }
 
+        val curlyUnderlinePath = remember { Path() }
+
         // Terminal canvas rendering
         Canvas(
             modifier =
@@ -855,7 +860,12 @@ fun TerminalCanvas(
                                 baseTextStyle
                             } else {
                                 val decorations = mutableListOf<TextDecoration>()
-                                if (batch.underline) decorations.add(TextDecoration.Underline)
+                                if (batch.underline &&
+                                    batch.underlineStyle == UnderlineStyle.SINGLE &&
+                                    batch.underlineColor === TerminalColor.Default
+                                ) {
+                                    decorations.add(TextDecoration.Underline)
+                                }
                                 if (batch.strikethrough) decorations.add(TextDecoration.LineThrough)
                                 val textDecoration =
                                     if (decorations.isNotEmpty()) TextDecoration.combine(decorations) else null
@@ -945,6 +955,96 @@ fun TerminalCanvas(
                             }
                             charIdx += if (hasLow) 2 else 1
                             colIdx++
+                        }
+                    }
+
+                    // Draw styled underline
+                    if (batch.underline &&
+                        (
+                            batch.underlineStyle != UnderlineStyle.SINGLE ||
+                                batch.underlineColor !== TerminalColor.Default
+                        ) &&
+                        !batch.conceal
+                    ) {
+                        val ulY = y + cellHeight - 2f
+                        val ulColor = batch.resolvedUnderlineColor
+                        when (batch.underlineStyle) {
+                            UnderlineStyle.NONE -> {}
+                            UnderlineStyle.SINGLE -> {
+                                drawLine(
+                                    color = ulColor,
+                                    start = Offset(x, ulY),
+                                    end = Offset(x + batchWidth, ulY),
+                                    strokeWidth = 1.5f,
+                                )
+                            }
+                            UnderlineStyle.DOUBLE -> {
+                                drawLine(
+                                    color = ulColor,
+                                    start = Offset(x, ulY - 2f),
+                                    end = Offset(x + batchWidth, ulY - 2f),
+                                    strokeWidth = 1f,
+                                )
+                                drawLine(
+                                    color = ulColor,
+                                    start = Offset(x, ulY),
+                                    end = Offset(x + batchWidth, ulY),
+                                    strokeWidth = 1f,
+                                )
+                            }
+                            UnderlineStyle.DOTTED -> {
+                                var segX = x
+                                val endX = x + batchWidth
+                                while (segX < endX) {
+                                    val segEnd = minOf(segX + 2f, endX)
+                                    drawLine(
+                                        color = ulColor,
+                                        start = Offset(segX, ulY),
+                                        end = Offset(segEnd, ulY),
+                                        strokeWidth = 1.5f,
+                                    )
+                                    segX += 4f
+                                }
+                            }
+                            UnderlineStyle.DASHED -> {
+                                var dashX = x
+                                val endX = x + batchWidth
+                                while (dashX < endX) {
+                                    val dashEnd = minOf(dashX + 5f, endX)
+                                    drawLine(
+                                        color = ulColor,
+                                        start = Offset(dashX, ulY),
+                                        end = Offset(dashEnd, ulY),
+                                        strokeWidth = 1.5f,
+                                    )
+                                    dashX += 8f
+                                }
+                            }
+                            UnderlineStyle.CURLY -> {
+                                curlyUnderlinePath.reset()
+                                curlyUnderlinePath.moveTo(x, ulY - 1f)
+                                val endX = x + batchWidth
+                                var currX = x
+                                var waveUp = true
+                                while (currX < endX) {
+                                    val nextX = minOf(currX + 4f, endX)
+                                    val targetY = if (waveUp) ulY - 1f - 1.5f else ulY - 1f + 1.5f
+                                    val midX = (currX + nextX) / 2f
+                                    curlyUnderlinePath.quadraticTo(
+                                        midX,
+                                        targetY,
+                                        nextX,
+                                        ulY - 1f,
+                                    )
+                                    currX = nextX
+                                    waveUp = !waveUp
+                                }
+                                drawPath(
+                                    path = curlyUnderlinePath,
+                                    color = ulColor,
+                                    style = Stroke(width = 1.2f),
+                                )
+                            }
                         }
                     }
 
@@ -1050,11 +1150,14 @@ data class RenderBatch(
     val strikethrough: Boolean,
     val overline: Boolean,
     val conceal: Boolean,
+    val underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
+    val underlineColor: TerminalColor = TerminalColor.Default,
 ) {
     var textLayoutResult: TextLayoutResult? = null
     var charLayoutResults: Array<TextLayoutResult?>? = null
     var resolvedFg: Color = Color.Unspecified
     var resolvedBg: Color = Color.Unspecified
+    var resolvedUnderlineColor: Color = Color.Unspecified
 }
 
 data class RowRenderData(
@@ -1114,6 +1217,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
         val currentStrikethrough = cell.strikethrough
         val currentOverline = cell.overline
         val currentConceal = cell.conceal
+        val currentUnderlineStyle = cell.underlineStyle
+        val currentUnderlineColor = cell.underlineColor
 
         var k = colIndex + 1
 
@@ -1134,7 +1239,9 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                             nextCell.reverse != currentReverse ||
                             nextCell.strikethrough != currentStrikethrough ||
                             nextCell.overline != currentOverline ||
-                            nextCell.conceal != currentConceal
+                            nextCell.conceal != currentConceal ||
+                            nextCell.underlineStyle != currentUnderlineStyle ||
+                            nextCell.underlineColor !== currentUnderlineColor
                     )
                 ) {
                     break
@@ -1156,6 +1263,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                     strikethrough = currentStrikethrough,
                     overline = currentOverline,
                     conceal = currentConceal,
+                    underlineStyle = currentUnderlineStyle,
+                    underlineColor = currentUnderlineColor,
                 )
             )
         } else {
@@ -1174,7 +1283,9 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                             nextCell.reverse != currentReverse ||
                             nextCell.strikethrough != currentStrikethrough ||
                             nextCell.overline != currentOverline ||
-                            nextCell.conceal != currentConceal
+                            nextCell.conceal != currentConceal ||
+                            nextCell.underlineStyle != currentUnderlineStyle ||
+                            nextCell.underlineColor !== currentUnderlineColor
                     )
                 ) {
                     break
@@ -1212,7 +1323,9 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                                 nextCell.reverse != currentReverse ||
                                 nextCell.strikethrough != currentStrikethrough ||
                                 nextCell.overline != currentOverline ||
-                                nextCell.conceal != currentConceal
+                                nextCell.conceal != currentConceal ||
+                                nextCell.underlineStyle != currentUnderlineStyle ||
+                                nextCell.underlineColor !== currentUnderlineColor
                         )
                     ) {
                         break
@@ -1234,6 +1347,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                         strikethrough = currentStrikethrough,
                         overline = currentOverline,
                         conceal = currentConceal,
+                        underlineStyle = currentUnderlineStyle,
+                        underlineColor = currentUnderlineColor,
                     )
                 )
             } else {
@@ -1261,6 +1376,8 @@ fun calculateBatches(row: Array<TerminalCell>, sb: StringBuilder, batches: Array
                             strikethrough = currentStrikethrough,
                             overline = currentOverline,
                             conceal = currentConceal,
+                            underlineStyle = currentUnderlineStyle,
+                            underlineColor = currentUnderlineColor,
                         )
                     )
                 }
@@ -1313,6 +1430,21 @@ fun resolveBatchColors(
             colorScheme,
             isDark,
             isBackground = true,
+        )
+    }
+
+    // Resolve Underline Color
+    val rawUl = batch.underlineColor
+    batch.resolvedUnderlineColor = if (rawUl === TerminalColor.Default) {
+        batch.resolvedFg
+    } else if (rawUl is TerminalColor.Standard) {
+        ansiColors[rawUl.code]
+    } else {
+        TerminalColor.toComposeColor(
+            rawUl,
+            colorScheme,
+            isDark,
+            isBackground = false,
         )
     }
 }

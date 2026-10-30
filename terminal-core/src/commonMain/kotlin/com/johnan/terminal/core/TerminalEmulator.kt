@@ -96,6 +96,21 @@ class TerminalEmulator(
     var sgrMouseModeEnabled = false
         internal set
 
+    var synchronizedOutputEnabled: Boolean = false
+        internal set(value) {
+            val wasEnabled = field
+            field = value
+            if (wasEnabled && !value) {
+                updateScreenState()
+            }
+        }
+
+    var focusReportingEnabled: Boolean = false
+        internal set
+
+    var cursorShape: CursorShape = CursorShape.BLOCK
+        internal set
+
     var headlessMode: Boolean = false
 
     var cellWidthPx: Int = 8
@@ -181,6 +196,18 @@ class TerminalEmulator(
     }
 
     /**
+     * Reports terminal focus gain or loss (`\e[I` / `\e[O`) when DEC mode 1004 ([focusReportingEnabled]) is active.
+     *
+     * @return The emitted escape sequence if [focusReportingEnabled] is true, or null otherwise.
+     */
+    fun reportFocusChanged(focused: Boolean): String? {
+        if (!focusReportingEnabled) return null
+        val seq = if (focused) "\u001B[I" else "\u001B[O"
+        sendResponse(seq)
+        return seq
+    }
+
+    /**
      * Updates the measured character cell dimensions in pixels for CSI 14 t / CSI 16 t window manipulation reports.
      */
     fun setCellDimensionsPx(widthPx: Int, heightPx: Int) {
@@ -246,7 +273,14 @@ class TerminalEmulator(
         clone.bellCount = bellCount
         clone.clipboardWriteCount = clipboardWriteCount
         clone.lastClipboardWrite = lastClipboardWrite
-        clone.updateScreenState()
+        clone.focusReportingEnabled = focusReportingEnabled
+        clone.cursorShape = cursorShape
+        clone.synchronizedOutputEnabled = synchronizedOutputEnabled
+        if (synchronizedOutputEnabled) {
+            clone._screenState.value = _screenState.value
+        } else {
+            clone.updateScreenState()
+        }
         return clone
     }
 
@@ -281,7 +315,8 @@ class TerminalEmulator(
         processOutput(text.encodeToByteArray())
     }
 
-    private fun updateScreenState() {
+    private fun updateScreenState(force: Boolean = false) {
+        if (!force && synchronizedOutputEnabled) return
         if (headlessMode && _screenState.subscriptionCount.value == 0) return
         _screenState.value = createScreenState()
     }
@@ -356,6 +391,9 @@ class TerminalEmulator(
             bracketedPasteModeEnabled = bracketedPasteModeEnabled,
             images = images,
             imagePlacements = placements,
+            synchronizedOutputEnabled = synchronizedOutputEnabled,
+            focusReportingEnabled = focusReportingEnabled,
+            cursorShape = cursorShape,
         )
     }
 
@@ -409,6 +447,10 @@ class TerminalEmulator(
         screenBuffer.clearScreen()
         screenBuffer.setCursorPosition(0, 0)
         screenBuffer.resetTextAttributes()
+        synchronizedOutputEnabled = false
+        focusReportingEnabled = false
+        cursorShape = CursorShape.BLOCK
+        cursorBlinking = config.cursorBlinkingDefault
         updateScreenState()
     }
 
@@ -590,6 +632,9 @@ data class TerminalScreenState(
     val bracketedPasteModeEnabled: Boolean = false,
     val images: Map<Int, TerminalImage> = emptyMap(),
     val imagePlacements: List<TerminalImagePlacement> = emptyList(),
+    val synchronizedOutputEnabled: Boolean = false,
+    val focusReportingEnabled: Boolean = false,
+    val cursorShape: CursorShape = CursorShape.BLOCK,
 ) {
     companion object {
         fun from(
@@ -597,6 +642,9 @@ data class TerminalScreenState(
             mouseTrackingMode: MouseTrackingMode = MouseTrackingMode.None,
             sgrMouseModeEnabled: Boolean = false,
             bracketedPasteModeEnabled: Boolean = false,
+            synchronizedOutputEnabled: Boolean = false,
+            focusReportingEnabled: Boolean = false,
+            cursorShape: CursorShape = CursorShape.BLOCK,
         ): TerminalScreenState {
             var contentHeight = 0
             for (i in 0 until buffer.rows) {
@@ -619,6 +667,9 @@ data class TerminalScreenState(
                 bracketedPasteModeEnabled = bracketedPasteModeEnabled,
                 images = buffer.getImages(),
                 imagePlacements = buffer.getPlacements(),
+                synchronizedOutputEnabled = synchronizedOutputEnabled,
+                focusReportingEnabled = focusReportingEnabled,
+                cursorShape = cursorShape,
             )
         }
     }

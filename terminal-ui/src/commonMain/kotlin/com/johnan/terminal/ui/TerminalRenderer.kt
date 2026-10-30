@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -234,6 +235,9 @@ fun TerminalRenderer(
                 }
             }
 
+        var focusInitialized by remember { mutableStateOf(false) }
+        var isFocusedState by remember { mutableStateOf(false) }
+
         if (enabled && selectionState is SelectionState.None) {
             TerminalInputCapture(
                 enabled = enabled,
@@ -242,7 +246,20 @@ fun TerminalRenderer(
                 onInput = handleSoftInput,
                 onArrowKey = handleArrowKey,
                 onLog = onLog,
-                modifier = Modifier.fillMaxSize(),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .onFocusChanged {
+                            if (!focusInitialized) {
+                                focusInitialized = true
+                                isFocusedState = it.isFocused
+                            } else if (isFocusedState != it.isFocused) {
+                                isFocusedState = it.isFocused
+                                if (terminalState.focusReportingEnabled) {
+                                    onInput(if (it.isFocused) "\u001B[I" else "\u001B[O")
+                                }
+                            }
+                        },
             )
         }
 

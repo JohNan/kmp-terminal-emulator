@@ -82,6 +82,7 @@ data class TerminalCell(
     val isWideSpacer: Boolean = false,
     val underlineColor: TerminalColor = TerminalColor.Default,
     val kittyPlaceholderInfo: Int = 0,
+    val underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
 ) {
     /**
      * Resolves foreground color taking reverse video (inverse attribute) into account.
@@ -122,6 +123,7 @@ data class TerminalCell(
             !bold &&
             !italic &&
             !underline &&
+            underlineStyle == UnderlineStyle.NONE &&
             !reverse &&
             !dim &&
             !blink &&
@@ -159,6 +161,7 @@ data class TerminalCell(
             isWideSpacer: Boolean = false,
             underlineColor: TerminalColor = TerminalColor.Default,
             kittyPlaceholderInfo: Int = 0,
+            underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
         ): TerminalCell {
             if (codepoint in 0..127 &&
                 !isWideSpacer &&
@@ -170,6 +173,7 @@ data class TerminalCell(
                 !bold &&
                 !italic &&
                 !underline &&
+                underlineStyle == UnderlineStyle.NONE &&
                 !reverse &&
                 !dim &&
                 !blink &&
@@ -187,7 +191,7 @@ data class TerminalCell(
                 backgroundColor = backgroundColor,
                 bold = bold,
                 italic = italic,
-                underline = underline,
+                underline = underline || underlineStyle != UnderlineStyle.NONE,
                 reverse = reverse,
                 dim = dim,
                 blink = blink,
@@ -199,6 +203,7 @@ data class TerminalCell(
                 isWideSpacer = isWideSpacer,
                 underlineColor = underlineColor,
                 kittyPlaceholderInfo = kittyPlaceholderInfo,
+                underlineStyle = underlineStyle,
             )
         }
 
@@ -220,6 +225,7 @@ data class TerminalCell(
             conceal: Boolean = false,
             underlineColor: TerminalColor = TerminalColor.Default,
             kittyPlaceholderInfo: Int = 0,
+            underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
         ): TerminalCell = createCodepoint(
             codepoint = char.code,
             foregroundColor = foregroundColor,
@@ -235,6 +241,7 @@ data class TerminalCell(
             conceal = conceal,
             underlineColor = underlineColor,
             kittyPlaceholderInfo = kittyPlaceholderInfo,
+            underlineStyle = underlineStyle,
         )
     }
 }

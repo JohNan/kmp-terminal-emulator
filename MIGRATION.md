@@ -11,6 +11,8 @@ This document provides explicit, recipe-driven before-and-after migration instru
 3. **Cursor Styling**: Added support for `TerminalCursorStyle.BLOCK`, `TerminalCursorStyle.UNDERLINE`, and `TerminalCursorStyle.BEAM`.
 4. **Text Selection & Extraction**: Fully built into `terminal-core` (`TerminalSelection`, `SelectionState`) and rendered via `terminal-ui` (`SelectionOverlay`).
 5. **Synchronous Core APIs & Native C-ABI / Rust FFI**: Additive synchronous execution APIs in `TerminalEmulator`, zero-allocation grid serialization (`packGridToBuffer`), native C-ABI library exports (`libterminal_core`), and safe Rust bindings (`kmp-terminal-rs`).
+6. **Modern DEC Modes & Terminal Identification**: Added DEC Mode 2026 (Synchronized Output), DEC Mode 1004 (Focus Reporting), DECSCUSR cursor shapes (`CursorShape.BLOCK`, `CursorShape.UNDERLINE`, `CursorShape.BEAM`), DECRQM mode query responses, Secondary Device Attributes (DA2), and XTVERSION querying.
+7. **Extended SGR Underlines & Colors**: Added ITU-T T.416 sub-parameter styled underlines (`UnderlineStyle.NONE`, `SINGLE`, `DOUBLE`, `CURLY`, `DOTTED`, `DASHED`) via SGR 4:x / 21, and TrueColor/indexed underline coloring via SGR 58:2 / 58:5 and SGR 59.
 
 ---
 
@@ -356,6 +358,73 @@ TerminalRenderer(
     }
 )
 ```
+
+---
+
+### Recipe 11: Extended Underlines (SGR 4:x / 21) & TrueColor Underline Colors (SGR 58:2)
+
+Modern terminals support styled underlines (curly, dotted, dashed, double) and distinct underline colors. `:terminal-core` and `:terminal-ui` parse and render these natively with zero allocation during draw loops.
+
+#### Underline Styles
+- `\u001B[4m` or `\u001B[4:1m`: Single underline (`UnderlineStyle.SINGLE`)
+- `\u001B[21m` or `\u001B[4:2m`: Double underline (`UnderlineStyle.DOUBLE`)
+- `\u001B[4:3m`: Curly underline (`UnderlineStyle.CURLY`)
+- `\u001B[4:4m`: Dotted underline (`UnderlineStyle.DOTTED`)
+- `\u001B[4:5m`: Dashed underline (`UnderlineStyle.DASHED`)
+- `\u001B[24m` or `\u001B[4:0m`: Underline off (`UnderlineStyle.NONE`)
+
+#### Underline Coloring
+- `\u001B[58;2;r;g;bm` or `\u001B[58:2::r:g:bm`: 24-bit TrueColor underline color (`TerminalColor.Rgb(r, g, b)`)
+- `\u001B[58;5;cm` or `\u001B[58:5:cm`: 256-color indexed underline color (`TerminalColor.Standard(c)`)
+- `\u001B[59m`: Reset underline color to default foreground (`TerminalColor.Default`)
+
+#### Example
+```kotlin
+// Emitting a curly red underline under warning text
+emulator.processOutput("\u001B[4:3m\u001B[58:2::255:0:0mSyntax Error\u001B[59m\u001B[4:0m")
+```
+
+---
+
+### Recipe 12: DEC Mode 2026 (Synchronized Output) & Mode 1004 (Focus Reporting)
+
+#### Synchronized Output (DEC 2026)
+Synchronized output allows TUI applications to batch screen updates atomically, eliminating tearing and intermediate renders.
+
+- `\u001B[?2026h`: Begin synchronized update (`terminalState.synchronizedOutputEnabled == true`)
+- `\u001B[?2026l`: End synchronized update (`terminalState.synchronizedOutputEnabled == false`)
+
+When active, `screenState` updates can be paused or buffered until the matching `\u001B[?2026l` is received.
+
+#### Focus Reporting (DEC 1004)
+When enabled by full-screen terminal applications (e.g. `vim`, `helix`, `tmux`), the terminal reports window focus events automatically:
+
+- `\u001B[?1004h`: Enable focus reporting (`terminalState.focusReportingEnabled == true`)
+- `\u001B[?1004l`: Disable focus reporting (`terminalState.focusReportingEnabled == false`)
+- Terminal receives focus: emits `\u001B[I` to `onInput`
+- Terminal loses focus: emits `\u001B[O` to `onInput`
+
+---
+
+### Recipe 13: DECSCUSR Dynamic Cursor Shapes & Terminal Query Responses
+
+#### Cursor Shape Control (DECSCUSR)
+Applications can dynamically change the active cursor shape via `\u001B[<Ps> q`:
+- `\u001B[0 q` or `\u001B[1 q`: Blinking block (`CursorShape.BLOCK`)
+- `\u001B[2 q`: Steady block (`CursorShape.BLOCK`)
+- `\u001B[3 q`: Blinking underline (`CursorShape.UNDERLINE`)
+- `\u001B[4 q`: Steady underline (`CursorShape.UNDERLINE`)
+- `\u001B[5 q`: Blinking beam / bar (`CursorShape.BEAM`)
+- `\u001B[6 q`: Steady beam / bar (`CursorShape.BEAM`)
+
+The current shape is tracked in `terminalState.cursorShape`.
+
+#### Terminal Queries & Identification
+The terminal automatically responds to identification and capability queries through the `onTerminalResponse` callback:
+- **DA1 (Primary Device Attributes)**: `\u001B[c` &rarr; responds `\u001B[?1;2c` (VT100 with Advanced Video Option)
+- **DA2 (Secondary Device Attributes)**: `\u001B[>c` &rarr; responds `\u001B[>0;10;0c` (VT100 family emulator)
+- **XTVERSION**: `\u001B[>0q` &rarr; responds `\u001BP>|kmp-terminal 1.0\u001B\`
+- **DECRQM (DEC Request Mode)**: `\u001B[?<mode>$p` &rarr; responds `\u001B[?<mode>;<status>$y` (e.g. status 1 for set, 2 for reset)
 
 
 
