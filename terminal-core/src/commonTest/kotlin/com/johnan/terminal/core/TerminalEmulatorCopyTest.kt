@@ -34,6 +34,13 @@ class TerminalEmulatorCopyTest {
         val title: String?,
         val bellCount: Long,
         val clipboard: Pair<Long, String?>,
+        val currentWorkingDirectory: String?,
+        val lastExitCode: Int?,
+        val isCommandRunning: Boolean,
+        val promptMarks: List<PromptMark>,
+        val screenCwd: String?,
+        val screenLastExitCode: Int?,
+        val screenIsCommandRunning: Boolean,
     )
 
     private fun snapshot(e: TerminalEmulator): Snapshot {
@@ -68,6 +75,13 @@ class TerminalEmulatorCopyTest {
             title = e.windowTitle.value,
             bellCount = e.bellCount,
             clipboard = e.clipboardWriteCount to e.lastClipboardWrite,
+            currentWorkingDirectory = e.currentWorkingDirectory.value,
+            lastExitCode = e.lastExitCode.value,
+            isCommandRunning = e.isCommandRunning.value,
+            promptMarks = e.getPromptMarks(),
+            screenCwd = s.currentWorkingDirectory,
+            screenLastExitCode = s.lastExitCode,
+            screenIsCommandRunning = s.isCommandRunning,
         )
     }
 
@@ -346,13 +360,19 @@ class TerminalEmulatorCopyTest {
                     (1..9).joinToString("") { "row $it \u001B[3${it % 8}m${"w".repeat(it * 3)}\u001B[0m\r\n" },
                     "\u001B[?1049hvim\u001B[2;3H\u001B7\u001B[H\u001B[Kx\u001B8y\u001B[?1049l\u001B[3Aback",
                     "\u001B[2;5r\u001B[?6h\u001B[1;1Htop\n\n\n\n\n\u001B[1Lins\u001B[1M\u001B[2J\u001B[?6l\u001B[r",
-                    "\u001B(0lqwqk\u000Ex\u000Fx\u001B(B\u001B)0\u000Elq\u000Fabc\u001B[3b\u001B]52;c;aGk=\u0007\u001B[5n",
+                    "\u001B(0lqwqk\u000Ex\u000Fx\u001B(B\u001B)0\u000Elq\u000Fabc\u001B[3b" +
+                        "\u001B]52;c;aGk=\u0007\u001B[5n",
                     "tab\tstop\r\u001B[2P\u001B[3@ins\u001B[4X\u001B[2K\u001B[1J\u001B[0Kend\u001B[?7l" + "z".repeat(
                         30
                     ),
                     "\u001B[4:3mcurly\u001B[4:0m \u001B[58:2::200:100:50m\u001B[4:1munder\u001B[0m " +
                         "\u001B[?1004h\u001B[3 q\u001B[38:5:196mred\u001B[0m" +
                         "\u001B[?2026hbatch1\r\nbatch2\u001B[?2026l",
+                    "\u001B]7;file://host/home/user/project\u0007" +
+                        "\u001B]133;A\u0007prompt$ " +
+                        "\u001B]133;B\u0007echo hello\r\n" +
+                        "\u001B]133;C\u0007\u001B]8;;https://example.com\u0007link\u001B]8;;\u0007\r\n" +
+                        "\u001B]133;D;0\u0007",
                 )
             for ((streamIndex, stream) in streams.withIndex()) {
                 val bytes = stream.encodeToByteArray()

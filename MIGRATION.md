@@ -13,6 +13,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 5. **Synchronous Core APIs & Native C-ABI / Rust FFI**: Additive synchronous execution APIs in `TerminalEmulator`, zero-allocation grid serialization (`packGridToBuffer`), native C-ABI library exports (`libterminal_core`), and safe Rust bindings (`kmp-terminal-rs`).
 6. **Modern DEC Modes & Terminal Identification**: Added DEC Mode 2026 (Synchronized Output), DEC Mode 1004 (Focus Reporting), DECSCUSR cursor shapes (`CursorShape.BLOCK`, `CursorShape.UNDERLINE`, `CursorShape.BEAM`), DECRQM mode query responses, Secondary Device Attributes (DA2), and XTVERSION querying.
 7. **Extended SGR Underlines & Colors**: Added ITU-T T.416 sub-parameter styled underlines (`UnderlineStyle.NONE`, `SINGLE`, `DOUBLE`, `CURLY`, `DOTTED`, `DASHED`) via SGR 4:x / 21, and TrueColor/indexed underline coloring via SGR 58:2 / 58:5 and SGR 59.
+8. **Semantic Shell Integration & Explicit Hyperlinks**: Added OSC 8 explicit hyperlink support (`TerminalCell.hyperlinkUrl`, `UrlRange.url`), OSC 7 and OSC 9;9 Current Working Directory tracking (`TerminalEmulator.currentWorkingDirectory`), and OSC 133 semantic prompt mark integration (`PromptMark`, `PromptMarkType`, `lastExitCode`, `isCommandRunning`, `findPreviousPromptLine`, `findNextPromptLine`, `extractLastCommandOutput`).
 
 ---
 
@@ -425,6 +426,92 @@ The terminal automatically responds to identification and capability queries thr
 - **DA2 (Secondary Device Attributes)**: `\u001B[>c` &rarr; responds `\u001B[>0;10;0c` (VT100 family emulator)
 - **XTVERSION**: `\u001B[>0q` &rarr; responds `\u001BP>|kmp-terminal 1.0\u001B\`
 - **DECRQM (DEC Request Mode)**: `\u001B[?<mode>$p` &rarr; responds `\u001B[?<mode>;<status>$y` (e.g. status 1 for set, 2 for reset)
+
+---
+
+### Recipe 14: OSC 8 Explicit Hyperlinks & URL Detection
+
+#### Before (Plain-text regex only, manual text slicing)
+Consumer applications had to inspect terminal rows using regex pattern matching on plain text, without metadata support for explicit HTML-style hyperlinks.
+```kotlin
+val row = emulator.screenState.value.rows[cursorRow]
+val text = row.map { it.char }.joinToString("")
+val matches = "(https?://\\S+)".toRegex().findAll(text)
+```
+
+#### After (OSC 8 Hyperlinks & Unified URL Ranges)
+Explicit hyperlinks emitted via `\e]8;;<url>\e\Click Here\e]8;;\e\` are attached directly to `TerminalCell.hyperlinkUrl`. `ScreenBuffer.getUrlRanges(row)` returns both explicit OSC 8 hyperlinks and plain-text URLs, prioritizing explicit hyperlinks and disambiguating with `UrlRange.url`:
+```kotlin
+val row = emulator.screenState.value.rows[cursorRow]
+
+// Direct cell query
+val cellHyperlink = row[col].hyperlinkUrl // String? containing explicit OSC 8 target
+
+// Unified URL range detection on row
+val ranges: List<UrlRange> = ScreenBuffer.getUrlRanges(row)
+for (range in ranges) {
+    val url = ScreenBuffer.extractUrl(row, range)
+    if (range.url != null) {
+        println("Explicit OSC 8 link: $url (cols ${range.startCol}..${range.endCol})")
+    } else {
+        println("Plain-text detected URL: $url (cols ${range.startCol}..${range.endCol})")
+    }
+}
+```
+
+---
+
+### Recipe 15: OSC 7 & OSC 9;9 Current Working Directory Tracking
+
+#### Before (No shell working directory awareness)
+The emulator did not parse shell directory notification escape sequences; consumer applications had to inspect PTY processes externally.
+
+#### After (Reactive CWD StateFlow via OSC 7 and OSC 9;9)
+The emulator listens for standard OSC 7 directory reports (`\e]7;file://hostname/path\a`) with RFC 3986 percent-decoding (including UTF-8 multibyte characters) and ConEmu / Windows Terminal OSC 9;9 reports (`\e]9;9;"path"\a`), publishing updates to `TerminalEmulator.currentWorkingDirectory` and `TerminalScreenState.currentWorkingDirectory` without raising desktop notification events:
+```kotlin
+// In Jetpack Compose / Compose Multiplatform UI:
+val currentWorkingDir by emulator.currentWorkingDirectory.collectAsState()
+Text(text = "Current Dir: ${currentWorkingDir ?: "Unknown"}")
+
+// Direct synchronous access:
+val cwd = emulator.currentWorkingDirectory.value
+// Or from immutable screen state:
+val screenCwd = emulator.screenState.value.currentWorkingDirectory
+```
+
+---
+
+### Recipe 16: OSC 133 Semantic Shell Integration (Prompts, Exit Codes, Output Extraction)
+
+#### Before (Unstructured terminal stream)
+Shell output was flat text with no distinction between prompt strings, user commands, and command output.
+
+#### After (FinalTerm / FTCS Semantic Shell Marks)
+Shells configured with OSC 133 emit semantic boundaries (`A` prompt start, `B` command start, `C` output start, `D` command finished with exit code). `TerminalEmulator` captures these events into `PromptMark` records, manages execution state flows, enables command-to-command jumping, and isolates command output:
+```kotlin
+// Reactive command execution status and exit code
+val isRunning by emulator.isCommandRunning.collectAsState()
+val lastExitCode by emulator.lastExitCode.collectAsState()
+
+// Jump between prompt lines in scrollback and visible screen
+val prevPromptLine = emulator.findPreviousPromptLine()
+val nextPromptLine = emulator.findNextPromptLine()
+
+// Cleanly isolate command output between output start (C) and finished (D)
+val commandOutput = emulator.extractLastCommandOutput()
+println("Last command output:\n$commandOutput")
+
+// Inspect all recorded prompt marks
+val marks: List<PromptMark> = emulator.getPromptMarks()
+marks.forEach { mark ->
+    when (mark.type) {
+        PromptMarkType.PROMPT_START -> println("Prompt at line ${mark.absLine}")
+        PromptMarkType.COMMAND_START -> println("Command at line ${mark.absLine}")
+        PromptMarkType.OUTPUT_START -> println("Output at line ${mark.absLine}")
+        PromptMarkType.COMMAND_FINISHED -> println("Exit code ${mark.exitCode} at line ${mark.absLine}")
+    }
+}
+```
 
 
 

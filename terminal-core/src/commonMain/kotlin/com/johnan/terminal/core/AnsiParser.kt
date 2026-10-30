@@ -400,6 +400,9 @@ class AnsiParser(
                 screenBuffer.clearScreen()
                 screenBuffer.setCursorPosition(0, 0)
                 screenBuffer.resetTextAttributes()
+                screenBuffer.setHyperlinkUrl(null)
+                screenBuffer.clearPromptMarks()
+                terminalEmulator.resetSemanticShellState()
                 terminalEmulator.synchronizedOutputEnabled = false
                 terminalEmulator.focusReportingEnabled = false
                 terminalEmulator.cursorShape = CursorShape.BLOCK
@@ -755,9 +758,53 @@ class AnsiParser(
                     log("OSC", "Set window title: $value")
                 }
 
+                "7" -> {
+                    val cwd = decodeOsc7WorkingDirectory(value)
+                    if (cwd != null) {
+                        terminalEmulator.updateWorkingDirectory(cwd)
+                        log("OSC 7") { "CWD: $cwd" }
+                    }
+                }
+
+                "8" -> {
+                    val semi = value.indexOf(';')
+                    if (semi != -1) {
+                        val uri = value.substring(semi + 1).trim()
+                        if (uri.isEmpty()) {
+                            screenBuffer.setHyperlinkUrl(null)
+                        } else if (uri.length <= 2048) {
+                            screenBuffer.setHyperlinkUrl(uri)
+                        }
+                        log("OSC 8") { "Hyperlink: $uri" }
+                    }
+                }
+
                 "9" -> {
-                    terminalEmulator.triggerNotification("Terminal Notification", value)
-                    log("OSC 9") { "Notification: $value" }
+                    if (value.startsWith("9;")) {
+                        val rawPath = value.substring(2).trim().removeSurrounding("\"")
+                        if (rawPath.isNotEmpty()) {
+                            terminalEmulator.updateWorkingDirectory(rawPath)
+                            log("OSC 9;9") { "CWD: $rawPath" }
+                        }
+                    } else {
+                        terminalEmulator.triggerNotification("Terminal Notification", value)
+                        log("OSC 9") { "Notification: $value" }
+                    }
+                }
+
+                "133" -> {
+                    val parts = value.split(';')
+                    val markCode = parts.firstOrNull()?.trim()?.firstOrNull()
+                    when (markCode) {
+                        'A' -> terminalEmulator.handlePromptMark(PromptMarkType.PROMPT_START)
+                        'B' -> terminalEmulator.handlePromptMark(PromptMarkType.COMMAND_START)
+                        'C' -> terminalEmulator.handlePromptMark(PromptMarkType.OUTPUT_START)
+                        'D' -> {
+                            val exitCode = parts.getOrNull(1)?.trim()?.toIntOrNull()
+                            terminalEmulator.handlePromptMark(PromptMarkType.COMMAND_FINISHED, exitCode)
+                        }
+                    }
+                    log("OSC 133") { "Semantic prompt: $value" }
                 }
 
                 "777" -> {
