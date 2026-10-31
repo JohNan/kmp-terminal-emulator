@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-drafter-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update_draft_release:
     runs-on: ubuntu-latest
@@ -22,7 +26,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          LATEST_TAG=$(gh release list --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            LATEST_TAG=$(git describe --tags --abbrev=0 --exclude='*-*' 2>/dev/null || echo "")
+          fi
 
           if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
             echo "No existing releases or tags found. Defaulting to initial version v0.1.0."
@@ -42,6 +49,18 @@ jobs:
           echo "previous_tag=$LATEST_TAG" >> $GITHUB_ENV
           echo "Calculated Next Release Version: $VERSION_NAME"
 
+      - name: Generate Release Notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES_ARGS=(-f "tag_name=v${version_name}" -f "target_commitish=${GITHUB_SHA}")
+          if [ -n "${previous_tag}" ] && [ "${previous_tag}" != "null" ]; then
+            NOTES_ARGS+=(-f "previous_tag_name=${previous_tag}")
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" "${NOTES_ARGS[@]}" --jq '.body' > release_notes.md
+          cat release_notes.md
+
       - name: Create or Update Draft Release
         uses: softprops/action-gh-release@v3
         with:
@@ -49,7 +68,9 @@ jobs:
           name: v${{ env.version_name }}
           prerelease: false
           draft: true
-          generate_release_notes: true
+          body_path: release_notes.md
+          append_body: false
+          generate_release_notes: false
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
