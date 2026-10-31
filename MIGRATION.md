@@ -15,6 +15,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 7. **Extended SGR Underlines & Colors**: Added ITU-T T.416 sub-parameter styled underlines (`UnderlineStyle.NONE`, `SINGLE`, `DOUBLE`, `CURLY`, `DOTTED`, `DASHED`) via SGR 4:x / 21, and TrueColor/indexed underline coloring via SGR 58:2 / 58:5 and SGR 59.
 8. **Semantic Shell Integration & Explicit Hyperlinks**: Added OSC 8 explicit hyperlink support (`TerminalCell.hyperlinkUrl`, `UrlRange.url`), OSC 7 and OSC 9;9 Current Working Directory tracking (`TerminalEmulator.currentWorkingDirectory`), and OSC 133 semantic prompt mark integration (`PromptMark`, `PromptMarkType`, `lastExitCode`, `isCommandRunning`, `findPreviousPromptLine`, `findNextPromptLine`, `extractLastCommandOutput`).
 9. **Kitty Progressive Keyboard Protocol**: Added progressive keyboard enhancement protocol support in `terminal-core` (`KittyKeyboardProtocol`, `KeyEventType`, `kittyKeyboardFlags`, `encodeKeyEvent`) and extended `:terminal-tui` (`TuiInputParser`, `TuiEvent.Key.eventType`, `toAnsiSequence(..., kittyKeyboardFlags)`).
+10. **Dynamic Palette & Color Overrides (OSC 4/10/11/12/104/110/111/112)** & **DCS Capability Queries (XTGETTCAP / DECRQSS)**: Added dynamic RGB color queries/overrides for foreground, background, cursor, and 256-color palette indices, alongside terminfo capability retrieval (`DCS + q`) and status string queries (`DCS $ q`).
 
 ---
 
@@ -565,6 +566,58 @@ val ansiOutput = parser.toAnsiSequence(
     kittyKeyboardFlags = flags,
 )
 ```
+
+---
+
+### Recipe 18: Dynamic Color Queries, Overrides (OSC 4/10/11/12) & DCS Capability Negotiation (XTGETTCAP / DECRQSS)
+
+Modern terminal applications (`tmux`, `neovim`, and modern CLI utilities) query and dynamically adjust terminal color palettes and capability features at runtime.
+
+#### Querying and Setting Colors Dynamically
+- **Foreground / Background / Cursor Overrides**:
+  - `\u001B]10;rgb:12/34/56\u0007` or `\u001B]10;#123456\u0007`: sets dynamic foreground
+  - `\u001B]11;#1e1e1e\u001B\\`: sets dynamic background
+  - `\u001B]12;#e0e0e0\u0007`: sets dynamic cursor color
+  - Chained: `\u001B]10;#111111;#222222;#333333\u0007`: sets foreground, background, and cursor simultaneously
+- **Dynamic Color Resets**:
+  - `\u001B]110\u0007`: resets dynamic foreground to palette default
+  - `\u001B]111\u0007`: resets dynamic background to palette default
+  - `\u001B]112\u0007`: resets dynamic cursor to palette default
+  - `\u001B]104;1\u0007`: resets palette entry 1; `\u001B]104\u0007`: resets all overridden palette entries
+- **Color Queries**:
+  - `\u001B]10;?\u001B\\` &rarr; responds `\u001B]10;rgb:rrrr/gggg/bbbb\u001B\`
+  - `\u001B]4;1;?\u001B\\` &rarr; responds `\u001B]4;1;rgb:rrrr/gggg/bbbb\u001B\`
+
+#### DCS Capability Negotiation & Status Reporting
+- **XTGETTCAP (`DCS + q <hex-caps> ST`)**:
+  - `\u001BP+q544E;524742\u001B\\` queries `TN` and `RGB`
+  - Responds with `\u001BP1+r544E=787465726D2D323536636F6C6F72\u001B\` and `\u001BP1+r524742\u001B\`
+  - Unknown capabilities respond with `\u001BP0+r\u001B\`
+- **DECRQSS (`DCS $ q <Pt> ST`)**:
+  - `\u001BP$qm\u001B\\` queries SGR graphics rendition &rarr; responds `\u001BP1$r0m\u001B\`
+  - `\u001BP$qr\u001B\\` queries 1-indexed scroll margins &rarr; responds `\u001BP1$r<top>;<bottom>r\u001B\`
+  - `\u001BP$q q\u001B\\` queries DECSCUSR cursor shape &rarr; responds `\u001BP1$r<Ps> q\u001B\`
+  - Unknown queries respond with `\u001BP0$r\u001B\`
+
+#### Accessing Dynamic Color State
+```kotlin
+import com.johnan.terminal.core.TerminalEmulator
+import com.johnan.terminal.core.TerminalPalette
+
+val emulator = TerminalEmulator()
+
+val fg = emulator.dynamicForegroundRgb // null if using default palette
+val bg = emulator.dynamicBackgroundRgb
+val cursor = emulator.dynamicCursorRgb
+val pal1 = emulator.getDynamicPaletteColor(1)
+
+// Effective colors resolving overrides or falling back to palette:
+val effectiveFg = emulator.getEffectiveForegroundRgb()
+val effectiveBg = emulator.getEffectiveBackgroundRgb()
+val effectiveCursor = emulator.getEffectiveCursorRgb()
+val effectivePal1 = emulator.getEffectivePaletteRgb(1)
+```
+
 
 
 

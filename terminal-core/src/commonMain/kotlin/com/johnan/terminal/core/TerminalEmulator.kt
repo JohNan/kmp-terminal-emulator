@@ -131,6 +131,54 @@ class TerminalEmulator(
     var cellHeightPx: Int = 16
         internal set
 
+    var dynamicForegroundRgb: Int? = null
+        internal set
+    var dynamicBackgroundRgb: Int? = null
+        internal set
+    var dynamicCursorRgb: Int? = null
+        internal set
+    private val dynamicPaletteOverrides = IntArray(256) { -1 }
+
+    fun getDynamicPaletteColor(index: Int): Int? =
+        if (index in 0..255 && dynamicPaletteOverrides[index] != -1) {
+            dynamicPaletteOverrides[index]
+        } else {
+            null
+        }
+
+    internal fun setDynamicPaletteColor(index: Int, rgb: Int) {
+        if (index in 0..255) {
+            dynamicPaletteOverrides[index] = rgb and 0xFFFFFF
+        }
+    }
+
+    internal fun resetDynamicPaletteColor(index: Int? = null) {
+        if (index == null) {
+            dynamicPaletteOverrides.fill(-1)
+        } else if (index in 0..255) {
+            dynamicPaletteOverrides[index] = -1
+        }
+    }
+
+    internal fun resetAllDynamicColors() {
+        dynamicForegroundRgb = null
+        dynamicBackgroundRgb = null
+        dynamicCursorRgb = null
+        dynamicPaletteOverrides.fill(-1)
+    }
+
+    fun getEffectiveForegroundRgb(palette: TerminalPalette = TerminalPalette.DEFAULT): Int =
+        dynamicForegroundRgb ?: palette.foreground
+
+    fun getEffectiveBackgroundRgb(palette: TerminalPalette = TerminalPalette.DEFAULT): Int =
+        dynamicBackgroundRgb ?: palette.background
+
+    fun getEffectiveCursorRgb(palette: TerminalPalette = TerminalPalette.DEFAULT): Int =
+        dynamicCursorRgb ?: palette.cursor
+
+    fun getEffectivePaletteRgb(index: Int, palette: TerminalPalette = TerminalPalette.DEFAULT): Int =
+        getDynamicPaletteColor(index) ?: palette.getIndexedRgb(index)
+
     private val _clipboardEvents = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
     val clipboardEvents: SharedFlow<String> = _clipboardEvents.asSharedFlow()
 
@@ -348,6 +396,10 @@ class TerminalEmulator(
         clone.lastClipboardWrite = lastClipboardWrite
         clone.focusReportingEnabled = focusReportingEnabled
         clone.cursorShape = cursorShape
+        clone.dynamicForegroundRgb = dynamicForegroundRgb
+        clone.dynamicBackgroundRgb = dynamicBackgroundRgb
+        clone.dynamicCursorRgb = dynamicCursorRgb
+        dynamicPaletteOverrides.copyInto(clone.dynamicPaletteOverrides)
         clone.synchronizedOutputEnabled = synchronizedOutputEnabled
         if (synchronizedOutputEnabled) {
             clone._screenState.value = _screenState.value
@@ -471,6 +523,9 @@ class TerminalEmulator(
             lastExitCode = _lastExitCode.value,
             isCommandRunning = _isCommandRunning.value,
             kittyKeyboardFlags = screenBuffer.kittyKeyboardFlags,
+            dynamicForegroundRgb = dynamicForegroundRgb,
+            dynamicBackgroundRgb = dynamicBackgroundRgb,
+            dynamicCursorRgb = dynamicCursorRgb,
         )
     }
 
@@ -534,6 +589,7 @@ class TerminalEmulator(
         cursorShape = CursorShape.BLOCK
         cursorBlinking = config.cursorBlinkingDefault
         screenBuffer.resetKittyKeyboardFlags()
+        resetAllDynamicColors()
         updateScreenState()
     }
 
@@ -722,6 +778,9 @@ data class TerminalScreenState(
     val lastExitCode: Int? = null,
     val isCommandRunning: Boolean = false,
     val kittyKeyboardFlags: Int = 0,
+    val dynamicForegroundRgb: Int? = null,
+    val dynamicBackgroundRgb: Int? = null,
+    val dynamicCursorRgb: Int? = null,
 ) {
     companion object {
         fun from(
@@ -736,6 +795,9 @@ data class TerminalScreenState(
             lastExitCode: Int? = null,
             isCommandRunning: Boolean = false,
             kittyKeyboardFlags: Int = buffer.kittyKeyboardFlags,
+            dynamicForegroundRgb: Int? = null,
+            dynamicBackgroundRgb: Int? = null,
+            dynamicCursorRgb: Int? = null,
         ): TerminalScreenState {
             var contentHeight = 0
             for (i in 0 until buffer.rows) {
@@ -765,6 +827,9 @@ data class TerminalScreenState(
                 lastExitCode = lastExitCode,
                 isCommandRunning = isCommandRunning,
                 kittyKeyboardFlags = kittyKeyboardFlags,
+                dynamicForegroundRgb = dynamicForegroundRgb,
+                dynamicBackgroundRgb = dynamicBackgroundRgb,
+                dynamicCursorRgb = dynamicCursorRgb,
             )
         }
     }

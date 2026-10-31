@@ -180,6 +180,11 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - OSC 52 clipboard integration with configurable security policies (`ASK`, `ALWAYS_ALLOW`, `ALWAYS_DENY`).
   - Independent deep state cloning (`TerminalEmulator.copy()`) for headless sessions and speculative execution (e.g. Mosh).
   - Soft-wrap row querying (`ScreenBuffer.isRowWrapped(row)`).
+- **OSC Dynamic Color Overrides & DCS Queries**:
+  - **OSC 4 / 10 / 11 / 12 Color Queries & Overrides**: Dynamic query and override of foreground (`OSC 10`), background (`OSC 11`), cursor (`OSC 12`), and 256-color palette slots (`OSC 4 ; <idx>`) using X11 color specifications (`#RGB`, `#RRGGBB`, `#RRRRGGGGBBBB`, and `rgb:r/g/b`, `rgb:rr/gg/bb`, `rgb:rrrr/gggg/bbbb`), formatting 16-bit RGB query responses (`\e]10;rgb:rrrr/gggg/bbbb\e\`).
+  - **OSC 104 / 110 / 111 / 112 Color Resets**: Restores original palette definitions dynamically for indexed colors (`OSC 104 [; <idx>]`), foreground (`OSC 110`), background (`OSC 111`), and cursor (`OSC 112`).
+  - **DCS Capability Negotiation (XTGETTCAP `DCS + q`)**: Terminal capability query support returning hex-encoded key-value pairs for `TN` (`xterm-256color`), `Co` (`256`), `RGB`/`Tc` (TrueColor), `Smulx` (styled underlines), `Setulc` (underline color), `Sync` (synchronized output), and `Ms` (OSC 52 clipboard).
+  - **DCS Request Status String (DECRQSS `DCS $ q`)**: Reports active terminal modes and graphic renditions (`m`), 1-indexed scrolling margins (`r`), and active cursor shape (` q`).
 - **Kitty Graphics Protocol & Unicode Placeholders**:
   - Full APC control sequence handling (`\e_G...;\e\`) for inline images with hardware-accelerated canvas rendering.
   - Protocol formats: 24-bit RGB (`f=24`), 32-bit RGBA (`f=32`), and pure KMP zero-dependency PNG (`f=100`).
@@ -510,6 +515,35 @@ val outSeq = parser.toAnsiSequence(
     event = TuiEvent.Key(key = TuiKey.ESCAPE),
     kittyKeyboardFlags = activeFlags,
 )
+```
+
+### 9. Dynamic Color Queries & DCS Capability Negotiation
+
+Applications query terminal capabilities via XTGETTCAP / DECRQSS and dynamically query or override theme colors via OSC sequences:
+
+```kotlin
+import com.johnan.terminal.core.TerminalEmulator
+import com.johnan.terminal.core.TerminalPalette
+
+val emulator = TerminalEmulator()
+
+// Inspect dynamic color overrides (null if default palette is in use)
+val fgOverride = emulator.dynamicForegroundRgb
+val bgOverride = emulator.dynamicBackgroundRgb
+val cursorOverride = emulator.dynamicCursorRgb
+val paletteColor1 = emulator.getDynamicPaletteColor(1)
+
+// Query effective colors (resolving dynamic override or falling back to palette)
+val effectiveFg = emulator.getEffectiveForegroundRgb(TerminalPalette.DEFAULT)
+val effectiveBg = emulator.getEffectiveBackgroundRgb(TerminalPalette.DEFAULT)
+val effectiveCursor = emulator.getEffectiveCursorRgb(TerminalPalette.DEFAULT)
+val effectiveRed = emulator.getEffectivePaletteRgb(1, TerminalPalette.DEFAULT)
+
+// Reactive updates published to screenState
+val state = emulator.screenState.value
+val screenFg = state.dynamicForegroundRgb
+val screenBg = state.dynamicBackgroundRgb
+val screenCursor = state.dynamicCursorRgb
 ```
 
 ---

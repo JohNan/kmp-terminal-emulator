@@ -307,6 +307,8 @@ class AnsiParser(
                     finishOsc()
                 } else if (prev == State.APC) {
                     finishApc()
+                } else if (prev == State.DCS) {
+                    finishDcs()
                 } else if (prev != null) {
                     log(prev.name) { "len=${paramBuffer.length}" }
                 }
@@ -407,6 +409,7 @@ class AnsiParser(
                 terminalEmulator.focusReportingEnabled = false
                 terminalEmulator.cursorShape = CursorShape.BLOCK
                 screenBuffer.resetKittyKeyboardFlags()
+                terminalEmulator.resetAllDynamicColors()
                 state = State.NORMAL
             }
             '=' -> {
@@ -753,6 +756,53 @@ class AnsiParser(
             val value = oscData.substring(semicolonIndex + 1)
 
             when (command) {
+                "4" -> {
+                    val parts = value.split(';')
+                    for (i in 0 until parts.size - 1 step 2) {
+                        val idx = parts[i].trim().toIntOrNull() ?: continue
+                        if (idx !in 0..255) continue
+                        val spec = parts[i + 1].trim()
+                        if (spec == "?") {
+                            val rgb = terminalEmulator.getEffectivePaletteRgb(idx)
+                            terminalEmulator.sendResponse(
+                                "\u001B]4;$idx;${TerminalPalette.formatOscRgbResponse(rgb)}\u001B\\",
+                            )
+                        } else {
+                            val parsed = TerminalPalette.parseOscColorSpec(spec)
+                            if (parsed != null) {
+                                terminalEmulator.setDynamicPaletteColor(idx, parsed)
+                            }
+                        }
+                    }
+                }
+
+                "10", "11", "12" -> {
+                    val baseCode = command.toInt()
+                    val specs = value.split(';')
+                    for ((offset, rawSpec) in specs.withIndex()) {
+                        val targetCode = baseCode + offset
+                        if (targetCode !in 10..12) break
+                        val spec = rawSpec.trim()
+                        if (spec == "?") {
+                            val rgb = when (targetCode) {
+                                10 -> terminalEmulator.getEffectiveForegroundRgb()
+                                11 -> terminalEmulator.getEffectiveBackgroundRgb()
+                                else -> terminalEmulator.getEffectiveCursorRgb()
+                            }
+                            terminalEmulator.sendResponse(
+                                "\u001B]$targetCode;${TerminalPalette.formatOscRgbResponse(rgb)}\u001B\\",
+                            )
+                        } else {
+                            val parsed = TerminalPalette.parseOscColorSpec(spec) ?: continue
+                            when (targetCode) {
+                                10 -> terminalEmulator.dynamicForegroundRgb = parsed
+                                11 -> terminalEmulator.dynamicBackgroundRgb = parsed
+                                12 -> terminalEmulator.dynamicCursorRgb = parsed
+                            }
+                        }
+                    }
+                }
+
                 "52" -> {
                     val parts = value.split(";")
                     if (parts.size == 2) {
@@ -842,6 +892,30 @@ class AnsiParser(
                         log("OSC 777") { "Notification: title='$title', body='$body'" }
                     }
                 }
+
+                "104" -> {
+                    if (value.isBlank()) {
+                        terminalEmulator.resetDynamicPaletteColor(null)
+                    } else {
+                        val parts = value.split(';')
+                        for (part in parts) {
+                            part.trim().toIntOrNull()?.let {
+                                terminalEmulator.resetDynamicPaletteColor(it)
+                            }
+                        }
+                    }
+                }
+
+                "110" -> terminalEmulator.dynamicForegroundRgb = null
+                "111" -> terminalEmulator.dynamicBackgroundRgb = null
+                "112" -> terminalEmulator.dynamicCursorRgb = null
+            }
+        } else {
+            when (oscData.trim()) {
+                "104" -> terminalEmulator.resetDynamicPaletteColor(null)
+                "110" -> terminalEmulator.dynamicForegroundRgb = null
+                "111" -> terminalEmulator.dynamicBackgroundRgb = null
+                "112" -> terminalEmulator.dynamicCursorRgb = null
             }
         }
     }
@@ -850,6 +924,8 @@ class AnsiParser(
         if (char == '\u009C' || (char == '\u0007' && state == State.APC)) {
             if (state == State.APC) {
                 finishApc()
+            } else if (state == State.DCS && char == '\u009C') {
+                finishDcs()
             }
             paramBuffer.clear()
             paramsParsed = false
@@ -869,6 +945,88 @@ class AnsiParser(
         if (paramBuffer.isNotEmpty() && paramBuffer[0] == 'G' && terminalEmulator.config.kittyGraphicsEnabled) {
             processKittyApc(paramBuffer.substring(1))
         }
+    }
+
+    private fun finishDcs() {
+        val dcsData = paramBuffer.toString()
+        if (dcsData.startsWith("+q")) {
+            val queryStr = dcsData.substring(2)
+            val parts = queryStr.split(';').filter { it.isNotEmpty() }
+            for (hexKey in parts) {
+                val capName = decodeHexToAscii(hexKey)
+                if (capName == null) {
+                    terminalEmulator.sendResponse("\u001BP0+r\u001B\\")
+                    continue
+                }
+                val capValue = when (capName) {
+                    "TN", "name" -> "xterm-256color"
+                    "Co", "colors" -> "256"
+                    "RGB", "Tc" -> ""
+                    "Smulx" -> "\u001B[4:%p1%dm"
+                    "Setulc" -> "\u001B[58:2::%p1%{65536}%/%d:%p1%{256}%/%{255}%&%d:%p1%{255}%&%dm"
+                    "Sync" -> "\u001B[?2026%?%p1%{1}%-%tl%eh%;"
+                    "Ms" -> "\u001B]52;%p1%s;%p2%s\u0007"
+                    else -> null
+                }
+                if (capValue == null) {
+                    terminalEmulator.sendResponse("\u001BP0+r\u001B\\")
+                } else if (capName == "RGB" || capName == "Tc") {
+                    val encodedKey = encodeStringToHex(capName)
+                    terminalEmulator.sendResponse("\u001BP1+r$encodedKey\u001B\\")
+                } else {
+                    val encodedKey = encodeStringToHex(capName)
+                    val encodedVal = encodeStringToHex(capValue)
+                    terminalEmulator.sendResponse("\u001BP1+r$encodedKey=$encodedVal\u001B\\")
+                }
+            }
+        } else if (dcsData.startsWith("\$q")) {
+            val req = dcsData.substring(2)
+            when (req) {
+                "m" -> terminalEmulator.sendResponse("\u001BP1\$r0m\u001B\\")
+                "r" -> {
+                    val top = screenBuffer.scrollTop + 1
+                    val bottom = screenBuffer.scrollBottom + 1
+                    terminalEmulator.sendResponse("\u001BP1\$r$top;${bottom}r\u001B\\")
+                }
+                " q" -> {
+                    val ps = when (terminalEmulator.cursorShape) {
+                        CursorShape.BLOCK -> if (terminalEmulator.cursorBlinking) 1 else 2
+                        CursorShape.UNDERLINE -> if (terminalEmulator.cursorBlinking) 3 else 4
+                        CursorShape.BEAM -> if (terminalEmulator.cursorBlinking) 5 else 6
+                    }
+                    terminalEmulator.sendResponse("\u001BP1\$r$ps q\u001B\\")
+                }
+                else -> terminalEmulator.sendResponse("\u001BP0\$r\u001B\\")
+            }
+        }
+    }
+
+    private fun decodeHexToAscii(hex: String): String? {
+        if (hex.length % 2 != 0 || hex.isEmpty()) return null
+        val sb = StringBuilder(hex.length / 2)
+        for (i in 0 until hex.length step 2) {
+            val b1 = hex[i]
+            val b2 = hex[i + 1]
+            if (b1 !in '0'..'9' && b1 !in 'a'..'f' && b1 !in 'A'..'F') return null
+            if (b2 !in '0'..'9' && b2 !in 'a'..'f' && b2 !in 'A'..'F') return null
+            val byteVal = hex.substring(i, i + 2).toInt(16)
+            sb.append(byteVal.toChar())
+        }
+        return sb.toString()
+    }
+
+    private fun encodeStringToHex(str: String): String {
+        val bytes = str.encodeToByteArray()
+        val sb = StringBuilder(bytes.size * 2)
+        for (b in bytes) {
+            val v = b.toInt() and 0xFF
+            val hex = v.toString(16).uppercase()
+            if (hex.length == 1) {
+                sb.append('0')
+            }
+            sb.append(hex)
+        }
+        return sb.toString()
     }
 
     private fun processKittyApc(content: String) {

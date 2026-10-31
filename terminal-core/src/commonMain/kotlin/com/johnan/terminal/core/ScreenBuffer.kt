@@ -26,8 +26,10 @@ class ScreenBuffer(
     private val primaryPlacements = ArrayList<TerminalImagePlacement>()
     private val alternatePlacements = ArrayList<TerminalImagePlacement>()
 
-    private var scrollTop: Int = 0
-    private var scrollBottom: Int = rows - 1
+    var scrollTop: Int = 0
+        internal set
+    var scrollBottom: Int = rows - 1
+        internal set
 
     private val scrollback: ArrayDeque<Array<TerminalCell>> = ArrayDeque()
 
