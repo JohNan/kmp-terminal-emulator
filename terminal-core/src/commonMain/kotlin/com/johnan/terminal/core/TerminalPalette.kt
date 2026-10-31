@@ -50,6 +50,16 @@ data class TerminalPalette(
         else -> foreground
     }
 
+    /**
+     * Resolves packed 24-bit RGB int for any 256-color index (0..255), using [getAnsiRgb] for 0..15
+     * and the standard xterm 6x6x6 color cube / 24-step grayscale ramp for 16..255.
+     */
+    fun getIndexedRgb(index: Int): Int = when {
+        index in 0..15 -> getAnsiRgb(index)
+        index in 16..255 -> TerminalColor.toRgbInt(TerminalColor.buildPalette256(index), this)
+        else -> foreground
+    }
+
     companion object {
         val DEFAULT = TerminalPalette(
             id = "default",
@@ -180,5 +190,74 @@ data class TerminalPalette(
         )
 
         fun getById(id: String): TerminalPalette? = PRESETS.find { it.id == id }
+
+        fun parseOscColorSpec(spec: String): Int? {
+            val trimmed = spec.trim()
+            if (trimmed.isEmpty()) return null
+
+            if (trimmed.startsWith("rgb:", ignoreCase = true)) {
+                val parts = trimmed.substring(4).split('/')
+                if (parts.size != 3) return null
+
+                val r = parseOscChannel(parts[0]) ?: return null
+                val g = parseOscChannel(parts[1]) ?: return null
+                val b = parseOscChannel(parts[2]) ?: return null
+                return ((r and 0xFF) shl 16) or ((g and 0xFF) shl 8) or (b and 0xFF)
+            }
+
+            if (trimmed.startsWith("#")) {
+                val hex = trimmed.substring(1)
+                if (!hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+                return when (hex.length) {
+                    3 -> {
+                        val r = hex.substring(0, 1).toInt(16)
+                        val g = hex.substring(1, 2).toInt(16)
+                        val b = hex.substring(2, 3).toInt(16)
+                        val r8 = (r shl 4) or r
+                        val g8 = (g shl 4) or g
+                        val b8 = (b shl 4) or b
+                        ((r8 and 0xFF) shl 16) or ((g8 and 0xFF) shl 8) or (b8 and 0xFF)
+                    }
+                    6 -> {
+                        val r = hex.substring(0, 2).toInt(16)
+                        val g = hex.substring(2, 4).toInt(16)
+                        val b = hex.substring(4, 6).toInt(16)
+                        ((r and 0xFF) shl 16) or ((g and 0xFF) shl 8) or (b and 0xFF)
+                    }
+                    12 -> {
+                        val r = hex.substring(0, 4).toInt(16) shr 8
+                        val g = hex.substring(4, 8).toInt(16) shr 8
+                        val b = hex.substring(8, 12).toInt(16) shr 8
+                        ((r and 0xFF) shl 16) or ((g and 0xFF) shl 8) or (b and 0xFF)
+                    }
+                    else -> null
+                }
+            }
+
+            return null
+        }
+
+        private fun parseOscChannel(s: String): Int? {
+            if (s.isEmpty() || s.length > 4) return null
+            if (!s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+            val v = s.toIntOrNull(16) ?: return null
+            return when (s.length) {
+                1 -> (v shl 4) or v
+                2 -> v
+                3 -> v shr 4
+                4 -> v shr 8
+                else -> null
+            }
+        }
+
+        fun formatOscRgbResponse(rgb: Int): String {
+            val r = (rgb shr 16) and 0xFF
+            val g = (rgb shr 8) and 0xFF
+            val b = rgb and 0xFF
+            val rr = r.toString(16).padStart(2, '0')
+            val gg = g.toString(16).padStart(2, '0')
+            val bb = b.toString(16).padStart(2, '0')
+            return "rgb:$rr$rr/$gg$gg/$bb$bb"
+        }
     }
 }

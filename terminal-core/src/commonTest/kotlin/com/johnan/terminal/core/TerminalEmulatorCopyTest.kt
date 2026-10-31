@@ -43,6 +43,10 @@ class TerminalEmulatorCopyTest {
         val screenIsCommandRunning: Boolean,
         val kittyKeyboardFlags: Int,
         val stateKittyKeyboardFlags: Int,
+        val dynamicForegroundRgb: Int?,
+        val dynamicBackgroundRgb: Int?,
+        val dynamicCursorRgb: Int?,
+        val paletteOverride1: Int?,
     )
 
     private fun snapshot(e: TerminalEmulator): Snapshot {
@@ -86,6 +90,10 @@ class TerminalEmulatorCopyTest {
             screenIsCommandRunning = s.isCommandRunning,
             kittyKeyboardFlags = e.kittyKeyboardFlags,
             stateKittyKeyboardFlags = s.kittyKeyboardFlags,
+            dynamicForegroundRgb = e.dynamicForegroundRgb,
+            dynamicBackgroundRgb = e.dynamicBackgroundRgb,
+            dynamicCursorRgb = e.dynamicCursorRgb,
+            paletteOverride1 = e.getDynamicPaletteColor(1),
         )
     }
 
@@ -406,6 +414,14 @@ class TerminalEmulatorCopyTest {
     fun copyPreservesKittyKeyboardFlagsAcrossSplits() =
         runTest {
             assertCopyMatchesAtEverySplit("\u001B[>3uHello\u001B[=8;2uWorld\u001B[<1u")
+        }
+
+    @Test
+    fun copyPreservesDynamicColorsAcrossSplits() =
+        runTest {
+            assertCopyMatchesAtEverySplit(
+                "\u001B]10;#112233\u0007\u001B]11;rgb:44/55/66\u001B\\Hello\u001B]4;1;#abcdef\u0007World",
+            )
         }
 
     @Test
