@@ -71,6 +71,16 @@ class ScreenBuffer(
 
     private val promptMarks = ArrayList<PromptMark>()
 
+    private var primaryKeyboardFlags: Int = 0
+    private var alternateKeyboardFlags: Int = 0
+    private val primaryKeyboardStack = IntArray(16)
+    private var primaryKeyboardStackSize: Int = 0
+    private val alternateKeyboardStack = IntArray(16)
+    private var alternateKeyboardStackSize: Int = 0
+
+    val kittyKeyboardFlags: Int
+        get() = if (isAlternateScreen) alternateKeyboardFlags else primaryKeyboardFlags
+
     /**
      * Returns a deep, fully independent copy of this buffer: primary and alternate rows, scrollback, cursor,
      * saved cursor, scroll region, wrap state and current text attributes.
@@ -117,6 +127,12 @@ class ScreenBuffer(
         clone.alternatePlacements.addAll(alternatePlacements)
         clone.currentHyperlinkUrl = currentHyperlinkUrl
         clone.promptMarks.addAll(promptMarks)
+        clone.primaryKeyboardFlags = primaryKeyboardFlags
+        clone.alternateKeyboardFlags = alternateKeyboardFlags
+        clone.primaryKeyboardStackSize = primaryKeyboardStackSize
+        clone.alternateKeyboardStackSize = alternateKeyboardStackSize
+        primaryKeyboardStack.copyInto(clone.primaryKeyboardStack)
+        alternateKeyboardStack.copyInto(clone.alternateKeyboardStack)
         // Every var in this class is copied above; rows/cols and maxScrollback come from the constructor.
         return clone
     }
@@ -899,6 +915,8 @@ class ScreenBuffer(
             cursorRow = 0
             cursorCol = 0
             resetScrollingRegion()
+            alternateKeyboardFlags = 0
+            alternateKeyboardStackSize = 0
         }
     }
 
@@ -909,7 +927,74 @@ class ScreenBuffer(
             graphicsVersion++
             restoreCursor()
             resetScrollingRegion()
+            alternateKeyboardFlags = 0
+            alternateKeyboardStackSize = 0
         }
+    }
+
+    fun pushKittyKeyboardFlags(flags: Int) {
+        val masked = flags and KittyKeyboardProtocol.ALL_FLAGS_MASK
+        if (isAlternateScreen) {
+            if (alternateKeyboardStackSize == 16) {
+                alternateKeyboardStack.copyInto(alternateKeyboardStack, 0, 1, 16)
+                alternateKeyboardStack[15] = alternateKeyboardFlags
+            } else {
+                alternateKeyboardStack[alternateKeyboardStackSize++] = alternateKeyboardFlags
+            }
+            alternateKeyboardFlags = masked
+        } else {
+            if (primaryKeyboardStackSize == 16) {
+                primaryKeyboardStack.copyInto(primaryKeyboardStack, 0, 1, 16)
+                primaryKeyboardStack[15] = primaryKeyboardFlags
+            } else {
+                primaryKeyboardStack[primaryKeyboardStackSize++] = primaryKeyboardFlags
+            }
+            primaryKeyboardFlags = masked
+        }
+    }
+
+    fun popKittyKeyboardFlags(count: Int = 1) {
+        val n = count.coerceAtLeast(1)
+        if (isAlternateScreen) {
+            if (n <= alternateKeyboardStackSize) {
+                alternateKeyboardStackSize -= n
+                alternateKeyboardFlags = alternateKeyboardStack[alternateKeyboardStackSize]
+            } else {
+                alternateKeyboardStackSize = 0
+                alternateKeyboardFlags = 0
+            }
+        } else {
+            if (n <= primaryKeyboardStackSize) {
+                primaryKeyboardStackSize -= n
+                primaryKeyboardFlags = primaryKeyboardStack[primaryKeyboardStackSize]
+            } else {
+                primaryKeyboardStackSize = 0
+                primaryKeyboardFlags = 0
+            }
+        }
+    }
+
+    fun setKittyKeyboardFlags(flags: Int, mode: Int = 1) {
+        val masked = flags and KittyKeyboardProtocol.ALL_FLAGS_MASK
+        val current = kittyKeyboardFlags
+        val updated = when (mode) {
+            1 -> masked
+            2 -> current or masked
+            3 -> current and masked.inv()
+            else -> current
+        }
+        if (isAlternateScreen) {
+            alternateKeyboardFlags = updated
+        } else {
+            primaryKeyboardFlags = updated
+        }
+    }
+
+    fun resetKittyKeyboardFlags() {
+        primaryKeyboardFlags = 0
+        alternateKeyboardFlags = 0
+        primaryKeyboardStackSize = 0
+        alternateKeyboardStackSize = 0
     }
 
     fun isUsingAlternateScreen(): Boolean = isAlternateScreen

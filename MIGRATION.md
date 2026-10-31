@@ -14,6 +14,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 6. **Modern DEC Modes & Terminal Identification**: Added DEC Mode 2026 (Synchronized Output), DEC Mode 1004 (Focus Reporting), DECSCUSR cursor shapes (`CursorShape.BLOCK`, `CursorShape.UNDERLINE`, `CursorShape.BEAM`), DECRQM mode query responses, Secondary Device Attributes (DA2), and XTVERSION querying.
 7. **Extended SGR Underlines & Colors**: Added ITU-T T.416 sub-parameter styled underlines (`UnderlineStyle.NONE`, `SINGLE`, `DOUBLE`, `CURLY`, `DOTTED`, `DASHED`) via SGR 4:x / 21, and TrueColor/indexed underline coloring via SGR 58:2 / 58:5 and SGR 59.
 8. **Semantic Shell Integration & Explicit Hyperlinks**: Added OSC 8 explicit hyperlink support (`TerminalCell.hyperlinkUrl`, `UrlRange.url`), OSC 7 and OSC 9;9 Current Working Directory tracking (`TerminalEmulator.currentWorkingDirectory`), and OSC 133 semantic prompt mark integration (`PromptMark`, `PromptMarkType`, `lastExitCode`, `isCommandRunning`, `findPreviousPromptLine`, `findNextPromptLine`, `extractLastCommandOutput`).
+9. **Kitty Progressive Keyboard Protocol**: Added progressive keyboard enhancement protocol support in `terminal-core` (`KittyKeyboardProtocol`, `KeyEventType`, `kittyKeyboardFlags`, `encodeKeyEvent`) and extended `:terminal-tui` (`TuiInputParser`, `TuiEvent.Key.eventType`, `toAnsiSequence(..., kittyKeyboardFlags)`).
 
 ---
 
@@ -511,6 +512,58 @@ marks.forEach { mark ->
         PromptMarkType.COMMAND_FINISHED -> println("Exit code ${mark.exitCode} at line ${mark.absLine}")
     }
 }
+```
+
+---
+
+### Recipe 17: Kitty Progressive Keyboard Protocol Integration
+
+#### Before (Ambiguous legacy VT keys and lack of event types)
+Applications received legacy ANSI escape codes where modifier states (Shift, Alt, Ctrl) were ambiguous or caused collisions (e.g. `Ctrl+I` was indistinguishable from `Tab`, `Ctrl+[` was indistinguishable from `Escape`), and key repeat or key release events could not be reported.
+
+```kotlin
+// Legacy keyboard input handling without Kitty protocol support
+val inputBytes = byteArrayOf(0x1B) // Ambiguous: could be standalone Escape or beginning of escape sequence
+val events = parser.parse(inputBytes)
+val rawSeq = parser.toAnsiSequence(TuiEvent.Key(TuiKey.ESCAPE)) // "\u001b"
+```
+
+#### After (Kitty Progressive Keyboard Protocol)
+Full support for Kitty keyboard negotiation sequences:
+- `CSI > <flags> u`: Push current flags to the 16-deep active screen stack and apply new flags.
+- `CSI < <count> u`: Pop `<count>` flags from the active screen stack.
+- `CSI = <flags> ; <mode> u`: Set flags (`mode = 1` replace, `mode = 2` bitwise OR, `mode = 3` bitwise AND NOT).
+- `CSI ? u`: Query active flags (terminal responds with `\u001B[?<flags>u`).
+
+Consumer applications and TUI frontends can inspect `kittyKeyboardFlags`, encode key events, and parse `CSI u` sequences with modifiers and event types (`PRESS`, `REPEAT`, `RELEASE`):
+
+```kotlin
+import com.johnan.terminal.core.KeyEventType
+import com.johnan.terminal.core.KittyKeyboardProtocol
+import com.johnan.terminal.tui.TuiEvent
+import com.johnan.terminal.tui.TuiInputParser
+import com.johnan.terminal.tui.TuiKey
+
+// 1. Inspect current keyboard enhancement flags from emulator or screen state
+val flags = emulator.kittyKeyboardFlags
+val isDisambiguateActive = (flags and KittyKeyboardProtocol.DISAMBIGUATE_ESCAPE_CODES) != 0
+
+// 2. High-fidelity key event encoding via core emulator
+val escapeCode = emulator.encodeKeyEvent(codepoint = 27) // "\u001B[27u" when DISAMBIGUATE_ESCAPE_CODES is set
+val releaseEvent = emulator.encodeKeyEvent(
+    codepoint = 'a'.code,
+    eventType = KeyEventType.RELEASE,
+) // "\u001B[97;1:3u" when REPORT_EVENT_TYPES is set
+
+// 3. Differential TUI input parsing & ANSI serialization
+val parser = TuiInputParser()
+val parsed = parser.parse("\u001b[97;5:2u".encodeToByteArray())
+// -> TuiEvent.Key(key = TuiKey.CHAR, char = 'a', ctrl = true, eventType = 2)
+
+val ansiOutput = parser.toAnsiSequence(
+    event = TuiEvent.Key(key = TuiKey.ESCAPE),
+    kittyKeyboardFlags = flags,
+)
 ```
 
 
