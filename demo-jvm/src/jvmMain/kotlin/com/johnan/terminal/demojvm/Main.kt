@@ -147,10 +147,21 @@ fun main() = application {
             sb.append("  \u001B[2mDim / Faint text\u001B[0m\r\n")
             sb.append("  \u001B[3mItalic text\u001B[0m\r\n")
             sb.append("  \u001B[4mUnderlined text\u001B[0m\r\n")
+            sb.append("  \u001B[4:1mStraight underline (SGR 4:1)\u001B[0m\r\n")
+            sb.append("  \u001B[4:2mDouble underline (SGR 4:2)\u001B[0m\r\n")
+            sb.append("  \u001B[4:3mCurly underline (SGR 4:3)\u001B[0m\r\n")
+            sb.append("  \u001B[4:4mDotted underline (SGR 4:4)\u001B[0m\r\n")
+            sb.append("  \u001B[4:5mDashed underline (SGR 4:5)\u001B[0m\r\n")
+            sb.append("  \u001B[4:3;58:2::255:80:80mCurly red underline (SGR 58)\u001B[0m\r\n")
+            sb.append("  \u001B[53mOverline text (SGR 53)\u001B[0m\r\n")
             sb.append("  \u001B[21mDouble underlined text\u001B[0m\r\n")
             sb.append("  \u001B[5mBlinking text\u001B[0m\r\n")
             sb.append("  \u001B[7mInverse / Reverse video\u001B[0m\r\n")
             sb.append("  \u001B[9mCrossed out / Strikethrough\u001B[0m\r\n")
+            sb.append(
+                "  \u001B]8;;https://kotlinlang.org\u001B\\" +
+                    "https://kotlinlang.org (OSC 8 Hyperlink)\u001B]8;;\u001B\\\r\n",
+            )
             sb.append(
                 "  \u001B[1;3;4;33;44mCombined: Bold + Italic + Underline + " +
                     "Yellow on Blue\u001B[0m\r\n\r\n",

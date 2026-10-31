@@ -144,7 +144,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 
 - **Decoupled Tiered Architecture**: 
   - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models. Zero UI dependencies. Compiles to native C-ABI shared (`libterminal_core.so` / `libterminal_core.dylib`) and static (`libterminal_core.a`) libraries on Linux and macOS.
-  - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, gesture recognizers, platform-native input capture, selection overlays, and toolbar key bars.
+  - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, gesture recognizers, platform-native input capture, selection overlays, toolbar key bars, automatic DECSCUSR dynamic cursor shape mapping, OSC 10/11/12 live color overrides, OSC 133 prompt mark gutter indicators, and Kitty Progressive Keyboard input dispatch.
   - `:terminal-tui`: Low-allocation differential ANSI terminal UI renderer, 24-bit TrueColor, offscreen grid surface (`TuiSurface`), and raw VT100 / SGR input parser (`TuiInputParser`).
 - **Native C-ABI & Zero-Allocation FFI Interop**:
   - Direct C-ABI dynamic and static library exports from `:terminal-core` for non-JVM / non-Compose runtimes.
@@ -199,6 +199,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - 16-deep LIFO flag stack with automatic oldest eviction on overflow, independent stack isolation across primary and alternate screens (`?1049h` / `?1049l`), and reset synchronization on RIS (`\ec`) and `resetSync()`.
   - Disambiguation from legacy `SCORC` (`\e[u` cursor restore).
   - Key event encoding: `KittyKeyboardProtocol.encodeKeyEvent(...)` and `TerminalEmulator.encodeKeyEvent(...)` with modifiers, event types (`PRESS`, `REPEAT`, `RELEASE`), shifted codepoints, and associated text.
+  - UI input dispatch: `:terminal-ui` `applyModifierToChar` and `handleHardwareKeyEvent` accept `kittyKeyboardFlags` to transparently emit unambiguous escape codes (`\e[<code-point>;<modifiers>u`).
   - TUI integration: `:terminal-tui` `TuiInputParser` parses `CSI u` sequences and functional keys with `:<eventType>` sub-parameters, and encodes keys using `toAnsiSequence(..., kittyKeyboardFlags = flags)`.
 - **Mobile & Desktop Responsive Features**:
   - Soft keyboard modifier toggle integration (Ctrl, Alt, Shift states).
@@ -328,6 +329,9 @@ fun TerminalScreen(emulator: TerminalEmulator) {
             wheelScrollMultiplier = 1.5f
             touchScrollSendsWheelOnly = true // Opt-in wheel-only touch scrolling for tmux/vim
         }
+        render {
+            showPromptMarks = true // 3dp left gutter indicators for OSC 133 semantic prompts
+        }
     }
 
     TerminalRenderer(
@@ -346,6 +350,12 @@ fun TerminalScreen(emulator: TerminalEmulator) {
         modifier = Modifier.fillMaxSize()
     )
 }
+```
+
+#### Automatic Protocol Visual Synchronization
+- **Dynamic Cursor Shapes (`DECSCUSR`)**: `TerminalRenderer` automatically maps `terminalState.cursorShape` (`CursorShape.BLOCK`, `UNDERLINE`, `BEAM`) to `TerminalCursorStyle` unless explicitly overridden by `config.cursor.style`.
+- **Dynamic Color Overrides (`OSC 10/11/12`)**: Live background (`terminalState.dynamicBackgroundRgb`) and cursor (`terminalState.dynamicCursorRgb`) colors emitted by shells and utilities are applied directly during canvas rendering.
+- **Semantic Prompt Marks (`OSC 133`)**: When `render.showPromptMarks = true` (default), 3dp status bars appear in the left gutter next to command lines (green for `exitCode == 0`, red for non-zero exit codes, cyan while awaiting completion).
 ```
 
 ### 3. Text Selection and Copy Mode
@@ -481,9 +491,9 @@ for (range in urlRanges) {
 }
 ```
 
-### 8. Kitty Progressive Keyboard Protocol (`terminal-core` & `terminal-tui`)
+### 8. Kitty Progressive Keyboard Protocol (`terminal-core`, `terminal-tui` & `terminal-ui`)
 
-Applications query or configure enhanced keyboard modes using Kitty protocol CSI sequences. Active flags are published in `kittyKeyboardFlags`, and key events can be encoded or parsed with full fidelity:
+Applications query or configure enhanced keyboard modes using Kitty protocol CSI sequences. Active flags are published in `kittyKeyboardFlags`, and key events can be encoded, parsed, or dispatched through Compose with full fidelity:
 
 ```kotlin
 import com.johnan.terminal.core.KeyEventType
@@ -492,6 +502,8 @@ import com.johnan.terminal.core.TerminalEmulator
 import com.johnan.terminal.tui.TuiEvent
 import com.johnan.terminal.tui.TuiInputParser
 import com.johnan.terminal.tui.TuiKey
+import com.johnan.terminal.ui.applyModifierToChar
+import com.johnan.terminal.ui.handleHardwareKeyEvent
 
 // Inspect active keyboard enhancement flags
 val activeFlags = emulator.kittyKeyboardFlags
@@ -513,6 +525,17 @@ val events = parser.parse("\u001b[97;5u".encodeToByteArray())
 // Encode TuiEvent keys to ANSI sequences matching active flags
 val outSeq = parser.toAnsiSequence(
     event = TuiEvent.Key(key = TuiKey.ESCAPE),
+    kittyKeyboardFlags = activeFlags,
+)
+
+// Compose UI soft-modifier and hardware key integration (:terminal-ui)
+val modifiedChar = applyModifierToChar('a', modifierState, kittyKeyboardFlags = activeFlags)
+// -> "\u001B[97;5u" under DISAMBIGUATE_ESCAPE_CODES
+
+handleHardwareKeyEvent(
+    keyEvent = hardwareKeyEvent,
+    onInput = { input -> /* send to PTY */ },
+    onArrowKey = { arrow, shift -> /* handle arrow */ },
     kittyKeyboardFlags = activeFlags,
 )
 ```

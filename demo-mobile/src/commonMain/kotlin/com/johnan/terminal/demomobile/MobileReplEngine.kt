@@ -58,7 +58,11 @@ class MobileReplEngine(
     }
 
     suspend fun printPrompt() {
-        emulator.processOutput("\u001B[1;32mmobile\u001B[0m:\u001B[1;34m~#\u001B[0m ")
+        val prompt =
+            "\u001B]133;A\u0007" +
+                "\u001B[1;32mmobile\u001B[0m:\u001B[1;34m~#\u001B[0m " +
+                "\u001B]133;B\u0007"
+        emulator.processOutput(prompt)
     }
 
     fun handleInput(input: String) {
@@ -91,6 +95,7 @@ class MobileReplEngine(
                     }
                     '\u000C' -> { // Ctrl+L
                         clearScreen()
+                        printPrompt()
                     }
                     else -> {
                         if (ch.code in 32..126) {
@@ -124,26 +129,43 @@ class MobileReplEngine(
 
     private suspend fun executeCommand(command: String) {
         stopActiveAnimation()
+        emulator.processOutput("\u001B]133;C\u0007")
+        var exitCode = 0
+        var shouldPrintPrompt = false
         when (command.lowercase()) {
-            "help" -> printHelp()
-            "clear" -> clearScreen()
+            "help" -> {
+                printHelp()
+                shouldPrintPrompt = true
+            }
+            "clear" -> {
+                clearScreen()
+                shouldPrintPrompt = true
+            }
             "colors" -> runColorsDemo()
             "styles" -> runStylesDemo()
             "unicode" -> runUnicodeDemo()
             "htop" -> runHtopDemo()
             "matrix" -> runMatrixDemo()
             "progress" -> runProgressDemo()
-            "about" -> printAbout()
+            "about" -> {
+                printAbout()
+                shouldPrintPrompt = true
+            }
             else -> {
                 if (command.startsWith("echo ")) {
                     emulator.processOutput(command.removePrefix("echo ") + "\r\n")
                 } else {
+                    exitCode = 1
                     emulator.processOutput(
-                        "\u001B[31mCommand not found:\u001B[0m $command. Type \u001B[33mhelp\u001B[0m for commands.\r\n"
+                        "\u001B[31mCommand not found:\u001B[0m $command. Type \u001B[33mhelp\u001B[0m for commands.\r\n",
                     )
                 }
-                printPrompt()
+                shouldPrintPrompt = true
             }
+        }
+        emulator.processOutput("\u001B]133;D;$exitCode\u0007")
+        if (shouldPrintPrompt) {
+            printPrompt()
         }
     }
 
@@ -151,7 +173,6 @@ class MobileReplEngine(
         stopActiveAnimation()
         inputBuffer.clear()
         emulator.processOutput("\u001B[2J\u001B[H")
-        printPrompt()
     }
 
     suspend fun printHelp() {
@@ -167,7 +188,6 @@ class MobileReplEngine(
             append("  \u001B[33mabout\u001B[0m     - Architecture & library metadata\r\n")
         }
         emulator.processOutput(help)
-        printPrompt()
     }
 
     suspend fun printAbout() {
@@ -179,7 +199,6 @@ class MobileReplEngine(
             append("  • Gestures: Touch selection, long-press handles, and wheel-only scrolling\r\n")
         }
         emulator.processOutput(text)
-        printPrompt()
     }
 
     fun runColorsDemo() {
@@ -216,9 +235,17 @@ class MobileReplEngine(
             sb.append("  \u001B[2mDim Text\u001B[0m\r\n")
             sb.append("  \u001B[3mItalic Text\u001B[0m\r\n")
             sb.append("  \u001B[4mUnderline Text\u001B[0m\r\n")
+            sb.append("  \u001B[4:1mStraight Underline\u001B[0m\r\n")
+            sb.append("  \u001B[4:2mDouble Underline\u001B[0m\r\n")
+            sb.append("  \u001B[4:3mCurly Underline\u001B[0m\r\n")
+            sb.append("  \u001B[4:4mDotted Underline\u001B[0m\r\n")
+            sb.append("  \u001B[4:5mDashed Underline\u001B[0m\r\n")
+            sb.append("  \u001B[4:3;58:2::255:80:80mCurly Red Underline\u001B[0m\r\n")
+            sb.append("  \u001B[53mOverline Text\u001B[0m\r\n")
             sb.append("  \u001B[5mBlinking Text\u001B[0m\r\n")
             sb.append("  \u001B[7mInverted Colors\u001B[0m\r\n")
-            sb.append("  \u001B[9mStrikethrough\u001B[0m\r\n\r\n")
+            sb.append("  \u001B[9mStrikethrough\u001B[0m\r\n")
+            sb.append("  \u001B]8;;https://kotlinlang.org\u001B\\Kotlin Multiplatform\u001B]8;;\u001B\\\r\n\r\n")
             emulator.processOutput(sb.toString())
             printPrompt()
         }

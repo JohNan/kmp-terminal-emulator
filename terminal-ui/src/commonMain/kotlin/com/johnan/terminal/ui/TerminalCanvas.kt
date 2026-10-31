@@ -35,6 +35,8 @@ import com.johnan.terminal.core.KITTY_PLACEHOLDER_CODEPOINT
 import com.johnan.terminal.core.KittyUnicodePlaceholders
 import com.johnan.terminal.core.MouseEvent
 import com.johnan.terminal.core.MouseTrackingMode
+import com.johnan.terminal.core.PromptMark
+import com.johnan.terminal.core.PromptMarkType
 import com.johnan.terminal.core.ScreenBuffer
 import com.johnan.terminal.core.SearchState
 import com.johnan.terminal.core.SelectionState
@@ -82,6 +84,7 @@ fun TerminalCanvas(
     isDark: Boolean,
     cursorColor: Color,
     cursorStyle: TerminalCursorStyle = TerminalCursorStyle.BLOCK,
+    showPromptMarks: Boolean = true,
     baseTextStyle: TextStyle,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
     enabled: Boolean,
@@ -202,7 +205,8 @@ fun TerminalCanvas(
     // Optimization: Calculate terminal background once to use for both container background
     // and overdraw prevention check.
     val terminalBackgroundColor =
-        colorScheme?.background
+        terminalState.dynamicBackgroundRgb?.let { Color(0xFF000000 or it.toLong()) }
+            ?: colorScheme?.background
             ?: (if (isDark) Color(0xFF0D1117) else Color(0xFF1E1E1E))
 
     val currentTerminalCols by rememberUpdatedState(terminalCols)
@@ -1070,6 +1074,42 @@ fun TerminalCanvas(
                     if (p.anchorLine + p.rows - 1 < vFirst || p.anchorLine > vLast) continue
                     val bitmap = imageBitmapCache[p.imageId]?.second ?: continue
                     drawKittyPlacement(p, bitmap, cellWidth, cellHeight)
+                }
+            }
+
+            if (showPromptMarks && terminalState.promptMarks.isNotEmpty() && isVisibleRangeValid) {
+                for (i in 0 until terminalState.promptMarks.size) {
+                    val mark = terminalState.promptMarks[i]
+                    if (mark.type != PromptMarkType.PROMPT_START) continue
+                    if (mark.absoluteLine !in visibleRowRange) continue
+
+                    var finishedMark: PromptMark? = null
+                    for (j in (i + 1) until terminalState.promptMarks.size) {
+                        val nextMark = terminalState.promptMarks[j]
+                        if (nextMark.type == PromptMarkType.PROMPT_START) {
+                            break
+                        }
+                        if (nextMark.type == PromptMarkType.COMMAND_FINISHED) {
+                            finishedMark = nextMark
+                            break
+                        }
+                    }
+
+                    val indicatorColor = when {
+                        finishedMark != null && finishedMark.exitCode == 0 -> Color(0xFF4CAF50)
+                        finishedMark != null && finishedMark.exitCode != null && finishedMark.exitCode != 0 -> {
+                            Color(0xFFEF5350)
+                        }
+                        else -> Color(0xFF29B6F6)
+                    }
+
+                    val markY = mark.absoluteLine * cellHeight + verticalOffsetCanvas
+                    val barWidth = 3.dp.toPx().coerceAtLeast(2f)
+                    drawRect(
+                        color = indicatorColor,
+                        topLeft = Offset(0f, markY + 2f),
+                        size = androidx.compose.ui.geometry.Size(barWidth, (cellHeight - 4f).coerceAtLeast(2f)),
+                    )
                 }
             }
 

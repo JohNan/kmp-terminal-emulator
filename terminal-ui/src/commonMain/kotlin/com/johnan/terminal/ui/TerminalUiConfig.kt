@@ -73,6 +73,7 @@ data class TerminalKeyBarConfig(
 data class TerminalRenderOptimizationConfig(
     val cacheRowBatchCapacity: Int = 200,
     val contentPadding: PaddingValues = PaddingValues(0.dp),
+    val showPromptMarks: Boolean = true,
 )
 
 /**
@@ -157,6 +158,7 @@ class TerminalUiConfigBuilder {
         val builder = TerminalRenderOptimizationConfigBuilder().apply {
             cacheRowBatchCapacity = render.cacheRowBatchCapacity
             contentPadding = render.contentPadding
+            showPromptMarks = render.showPromptMarks
         }
         builder.init()
         render = builder.build()
@@ -221,8 +223,14 @@ class TerminalKeyBarConfigBuilder {
 class TerminalRenderOptimizationConfigBuilder {
     var cacheRowBatchCapacity: Int = 200
     var contentPadding: PaddingValues = PaddingValues(0.dp)
+    var showPromptMarks: Boolean = true
 
-    fun build() = TerminalRenderOptimizationConfig(cacheRowBatchCapacity, contentPadding)
+    fun build() =
+        TerminalRenderOptimizationConfig(
+            cacheRowBatchCapacity = cacheRowBatchCapacity,
+            contentPadding = contentPadding,
+            showPromptMarks = showPromptMarks,
+        )
 }
 
 /**

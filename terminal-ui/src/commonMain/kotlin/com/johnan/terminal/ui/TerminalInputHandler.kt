@@ -7,6 +7,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.unit.sp
 import com.johnan.terminal.core.ArrowDirection
+import com.johnan.terminal.core.KittyKeyboardProtocol
+import com.johnan.terminal.core.KeyEventType as CoreKeyEventType
 
 const val MAX_INPUT_BUFFER_SIZE = 100
 const val INPUT_BUFFER_TRIM_SIZE = 50
@@ -23,7 +25,27 @@ const val ESCAPE_CHAR = "\u001b"
 fun applyModifierToChar(
     char: Char,
     modifierState: ModifierKeyState,
+    kittyKeyboardFlags: Int = 0,
 ): String = when {
+    kittyKeyboardFlags != 0 -> {
+        var mods = 0
+        if (modifierState.ctrlPressed) mods = mods or KittyKeyboardProtocol.MODIFIER_CTRL
+        if (modifierState.altPressed) mods = mods or KittyKeyboardProtocol.MODIFIER_ALT
+        val cp = when (char) {
+            '\r', '\n' -> 13
+            '\t' -> 9
+            '\u007f', '\b' -> 127
+            else -> char.lowercaseChar().code
+        }
+        val shifted = if (char.isUpperCase()) char.code else null
+        KittyKeyboardProtocol.encodeKeyEvent(
+            codepoint = cp,
+            shiftedCodepoint = shifted,
+            modifiers = mods,
+            eventType = CoreKeyEventType.PRESS,
+            flags = kittyKeyboardFlags,
+        )
+    }
     modifierState.ctrlPressed -> {
         when (char.lowercaseChar()) {
             'a' -> "\u0001"
@@ -77,13 +99,78 @@ fun handleHardwareKeyEvent(
     keyEvent: androidx.compose.ui.input.key.KeyEvent,
     onInput: (String) -> Unit,
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
+    kittyKeyboardFlags: Int = 0,
 ): Boolean {
     val key = keyEvent.key
     val isCtrl = keyEvent.isCtrlPressed
     val isAlt = keyEvent.isAltPressed
     val isShift = keyEvent.isShiftPressed
 
-    if (isCtrl && !isAlt) {
+    if (kittyKeyboardFlags != 0) {
+        var mods = 0
+        if (isShift) mods = mods or KittyKeyboardProtocol.MODIFIER_SHIFT
+        if (isAlt) mods = mods or KittyKeyboardProtocol.MODIFIER_ALT
+        if (isCtrl) mods = mods or KittyKeyboardProtocol.MODIFIER_CTRL
+
+        val letterOffset = when (key) {
+            Key.A -> 0
+            Key.B -> 1
+            Key.C -> 2
+            Key.D -> 3
+            Key.E -> 4
+            Key.F -> 5
+            Key.G -> 6
+            Key.H -> 7
+            Key.I -> 8
+            Key.J -> 9
+            Key.K -> 10
+            Key.L -> 11
+            Key.M -> 12
+            Key.N -> 13
+            Key.O -> 14
+            Key.P -> 15
+            Key.Q -> 16
+            Key.R -> 17
+            Key.S -> 18
+            Key.T -> 19
+            Key.U -> 20
+            Key.V -> 21
+            Key.W -> 22
+            Key.X -> 23
+            Key.Y -> 24
+            Key.Z -> 25
+            else -> -1
+        }
+
+        val (cp, shiftedCp) = when {
+            letterOffset >= 0 && (isCtrl || isAlt) -> {
+                val base = 'a'.code + letterOffset
+                val shifted = if (isShift) 'A'.code + letterOffset else null
+                base to shifted
+            }
+            key == Key.Enter || key == Key.NumPadEnter -> 13 to null
+            key == Key.Tab -> 9 to null
+            key == Key.Backspace -> 127 to null
+            key == Key.Escape -> 27 to null
+            else -> null to null
+        }
+
+        if (cp != null) {
+            val seq = KittyKeyboardProtocol.encodeKeyEvent(
+                codepoint = cp,
+                shiftedCodepoint = shiftedCp,
+                modifiers = mods,
+                eventType = CoreKeyEventType.PRESS,
+                flags = kittyKeyboardFlags,
+            )
+            if (seq.isNotEmpty()) {
+                onInput(seq)
+                return true
+            }
+        }
+    }
+
+    if (kittyKeyboardFlags == 0 && isCtrl && !isAlt) {
         when (key) {
             Key.A -> {
                 onInput("\u0001")
@@ -217,7 +304,7 @@ fun handleHardwareKeyEvent(
         }
     }
 
-    if (isAlt && !isCtrl) {
+    if (kittyKeyboardFlags == 0 && isAlt && !isCtrl) {
         when (key) {
             Key.A -> {
                 onInput("\u001Ba")

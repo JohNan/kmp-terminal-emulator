@@ -19,7 +19,10 @@ data class PromptMark(
     val absLine: Int,
     val col: Int,
     val exitCode: Int? = null,
-)
+) {
+    val absoluteLine: Int
+        get() = absLine
+}
 
 /**
  * Parses OSC 7 (`file://hostname/path`) working directory URIs and decodes RFC 3986 percent-encoded UTF-8 sequences.
