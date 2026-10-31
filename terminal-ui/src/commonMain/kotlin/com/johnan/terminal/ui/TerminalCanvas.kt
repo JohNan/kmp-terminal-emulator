@@ -137,6 +137,7 @@ fun TerminalCanvas(
     }
 
     val activeSelectionController = selectionController ?: remember(
+        onStartDraggingStartCursor,
         onUpdateStartCursor,
         onFinalizeStartCursor,
         onStartDraggingEndCursor,
@@ -146,6 +147,7 @@ fun TerminalCanvas(
         onStartDirectTouchSelection,
     ) {
         SelectionController(
+            onStartDraggingStartCursor = onStartDraggingStartCursor,
             onUpdateStartCursor = onUpdateStartCursor,
             onFinalizeStartCursor = onFinalizeStartCursor,
             onStartDraggingEndCursor = onStartDraggingEndCursor,
@@ -225,7 +227,10 @@ fun TerminalCanvas(
             modifier
                 .fillMaxSize()
                 .semantics { contentDescription = "Terminal canvas" }
-                .verticalScroll(scrollState, enabled = selectionState is SelectionState.None)
+                .verticalScroll(
+                    scrollState,
+                    enabled = selectionState is SelectionState.None || selectionState is SelectionState.CopyModeActive,
+                )
                 .background(terminalBackgroundColor)
                 // Standard mode gestures - long-press direct selection and mouse tracking
                 .pointerInput(
@@ -237,6 +242,9 @@ fun TerminalCanvas(
                         awaitPointerEventScope {
                             while (true) {
                                 val downEvent = awaitFirstDown(requireUnconsumed = false)
+                                if (currentSelectionState !is SelectionState.None) {
+                                    continue
+                                }
                                 val downPos = downEvent.position
                                 val (downRow, downCol) = TerminalCoordinateConverter.screenToTerminal(
                                     offset = downPos,
@@ -459,6 +467,9 @@ fun TerminalCanvas(
                         awaitPointerEventScope {
                             while (true) {
                                 val downEvent = awaitFirstDown(requireUnconsumed = false)
+                                if (currentSelectionState !is SelectionState.None) {
+                                    continue
+                                }
                                 val downPos = downEvent.position
                                 var isMovedBeyondSlop = false
                                 var tapCompleted = false
@@ -471,9 +482,6 @@ fun TerminalCanvas(
                                         if (change == null || !change.pressed) {
                                             // Pointer released before longPressTimeoutMillis -> Tap
                                             onRequestFocus()
-                                            if (currentSelectionState !is SelectionState.None) {
-                                                selController.onClearSelection()
-                                            }
                                             val (row, col) = TerminalCoordinateConverter.screenToTerminal(
                                                 offset = downPos,
                                                 cellWidth = currentCellWidth,

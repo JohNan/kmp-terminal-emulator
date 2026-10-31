@@ -338,6 +338,7 @@ fun TerminalRenderer(
         val effectiveOnMouseEvent = onMouseEvent ?: defaultOnMouseEvent
 
         val effectiveSelectionController = selectionController ?: remember(
+            onStartDraggingStartCursor,
             onUpdateStartCursor,
             onFinalizeStartCursor,
             onStartDraggingEndCursor,
@@ -347,6 +348,7 @@ fun TerminalRenderer(
             onStartDirectTouchSelection,
         ) {
             SelectionController(
+                onStartDraggingStartCursor = onStartDraggingStartCursor,
                 onUpdateStartCursor = onUpdateStartCursor,
                 onFinalizeStartCursor = onFinalizeStartCursor,
                 onStartDraggingEndCursor = onStartDraggingEndCursor,
