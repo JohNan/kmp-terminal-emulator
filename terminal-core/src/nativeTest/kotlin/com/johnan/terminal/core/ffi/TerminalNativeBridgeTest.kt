@@ -4,6 +4,7 @@ package com.johnan.terminal.core.ffi
 
 import com.johnan.terminal.core.TerminalEmulator
 import com.johnan.terminal.core.TerminalPalette
+import com.johnan.terminal.core.UnderlineStyle
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -402,6 +403,152 @@ class TerminalNativeBridgeTest {
             // Cell 3: Wide spacer
             assertTrue((viewBuf[15] and TerminalEmulator.ATTR_WIDE_SPACER) != 0)
             assertEquals(0, viewBuf[15] and TerminalEmulator.ATTR_WIDE_CHAR)
+        } finally {
+            terminalDestroy(handle)
+        }
+    }
+
+    @Test
+    fun testTerminalCursorShapeAndControlModes() = memScoped {
+        val handle = terminalCreate(rows = 5, cols = 20, maxScrollback = 10, osc52PolicyOrdinal = 0)
+        try {
+            assertEquals(0, terminalGetCursorShape(handle))
+            assertEquals(0, terminalIsCursorBlinking(handle))
+            assertEquals(0, terminalIsSynchronizedOutputEnabled(handle))
+            assertEquals(0, terminalIsFocusReportingEnabled(handle))
+
+            // DECSCUSR 6: steady beam (shape = 2, blinking = 0)
+            val beamSeq = "\u001B[6 q"
+            terminalProcessBytes(handle, allocString(beamSeq), beamSeq.length)
+            assertEquals(2, terminalGetCursorShape(handle))
+            assertEquals(0, terminalIsCursorBlinking(handle))
+
+            // DECSCUSR 3: blinking underline (shape = 1, blinking = 1)
+            val underlineSeq = "\u001B[3 q"
+            terminalProcessBytes(handle, allocString(underlineSeq), underlineSeq.length)
+            assertEquals(1, terminalGetCursorShape(handle))
+            assertEquals(1, terminalIsCursorBlinking(handle))
+
+            // DEC mode 2026: Synchronized output
+            val syncOn = "\u001B[?2026h"
+            terminalProcessBytes(handle, allocString(syncOn), syncOn.length)
+            assertEquals(1, terminalIsSynchronizedOutputEnabled(handle))
+
+            val syncOff = "\u001B[?2026l"
+            terminalProcessBytes(handle, allocString(syncOff), syncOff.length)
+            assertEquals(0, terminalIsSynchronizedOutputEnabled(handle))
+
+            // DEC mode 1004: Focus reporting
+            val focusOn = "\u001B[?1004h"
+            terminalProcessBytes(handle, allocString(focusOn), focusOn.length)
+            assertEquals(1, terminalIsFocusReportingEnabled(handle))
+
+            val focusOff = "\u001B[?1004l"
+            terminalProcessBytes(handle, allocString(focusOff), focusOff.length)
+            assertEquals(0, terminalIsFocusReportingEnabled(handle))
+        } finally {
+            terminalDestroy(handle)
+        }
+    }
+
+    @Test
+    fun testTerminalKittyKeyboardAndDrainResponse() = memScoped {
+        val handle = terminalCreate(rows = 5, cols = 20, maxScrollback = 10, osc52PolicyOrdinal = 0)
+        try {
+            assertEquals(0, terminalGetKittyKeyboardFlags(handle))
+            assertEquals(-1, terminalDrainResponse(handle, null, 0))
+
+            // Push Kitty progressive keyboard flag: 1 (DISAMBIGUATE_ESCAPE_CODES)
+            val pushFlagSeq = "\u001B[>1u"
+            terminalProcessBytes(handle, allocString(pushFlagSeq), pushFlagSeq.length)
+            assertEquals(1, terminalGetKittyKeyboardFlags(handle))
+
+            // Query Kitty keyboard flags: \u001B[?u triggers response \u001B[?1u
+            val querySeq = "\u001B[?u"
+            terminalProcessBytes(handle, allocString(querySeq), querySeq.length)
+
+            val respLen = terminalDrainResponse(handle, null, 0)
+            assertEquals(5, respLen)
+
+            val respBuf = allocArray<ByteVar>(respLen)
+            val drainedLen = terminalDrainResponse(handle, respBuf, respLen)
+            assertEquals(5, drainedLen)
+            assertEquals("\u001B[?1u", respBuf.readBytes(drainedLen).decodeToString())
+
+            // Buffer should now be cleared
+            assertEquals(-1, terminalDrainResponse(handle, null, 0))
+
+            // Test key event encoding for Escape (codepoint 27) with flag 1
+            val encBuf = allocArray<ByteVar>(16)
+            val encLen = terminalEncodeKeyEvent(
+                handle = handle,
+                codepoint = 27,
+                modifiers = 0,
+                eventTypeOrdinal = 1,
+                outUtf8 = encBuf,
+                capacity = 16,
+            )
+            assertEquals(5, encLen)
+            assertEquals("\u001B[27u", encBuf.readBytes(encLen).decodeToString())
+        } finally {
+            terminalDestroy(handle)
+        }
+    }
+
+    @Test
+    fun testTerminalSemanticShellAndUnderlineStyleFfi() = memScoped {
+        val handle = terminalCreate(rows = 5, cols = 30, maxScrollback = 10, osc52PolicyOrdinal = 0)
+        try {
+            // Working directory unset initially
+            assertEquals(-1, terminalGetWorkingDirectory(handle, null, 0))
+            assertEquals(-1, terminalGetLastExitCode(handle))
+            assertEquals(0, terminalIsCommandRunning(handle))
+            assertEquals(-1, terminalExtractLastCommandOutput(handle, null, 0))
+
+            // Set working directory via OSC 7
+            val osc7 = "\u001B]7;file://localhost/tmp/testdir\u0007"
+            terminalProcessBytes(handle, allocString(osc7), osc7.length)
+
+            val cwdLen = terminalGetWorkingDirectory(handle, null, 0)
+            val expectedCwd = "/tmp/testdir"
+            assertEquals(expectedCwd.length, cwdLen)
+
+            val cwdBuf = allocArray<ByteVar>(cwdLen)
+            val writtenCwd = terminalGetWorkingDirectory(handle, cwdBuf, cwdLen)
+            assertEquals(cwdLen, writtenCwd)
+            assertEquals(expectedCwd, cwdBuf.readBytes(writtenCwd).decodeToString())
+
+            // Semantic command execution via OSC 133
+            val startCmd = "\u001B]133;A\u0007$ \u001B]133;B\u0007echo hi\r\n\u001B]133;C\u0007hi\r\n"
+            terminalProcessBytes(handle, allocString(startCmd), startCmd.length)
+            assertEquals(1, terminalIsCommandRunning(handle))
+
+            val cmdEnd = "\u001B]133;D;0\u0007"
+            terminalProcessBytes(handle, allocString(cmdEnd), cmdEnd.length)
+            assertEquals(0, terminalIsCommandRunning(handle))
+            assertEquals(0, terminalGetLastExitCode(handle))
+
+            val outLen = terminalExtractLastCommandOutput(handle, null, 0)
+            assertTrue(outLen > 0)
+            val outBuf = allocArray<ByteVar>(outLen)
+            val writtenOut = terminalExtractLastCommandOutput(handle, outBuf, outLen)
+            assertEquals(outLen, writtenOut)
+            assertEquals("hi", outBuf.readBytes(writtenOut).decodeToString().trim())
+
+            // Test UnderlineStyle FFI packing in readGrid / readViewport: SGR 4:3 (curly)
+            terminalClear(handle)
+            val curlySeq = "\u001B[4:3mCurly\u001B[0m"
+            terminalProcessBytes(handle, allocString(curlySeq), curlySeq.length)
+
+            val gridBuf = allocArray<IntVar>(20)
+            val cellsRead = terminalReadGrid(handle, gridBuf, 5, paletteOrdinal = 0)
+            assertTrue(cellsRead >= 5)
+
+            // Cell 0 should have UnderlineStyle.CURLY (ordinal 3) packed into bits 12..14
+            val attrs = gridBuf[3]
+            val styleOrdinal = (attrs and TerminalEmulator.ATTR_UNDERLINE_STYLE_MASK) shr
+                TerminalEmulator.ATTR_UNDERLINE_STYLE_SHIFT
+            assertEquals(UnderlineStyle.CURLY.ordinal, styleOrdinal)
         } finally {
             terminalDestroy(handle)
         }

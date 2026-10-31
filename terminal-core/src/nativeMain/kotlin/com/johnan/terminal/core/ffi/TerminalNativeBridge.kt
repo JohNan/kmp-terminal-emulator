@@ -2,6 +2,8 @@
 
 package com.johnan.terminal.core.ffi
 
+import com.johnan.terminal.core.CursorShape
+import com.johnan.terminal.core.KeyEventType
 import com.johnan.terminal.core.MouseTrackingMode
 import com.johnan.terminal.core.Osc52Policy
 import com.johnan.terminal.core.TerminalConfig
@@ -24,10 +26,13 @@ import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.CName
 
 internal class NativeTerminalHolder(
-    val emulator: TerminalEmulator
+    val emulator: TerminalEmulator,
 ) {
+    private val responseBuffer = StringBuilder()
+
     init {
         emulator.headlessMode = true
+        emulator.onTerminalResponse = { resp -> appendResponse(resp) }
     }
 
     private var scratchBuffer = ByteArray(4096)
@@ -41,6 +46,28 @@ internal class NativeTerminalHolder(
             scratchBuffer = ByteArray(newSize)
         }
         return scratchBuffer
+    }
+
+    fun appendResponse(resp: String) {
+        if (responseBuffer.length + resp.length <= 65536) {
+            responseBuffer.append(resp)
+        }
+    }
+
+    fun drainResponse(outUtf8: CPointer<ByteVar>?, capacity: Int): Int {
+        if (responseBuffer.isEmpty()) return -1
+        val bytes = responseBuffer.toString().encodeToByteArray()
+        if (outUtf8 == null || capacity <= 0) {
+            return bytes.size
+        }
+        val count = bytes.size.coerceAtMost(capacity)
+        for (i in 0 until count) {
+            outUtf8[i] = bytes[i]
+        }
+        if (capacity >= bytes.size) {
+            responseBuffer.clear()
+        }
+        return bytes.size
     }
 }
 
@@ -299,4 +326,105 @@ fun terminalGetLastClipboardWrite(
     val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
     val text = emulator.lastClipboardWrite ?: return -1
     return writeUtf8ToBuffer(text, outUtf8, capacity)
+}
+
+@CName("terminal_get_cursor_shape")
+fun terminalGetCursorShape(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return when (emulator.cursorShape) {
+        CursorShape.BLOCK -> 0
+        CursorShape.UNDERLINE -> 1
+        CursorShape.BEAM -> 2
+    }
+}
+
+@CName("terminal_is_cursor_blinking")
+fun terminalIsCursorBlinking(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return if (emulator.cursorBlinking) 1 else 0
+}
+
+@CName("terminal_is_synchronized_output_enabled")
+fun terminalIsSynchronizedOutputEnabled(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return if (emulator.synchronizedOutputEnabled) 1 else 0
+}
+
+@CName("terminal_is_focus_reporting_enabled")
+fun terminalIsFocusReportingEnabled(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return if (emulator.focusReportingEnabled) 1 else 0
+}
+
+@CName("terminal_get_kitty_keyboard_flags")
+fun terminalGetKittyKeyboardFlags(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return emulator.kittyKeyboardFlags
+}
+
+@CName("terminal_encode_key_event")
+fun terminalEncodeKeyEvent(
+    handle: COpaquePointer,
+    codepoint: Int,
+    modifiers: Int,
+    eventTypeOrdinal: Int,
+    outUtf8: CPointer<ByteVar>?,
+    capacity: Int,
+): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    val eventType = when (eventTypeOrdinal) {
+        2 -> KeyEventType.REPEAT
+        3 -> KeyEventType.RELEASE
+        else -> KeyEventType.PRESS
+    }
+    val encoded = emulator.encodeKeyEvent(
+        codepoint = codepoint,
+        modifiers = modifiers,
+        eventType = eventType,
+    )
+    return writeUtf8ToBuffer(encoded, outUtf8, capacity)
+}
+
+@CName("terminal_get_working_directory")
+fun terminalGetWorkingDirectory(
+    handle: COpaquePointer,
+    outUtf8: CPointer<ByteVar>?,
+    capacity: Int,
+): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    val cwd = emulator.currentWorkingDirectory.value ?: return -1
+    return writeUtf8ToBuffer(cwd, outUtf8, capacity)
+}
+
+@CName("terminal_get_last_exit_code")
+fun terminalGetLastExitCode(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return emulator.lastExitCode.value ?: -1
+}
+
+@CName("terminal_is_command_running")
+fun terminalIsCommandRunning(handle: COpaquePointer): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    return if (emulator.isCommandRunning.value) 1 else 0
+}
+
+@CName("terminal_extract_last_command_output")
+fun terminalExtractLastCommandOutput(
+    handle: COpaquePointer,
+    outUtf8: CPointer<ByteVar>?,
+    capacity: Int,
+): Int {
+    val emulator = handle.asStableRef<NativeTerminalHolder>().get().emulator
+    val output = emulator.extractLastCommandOutput() ?: return -1
+    return writeUtf8ToBuffer(output, outUtf8, capacity)
+}
+
+@CName("terminal_drain_response")
+fun terminalDrainResponse(
+    handle: COpaquePointer,
+    outUtf8: CPointer<ByteVar>?,
+    capacity: Int,
+): Int {
+    val holder = handle.asStableRef<NativeTerminalHolder>().get()
+    return holder.drainResponse(outUtf8, capacity)
 }

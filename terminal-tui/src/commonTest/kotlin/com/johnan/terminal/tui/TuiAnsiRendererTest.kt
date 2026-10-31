@@ -1,5 +1,6 @@
 package com.johnan.terminal.tui
 
+import com.johnan.terminal.core.UnderlineStyle
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -93,5 +94,37 @@ class TuiAnsiRendererTest {
 
         val output = renderer.render(surface)
         assertTrue(output.contains("\uDB81\uDEA9X"))
+    }
+
+    @Test
+    fun testExtendedUnderlineOverlineAndHyperlinkRendering() {
+        val renderer = TuiAnsiRenderer()
+        val surface = TuiSurface(rows = 2, cols = 10)
+        val style = TuiCellStyle.withUnderlineStyle(
+            TuiCellStyle.UNDERLINE or TuiCellStyle.OVERLINE,
+            UnderlineStyle.CURLY,
+        )
+        surface.setCell(
+            row = 0,
+            col = 0,
+            char = 'A',
+            fgRgb = 0xFFFFFF,
+            bgRgb = 0x000000,
+            style = style,
+            underlineRgb = 0xFF5050,
+            hyperlinkUrl = "https://example.com",
+        )
+
+        val output = renderer.render(surface)
+
+        // Verifies curly underline SGR 4:3
+        assertTrue(output.contains(";4:3"))
+        // Verifies overline SGR 53
+        assertTrue(output.contains(";53"))
+        // Verifies underline TrueColor SGR 58;2;255;80;80
+        assertTrue(output.contains(";58;2;255;80;80"))
+        // Verifies OSC 8 hyperlink opening and closing sequences
+        assertTrue(output.contains("\u001b]8;;https://example.com\u001b\\"))
+        assertTrue(output.contains("\u001b]8;;\u001b\\"))
     }
 }

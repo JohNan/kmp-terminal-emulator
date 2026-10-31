@@ -145,12 +145,12 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 - **Decoupled Tiered Architecture**: 
   - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models. Zero UI dependencies. Compiles to native C-ABI shared (`libterminal_core.so` / `libterminal_core.dylib`) and static (`libterminal_core.a`) libraries on Linux and macOS.
   - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, gesture recognizers, platform-native input capture, selection overlays, toolbar key bars, automatic DECSCUSR dynamic cursor shape mapping, OSC 10/11/12 live color overrides, OSC 133 prompt mark gutter indicators, and Kitty Progressive Keyboard input dispatch.
-  - `:terminal-tui`: Low-allocation differential ANSI terminal UI renderer, 24-bit TrueColor, offscreen grid surface (`TuiSurface`), and raw VT100 / SGR input parser (`TuiInputParser`).
+  - `:terminal-tui`: Low-allocation differential ANSI terminal UI renderer, 24-bit TrueColor, offscreen grid surface (`TuiSurface`), extended underline styles (`UnderlineStyle` / SGR `4:x`), 24-bit underline RGB (SGR `58;2;r;g;b`), overline (SGR `53`), OSC 8 explicit hyperlinks, and raw VT100 / SGR input parser (`TuiInputParser`).
 - **Native C-ABI & Zero-Allocation FFI Interop**:
   - Direct C-ABI dynamic and static library exports from `:terminal-core` for non-JVM / non-Compose runtimes.
   - Additive synchronous execution APIs (`processOutputSync`, `resizeSync`, `clearSync`, `resetSync`, `searchSync`).
   - Zero-allocation bulk grid serializer (`packGridToBuffer`) packing cell data into contiguous integers (codepoint, fg RGB, bg RGB, attribute bitmask) for high-throughput FFI consumers (Rust, C, C++).
-  - Safe, idiomatic Rust bindings crate (`kmp-terminal-rs` in `demo-rust`).
+  - Full protocol parity across C-ABI and Rust FFI (`kmp-terminal-rs` in `demo-rust`), providing `CursorShape`, `UnderlineStyle`, response draining (`drain_response`), Kitty keyboard flags (`kitty_keyboard_flags`), key event encoding (`encode_key_event`), working directory tracking (`working_directory`), exit codes (`last_exit_code`), command execution status (`is_command_running`), and semantic output extraction (`extract_last_command_output`).
 - **Type-Safe Configuration & Palette System**:
   - `TerminalConfig` & `terminalConfig { ... }` DSL for core engine dimensions, scrollback capacity, OSC 52 security policies, tab stops, and bell behavior.
   - `TerminalPalette`: Pure Kotlin 24-bit RGB color palette models and fast ANSI code resolution (`TerminalColor.toRgbInt`).
@@ -394,17 +394,36 @@ val firstRowWraps = next.getScreenBuffer().isRowWrapped(0)
 
 ### 5. Native C-ABI & Rust FFI Integration (`terminal-core` / `demo-rust`)
 
-`:terminal-core` exports a flat C-ABI allowing native runtimes (Rust, C, C++) to drive the terminal emulator without JVM overhead. The `demo-rust` crate (`kmp-terminal-rs`) provides safe, idiomatic Rust RAII bindings and zero-allocation bulk grid reading:
+`:terminal-core` exports a flat C-ABI allowing native runtimes (Rust, C, C++) to drive the terminal emulator without JVM overhead. The `demo-rust` crate (`kmp-terminal-rs`) provides safe, idiomatic Rust RAII bindings, zero-allocation bulk grid reading, and full protocol parity:
 
 ```rust
-use kmp_terminal_rs::{PackedCell, Palette, Terminal};
+use kmp_terminal_rs::{CursorShape, PackedCell, Palette, Terminal, UnderlineStyle};
 
 fn main() {
     // Instantiate terminal emulator via C-ABI (rows, cols)
     let mut term = Terminal::new(24, 80);
 
     // Process ANSI byte stream synchronously
-    term.process_str("\x1b[32mHello from Rust!\x1b[0m\r\n");
+    term.process_str("\x1b]133;A\x1b\\\x1b]7;file://localhost/home/user\x1b\\prompt$ \x1b]133;B\x1b\\cargo build\r\n\x1b]133;C\x1b\\Compiling...\r\n\x1b]133;D;0\x1b\\");
+
+    // Inspect semantic shell integration state
+    println!("Working directory: {:?}", term.working_directory());
+    println!("Command running: {}", term.is_command_running());
+    println!("Last exit code: {:?}", term.last_exit_code());
+    println!("Last command output: {:?}", term.extract_last_command_output());
+
+    // Drain pending terminal responses (DA1, CPR, DECRQM)
+    let mut resp = [0u8; 256];
+    if let Some(bytes) = term.drain_response(&mut resp) {
+        println!("Terminal response: {:?}", String::from_utf8_lossy(bytes));
+    }
+
+    // Query active cursor shape and Kitty keyboard protocol flags
+    let cursor_shape: CursorShape = term.cursor_shape();
+    let kitty_flags = term.kitty_keyboard_flags();
+
+    // Encode key events using Kitty progressive keyboard protocol
+    let encoded_key = term.encode_key_event(b'a' as i32, 0, 1, 0, None);
 
     // Zero-allocation bulk grid reading into pre-allocated buffer
     let mut cells = vec![
@@ -421,10 +440,12 @@ fn main() {
     for cell in &cells[..count] {
         if cell.codepoint != 0 && cell.codepoint != 32 {
             println!(
-                "Cell: char='{}', fg={:06x}, bg={:06x}",
+                "Cell: char='{}', fg={:06x}, bg={:06x}, underline={:?}, overline={}",
                 cell.ch(),
                 cell.fg_rgb,
-                cell.bg_rgb
+                cell.bg_rgb,
+                cell.underline_style(),
+                cell.attrs().overline()
             );
         }
     }
@@ -436,7 +457,9 @@ fn main() {
 Build native command-line interfaces and terminal applications using `TuiSurface` and `TuiAnsiRenderer`:
 
 ```kotlin
+import com.johnan.terminal.core.UnderlineStyle
 import com.johnan.terminal.tui.TuiAnsiRenderer
+import com.johnan.terminal.tui.TuiCellStyle
 import com.johnan.terminal.tui.TuiInputParser
 import com.johnan.terminal.tui.TuiSurface
 import com.johnan.terminal.tui.createPlatformTerminalIo
@@ -452,6 +475,22 @@ try {
     // Draw borders, titles, and text
     surface.drawBox(row = 0, col = 0, height = size.rows, width = size.cols, title = "Console", borderFgRgb = 0x88C0D0, bgRgb = 0x2E3440)
     surface.drawText(row = 2, col = 4, text = "Ready.", fgRgb = 0xECEFF4, bgRgb = 0x2E3440)
+
+    // Set cell with styled underline (SGR 4:3), RGB underline color (SGR 58;2;r;g;b), overline (SGR 53), and OSC 8 hyperlink
+    val styledAttr = TuiCellStyle.withUnderlineStyle(
+        TuiCellStyle.BOLD or TuiCellStyle.OVERLINE,
+        UnderlineStyle.CURLY,
+    )
+    surface.setCell(
+        row = 3,
+        col = 4,
+        char = '🔗',
+        fgRgb = 0x88C0D0,
+        bgRgb = 0x2E3440,
+        style = styledAttr,
+        underlineRgb = 0xBF616A,
+        hyperlinkUrl = "https://github.com/JohNan/kmp-terminal-emulator",
+    )
 
     // Atomically render differential updates to stdout
     io.writeStdout(renderer.render(surface))

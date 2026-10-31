@@ -1,5 +1,7 @@
 package com.johnan.terminal.tui
 
+import com.johnan.terminal.core.UnderlineStyle
+
 /**
  * Low-allocation differential ANSI renderer converting [TuiSurface] states
  * into minimal ANSI escape sequences with TrueColor and synchronized updates.
@@ -39,6 +41,8 @@ class TuiAnsiRenderer {
         var currentFg = -1
         var currentBg = -1
         var currentStyle = -1
+        var currentUlRgb = -2
+        var currentHyperlink: String? = null
         var lastCursorRow = -1
         var lastCursorCol = -1
 
@@ -49,27 +53,41 @@ class TuiAnsiRenderer {
                 val fg = surface.getFgRgb(r, c)
                 val bg = surface.getBgRgb(r, c)
                 val style = surface.getStyle(r, c)
+                val ulRgb = surface.getUnderlineRgb(r, c)
+                val link = surface.getHyperlink(r, c)
 
                 val changed = isFull ||
                     char != prev.getChar(r, c) ||
                     cp != prev.getCodepoint(r, c) ||
                     fg != prev.getFgRgb(r, c) ||
                     bg != prev.getBgRgb(r, c) ||
-                    style != prev.getStyle(r, c)
+                    style != prev.getStyle(r, c) ||
+                    ulRgb != prev.getUnderlineRgb(r, c) ||
+                    link != prev.getHyperlink(r, c)
 
                 if (changed) {
                     if (cp == 0) continue
                     if (r != lastCursorRow || c != lastCursorCol) {
+                        if (currentHyperlink != null) {
+                            sb.append("\u001b]8;;\u001b\\")
+                            currentHyperlink = null
+                        }
                         sb.append("\u001b[").append(r + 1).append(';').append(c + 1).append('H')
                         lastCursorRow = r
                         lastCursorCol = c
                     }
 
-                    if (fg != currentFg || bg != currentBg || style != currentStyle) {
-                        appendSgr(sb, fg, bg, style)
+                    if (link != currentHyperlink) {
+                        sb.append("\u001b]8;;").append(link ?: "").append("\u001b\\")
+                        currentHyperlink = link
+                    }
+
+                    if (fg != currentFg || bg != currentBg || style != currentStyle || ulRgb != currentUlRgb) {
+                        appendSgr(sb, fg, bg, style, ulRgb)
                         currentFg = fg
                         currentBg = bg
                         currentStyle = style
+                        currentUlRgb = ulRgb
                     }
 
                     if (cp <= 0xFFFF) {
@@ -85,7 +103,11 @@ class TuiAnsiRenderer {
             }
         }
 
-        if (currentStyle != -1 || currentFg != -1 || currentBg != -1) {
+        if (currentHyperlink != null) {
+            sb.append("\u001b]8;;\u001b\\")
+        }
+
+        if (currentStyle != -1 || currentFg != -1 || currentBg != -1 || currentUlRgb != -2) {
             sb.append("\u001b[0m")
         }
 
@@ -105,15 +127,27 @@ class TuiAnsiRenderer {
         return sb.toString()
     }
 
-    private fun appendSgr(sb: StringBuilder, fg: Int, bg: Int, style: Int) {
+    private fun appendSgr(sb: StringBuilder, fg: Int, bg: Int, style: Int, ulRgb: Int = -1) {
         sb.append("\u001b[0")
         if ((style and TuiCellStyle.BOLD) != 0) sb.append(";1")
         if ((style and TuiCellStyle.DIM) != 0) sb.append(";2")
         if ((style and TuiCellStyle.ITALIC) != 0) sb.append(";3")
-        if ((style and TuiCellStyle.UNDERLINE) != 0) sb.append(";4")
+
+        val ulStyle = TuiCellStyle.getUnderlineStyle(style)
+        if (ulStyle != UnderlineStyle.NONE) {
+            if (ulStyle == UnderlineStyle.SINGLE) {
+                sb.append(";4")
+            } else {
+                sb.append(";4:").append(ulStyle.ordinal)
+            }
+        } else if ((style and TuiCellStyle.UNDERLINE) != 0) {
+            sb.append(";4")
+        }
+
         if ((style and TuiCellStyle.BLINK) != 0) sb.append(";5")
         if ((style and TuiCellStyle.REVERSE) != 0) sb.append(";7")
         if ((style and TuiCellStyle.STRIKETHROUGH) != 0) sb.append(";9")
+        if ((style and TuiCellStyle.OVERLINE) != 0) sb.append(";53")
 
         val fgR = (fg shr 16) and 0xFF
         val fgG = (fg shr 8) and 0xFF
@@ -124,6 +158,13 @@ class TuiAnsiRenderer {
         val bgG = (bg shr 8) and 0xFF
         val bgB = bg and 0xFF
         sb.append(";48;2;").append(bgR).append(';').append(bgG).append(';').append(bgB)
+
+        if (ulRgb >= 0) {
+            val ulR = (ulRgb shr 16) and 0xFF
+            val ulG = (ulRgb shr 8) and 0xFF
+            val ulB = ulRgb and 0xFF
+            sb.append(";58;2;").append(ulR).append(';').append(ulG).append(';').append(ulB)
+        }
 
         sb.append('m')
     }
