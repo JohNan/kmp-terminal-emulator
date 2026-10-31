@@ -11,6 +11,7 @@ class TerminalGestureDetectorTest {
     fun testSelectionControllerDefaultCallbacks() {
         val controller = SelectionController()
         // Ensure default no-op lambdas can be invoked safely without throwing
+        controller.onStartDraggingStartCursor(0, 0)
         controller.onUpdateStartCursor(0, 0)
         controller.onFinalizeStartCursor()
         controller.onStartDraggingEndCursor(1, 1)
@@ -42,6 +43,7 @@ class TerminalGestureDetectorTest {
 
     @Test
     fun testSelectionControllerAllCallbacksWired() {
+        var startCursorDragStarted = false
         var startCursorUpdated = false
         var startCursorFinalized = false
         var endCursorDragStarted = false
@@ -51,6 +53,7 @@ class TerminalGestureDetectorTest {
         var directTouchSelectionStarted = false
 
         val controller = SelectionController(
+            onStartDraggingStartCursor = { _, _ -> startCursorDragStarted = true },
             onUpdateStartCursor = { _, _ -> startCursorUpdated = true },
             onFinalizeStartCursor = { startCursorFinalized = true },
             onStartDraggingEndCursor = { _, _ -> endCursorDragStarted = true },
@@ -60,6 +63,7 @@ class TerminalGestureDetectorTest {
             onStartDirectTouchSelection = { _, _ -> directTouchSelectionStarted = true },
         )
 
+        controller.onStartDraggingStartCursor(0, 1)
         controller.onUpdateStartCursor(1, 2)
         controller.onFinalizeStartCursor()
         controller.onStartDraggingEndCursor(3, 4)
@@ -68,6 +72,7 @@ class TerminalGestureDetectorTest {
         controller.onClearSelection()
         controller.onStartDirectTouchSelection(7, 8)
 
+        assertTrue(startCursorDragStarted)
         assertTrue(startCursorUpdated)
         assertTrue(startCursorFinalized)
         assertTrue(endCursorDragStarted)

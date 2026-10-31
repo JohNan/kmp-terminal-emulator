@@ -17,6 +17,7 @@ import kotlin.math.roundToInt
  */
 @Immutable
 class SelectionController(
+    val onStartDraggingStartCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
     val onUpdateStartCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
     val onFinalizeStartCursor: () -> Unit = {},
     val onStartDraggingEndCursor: (row: Int, col: Int) -> Unit = { _, _ -> },
@@ -179,7 +180,7 @@ fun Modifier.terminalGestures(
     scrollbackLineCount = scrollbackLineCount,
     verticalOffset = verticalOffset,
     onSingleTap = onSingleTap,
-    onStartDraggingStartCursor = selectionController.onStartDraggingEndCursor,
+    onStartDraggingStartCursor = selectionController.onStartDraggingStartCursor,
     onUpdateStartCursor = selectionController.onUpdateStartCursor,
     onFinalizeStartCursor = selectionController.onFinalizeStartCursor,
     onStartDraggingEndCursor = selectionController.onStartDraggingEndCursor,
