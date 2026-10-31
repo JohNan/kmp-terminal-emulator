@@ -16,6 +16,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 8. **Semantic Shell Integration & Explicit Hyperlinks**: Added OSC 8 explicit hyperlink support (`TerminalCell.hyperlinkUrl`, `UrlRange.url`), OSC 7 and OSC 9;9 Current Working Directory tracking (`TerminalEmulator.currentWorkingDirectory`), and OSC 133 semantic prompt mark integration (`PromptMark`, `PromptMarkType`, `lastExitCode`, `isCommandRunning`, `findPreviousPromptLine`, `findNextPromptLine`, `extractLastCommandOutput`).
 9. **Kitty Progressive Keyboard Protocol**: Added progressive keyboard enhancement protocol support in `terminal-core` (`KittyKeyboardProtocol`, `KeyEventType`, `kittyKeyboardFlags`, `encodeKeyEvent`) and extended `:terminal-tui` (`TuiInputParser`, `TuiEvent.Key.eventType`, `toAnsiSequence(..., kittyKeyboardFlags)`).
 10. **Dynamic Palette & Color Overrides (OSC 4/10/11/12/104/110/111/112)** & **DCS Capability Queries (XTGETTCAP / DECRQSS)**: Added dynamic RGB color queries/overrides for foreground, background, cursor, and 256-color palette indices, alongside terminfo capability retrieval (`DCS + q`) and status string queries (`DCS $ q`).
+11. **`:terminal-ui` Protocol Visual Binding & Enhanced Keyboard Handling**: Added `showPromptMarks` to `TerminalRenderOptimizationConfig`, dynamic DECSCUSR cursor shape rendering (`CursorShape.BLOCK`, `UNDERLINE`, `BEAM`), OSC 10/11/12 dynamic canvas background and cursor color binding, and `kittyKeyboardFlags` parameter to `applyModifierToChar` and `handleHardwareKeyEvent`.
 
 ---
 
@@ -617,6 +618,73 @@ val effectiveBg = emulator.getEffectiveBackgroundRgb()
 val effectiveCursor = emulator.getEffectiveCursorRgb()
 val effectivePal1 = emulator.getEffectivePaletteRgb(1)
 ```
+
+---
+
+### Recipe 19: `:terminal-ui` Protocol Visual Binding & Enhanced Keyboard Handling
+
+Consumers of `:terminal-ui` now benefit from automatic visual synchronization with core protocol states (DECSCUSR cursor shape, OSC 10/11/12 dynamic background/cursor colors, and OSC 133 semantic prompt gutter marks), alongside Kitty Progressive Keyboard Protocol hardware and soft-keyboard event emission.
+
+#### Visual Synchronization in `TerminalRenderer`
+- **Dynamic Cursor Shapes (DECSCUSR)**: `TerminalRenderer` automatically maps `terminalState.cursorShape` (`CursorShape.BLOCK`, `UNDERLINE`, `BEAM`) to the rendered cursor. If `config.cursor.style` is explicitly set to a non-default style, it serves as the user preference or fallback.
+- **Dynamic Colors (OSC 10/11/12)**: `TerminalRenderer` applies `terminalState.dynamicBackgroundRgb` and `terminalState.dynamicCursorRgb` to canvas drawing passes.
+- **Semantic Prompt Gutter Marks (OSC 133)**: Renders a 3dp left-gutter status bar next to prompt and command execution blocks:
+  - Green for successfully executed commands (`exitCode == 0`).
+  - Red for failed commands (`exitCode != 0`).
+  - Cyan for running commands or active input prompts.
+
+#### Before (`TerminalUiConfig` without semantic prompt marks)
+```kotlin
+val uiConfig = terminalUiConfig {
+    render {
+        cacheRowBatchCapacity = 300
+    }
+}
+```
+
+#### After (Enabling or disabling semantic prompt marks)
+```kotlin
+val uiConfig = terminalUiConfig {
+    render {
+        cacheRowBatchCapacity = 300
+        showPromptMarks = true // Defaults to true; set to false to disable left-gutter indicators
+    }
+}
+```
+
+#### Before (Keyboard handling without Kitty Keyboard Protocol)
+```kotlin
+// Soft-key bar / modifier character transformation
+val modifiedText = applyModifierToChar('a', modifierState)
+
+// Hardware key event dispatch
+handleHardwareKeyEvent(
+    keyEvent = event,
+    onInput = { input -> sendToPty(input) },
+    onArrowKey = { arrow, shift -> sendArrow(arrow, shift) },
+)
+```
+
+#### After (Passing `kittyKeyboardFlags` from active terminal state)
+```kotlin
+val activeFlags = terminalState.kittyKeyboardFlags
+
+// Soft-key bar character transformation with active Kitty flags
+val modifiedText = applyModifierToChar(
+    char = 'a',
+    modifierState = modifierState,
+    kittyKeyboardFlags = activeFlags,
+) // Emits "\u001B[97;5u" when DISAMBIGUATE_ESCAPE_CODES is active
+
+// Hardware key event dispatch with active Kitty flags
+handleHardwareKeyEvent(
+    keyEvent = event,
+    onInput = { input -> sendToPty(input) },
+    onArrowKey = { arrow, shift -> sendArrow(arrow, shift) },
+    kittyKeyboardFlags = activeFlags,
+)
+```
+
 
 
 

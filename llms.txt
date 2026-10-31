@@ -10,7 +10,7 @@
 ## Core API References
 - [Core Configuration](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalConfig.kt): `TerminalConfig`, `terminalConfig { ... }`, `BellBehavior`
 - [Terminal Palette](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalPalette.kt): `TerminalPalette`, `parseOscColorSpec`, `formatOscRgbResponse`, `getIndexedRgb`, `TerminalColor.toRgbInt`
-- [UI Configuration](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalUiConfig.kt): `TerminalUiConfig`, `terminalUiConfig { ... }`, `TerminalGestureConfig` (`touchScrollSendsWheelOnly`), `LocalTerminalUiConfig`, `TerminalCursorStyle`
+- [UI Configuration](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalUiConfig.kt): `TerminalUiConfig`, `terminalUiConfig { ... }`, `TerminalRenderOptimizationConfig` (`showPromptMarks`, `cacheRowBatchCapacity`), `TerminalGestureConfig` (`touchScrollSendsWheelOnly`), `LocalTerminalUiConfig`, `TerminalCursorStyle`
 - [Terminal Color Scheme](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/core/TerminalColorScheme.kt): `TerminalColorScheme`, `TerminalColor.toComposeColor`
 - [TUI Surface](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiSurface.kt): `TuiSurface`, `TuiCellStyle`
 - [TUI ANSI Renderer](terminal-tui/src/commonMain/kotlin/com/johnan/terminal/tui/TuiAnsiRenderer.kt): `TuiAnsiRenderer`
@@ -25,7 +25,8 @@
 - [Terminal Cell & Underline Styles](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalCell.kt): `TerminalCell`, `hyperlinkUrl` (OSC 8), `UnderlineStyle` (`NONE`, `SINGLE`, `DOUBLE`, `CURLY`, `DOTTED`, `DASHED`), `underlineColor`, SGR 4:x / 21 / 58:2
 - [Cursor Shapes](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/CursorShape.kt): `CursorShape` (`BLOCK`, `UNDERLINE`, `BEAM`)
 - [Terminal Canvas & Batching](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalCanvas.kt): `TerminalCanvas`, `RenderBatch` (`underlineStyle`, `underlineColor`), zero-allocation styled underlines
-- [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable, DEC 1004 focus reporting
+- [Terminal Renderer](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalRenderer.kt): `TerminalRenderer` composable, DEC 1004 focus reporting, dynamic DECSCUSR cursor shape binding, OSC 10/11/12 dynamic color binding, OSC 133 semantic prompt mark gutter indicators
+- [Terminal Input Handler](terminal-ui/src/commonMain/kotlin/com/johnan/terminal/ui/TerminalInputHandler.kt): `TerminalInputCapture`, `ModifierKeyState`, `applyModifierToChar(char, modifierState, kittyKeyboardFlags)`, `handleHardwareKeyEvent(keyEvent, onInput, onArrowKey, kittyKeyboardFlags)`
 - [Text Selection](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/TerminalSelection.kt): `TerminalSelection`, `SelectionState`
 - [Native C-ABI FFI Bridge](terminal-core/src/nativeMain/kotlin/com/johnan/terminal/core/ffi/TerminalNativeBridge.kt): `terminal_create`, `terminal_copy`, `terminal_destroy`, `terminal_process_bytes`, `terminal_read_grid`, `terminal_extract_selection`
 - [Kitty Graphics Engine](terminal-core/src/commonMain/kotlin/com/johnan/terminal/core/KittyGraphics.kt): `TerminalImage`, `TerminalImagePlacement`, `KittyImageFormat`

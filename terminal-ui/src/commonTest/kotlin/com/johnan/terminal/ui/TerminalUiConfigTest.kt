@@ -47,6 +47,7 @@ class TerminalUiConfigTest {
 
         // Render optimization
         assertEquals(200, config.render.cacheRowBatchCapacity)
+        assertTrue(config.render.showPromptMarks)
     }
 
     @Test
@@ -79,6 +80,7 @@ class TerminalUiConfigTest {
             }
             render {
                 cacheRowBatchCapacity = 500
+                showPromptMarks = false
             }
             colorScheme = TerminalColorScheme.SOLARIZED_DARK
         }
@@ -105,6 +107,7 @@ class TerminalUiConfigTest {
         assertEquals("esc", config.keyBar.items.first().id)
 
         assertEquals(500, config.render.cacheRowBatchCapacity)
+        assertFalse(config.render.showPromptMarks)
         assertEquals(TerminalColorScheme.SOLARIZED_DARK, config.colorScheme)
     }
 
@@ -121,5 +124,25 @@ class TerminalUiConfigTest {
         assertTrue(config.cursor.blink)
         assertEquals(TerminalColorScheme.MONOKAI, config.colorScheme)
         assertEquals(14.sp, config.typography.fontSize)
+    }
+
+    @Test
+    fun testShowPromptMarksConfiguration() {
+        val defaultConfig = TerminalUiConfig.DEFAULT
+        assertTrue(defaultConfig.render.showPromptMarks)
+
+        val disabledConfig = terminalUiConfig {
+            render {
+                showPromptMarks = false
+            }
+        }
+        assertFalse(disabledConfig.render.showPromptMarks)
+
+        val enabledConfig = terminalUiConfig {
+            render {
+                showPromptMarks = true
+            }
+        }
+        assertTrue(enabledConfig.render.showPromptMarks)
     }
 }

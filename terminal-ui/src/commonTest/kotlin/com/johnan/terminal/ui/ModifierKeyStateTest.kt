@@ -1,6 +1,9 @@
 package com.johnan.terminal.core
+
 import com.johnan.terminal.ui.ModifierKeyState
+import com.johnan.terminal.ui.applyModifierToChar
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -92,9 +95,52 @@ class ModifierKeyStateTest {
         val ctrlState = ModifierKeyState(ctrlPressed = true)
         val altState = ModifierKeyState(altPressed = true)
 
-        kotlin.test.assertEquals("\u000A", com.johnan.terminal.ui.applyModifierToChar('\r', ctrlState))
-        kotlin.test.assertEquals("\u000A", com.johnan.terminal.ui.applyModifierToChar('\n', ctrlState))
-        kotlin.test.assertEquals("\u001B\r", com.johnan.terminal.ui.applyModifierToChar('\r', altState))
-        kotlin.test.assertEquals("\u001B\r", com.johnan.terminal.ui.applyModifierToChar('\n', altState))
+        assertEquals("\u000A", applyModifierToChar('\r', ctrlState))
+        assertEquals("\u000A", applyModifierToChar('\n', ctrlState))
+        assertEquals("\u001B\r", applyModifierToChar('\r', altState))
+        assertEquals("\u001B\r", applyModifierToChar('\n', altState))
+    }
+
+    @Test
+    fun `applyModifierToChar with legacy flags`() {
+        val ctrlState = ModifierKeyState(ctrlPressed = true)
+        val altState = ModifierKeyState(altPressed = true)
+
+        assertEquals("\u0001", applyModifierToChar('a', ctrlState, kittyKeyboardFlags = 0))
+        assertEquals("\u001bx", applyModifierToChar('x', altState, kittyKeyboardFlags = 0))
+    }
+
+    @Test
+    fun `applyModifierToChar with progressive disambiguate escape codes`() {
+        val ctrlState = ModifierKeyState(ctrlPressed = true)
+        val altState = ModifierKeyState(altPressed = true)
+        val ctrlAltState = ModifierKeyState(ctrlPressed = true, altPressed = true)
+
+        assertEquals(
+            "\u001B[97;5u",
+            applyModifierToChar('a', ctrlState, kittyKeyboardFlags = 1),
+        )
+        assertEquals(
+            "\u001B[120;3u",
+            applyModifierToChar('x', altState, kittyKeyboardFlags = 1),
+        )
+        assertEquals(
+            "\u001B[99;7u",
+            applyModifierToChar('c', ctrlAltState, kittyKeyboardFlags = 1),
+        )
+    }
+
+    @Test
+    fun `applyModifierToChar with report all keys as escape codes`() {
+        val defaultState = ModifierKeyState()
+
+        assertEquals(
+            "\u001B[97u",
+            applyModifierToChar('a', defaultState, kittyKeyboardFlags = 8),
+        )
+        assertEquals(
+            "\u001B[13u",
+            applyModifierToChar('\r', defaultState, kittyKeyboardFlags = 8),
+        )
     }
 }

@@ -15,12 +15,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import com.johnan.terminal.core.ArrowDirection
+import com.johnan.terminal.core.CursorShape
+import com.johnan.terminal.core.KittyKeyboardProtocol
 import com.johnan.terminal.core.SearchState
 import com.johnan.terminal.core.SelectionState
 import com.johnan.terminal.core.TerminalCell
@@ -71,9 +74,19 @@ fun TerminalRenderer(
 
     val effectiveColorScheme = colorScheme ?: config.colorScheme
 
-    val cursorColor =
-        config.cursor.overrideColor
-            ?: effectiveColorScheme.cursor.copy(alpha = 0.5f)
+    val effectiveCursorStyle = if (config.cursor.style != TerminalCursorStyle.BLOCK) {
+        config.cursor.style
+    } else {
+        when (terminalState.cursorShape) {
+            CursorShape.BLOCK -> TerminalCursorStyle.BLOCK
+            CursorShape.UNDERLINE -> TerminalCursorStyle.UNDERLINE
+            CursorShape.BEAM -> TerminalCursorStyle.BEAM
+        }
+    }
+
+    val cursorColor = config.cursor.overrideColor
+        ?: terminalState.dynamicCursorRgb?.let { Color(0xFF000000 or it.toLong()).copy(alpha = 0.5f) }
+        ?: effectiveColorScheme.cursor.copy(alpha = 0.5f)
 
     val density = LocalDensity.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -207,19 +220,50 @@ fun TerminalRenderer(
         }
 
         val handleSoftInput: (String) -> Unit =
-            remember(onInput, modifierKeyState, onModifierStateChange) {
+            remember(onInput, modifierKeyState, onModifierStateChange, terminalState.kittyKeyboardFlags) {
                 { input ->
                     forceScrollSignal++
                     autoScrollEnabled = true
 
-                    if (modifierKeyState.ctrlPressed || modifierKeyState.altPressed) {
-                        val transformed = buildString(input.length) {
-                            for (i in 0 until input.length) {
-                                append(applyModifierToChar(input[i], modifierKeyState))
+                    if (modifierKeyState.ctrlPressed ||
+                        modifierKeyState.altPressed ||
+                        terminalState.kittyKeyboardFlags != 0
+                    ) {
+                        when {
+                            modifierKeyState.ctrlPressed || modifierKeyState.altPressed -> {
+                                val transformed = buildString(input.length) {
+                                    for (i in 0 until input.length) {
+                                        append(
+                                            applyModifierToChar(
+                                                char = input[i],
+                                                modifierState = modifierKeyState,
+                                                kittyKeyboardFlags = terminalState.kittyKeyboardFlags,
+                                            ),
+                                        )
+                                    }
+                                }
+                                onInput(transformed)
+                                onModifierStateChange(ModifierKeyState())
                             }
+                            (
+                                terminalState.kittyKeyboardFlags and
+                                    KittyKeyboardProtocol.REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                            ) != 0 -> {
+                                val transformed = buildString(input.length) {
+                                    for (i in 0 until input.length) {
+                                        append(
+                                            applyModifierToChar(
+                                                char = input[i],
+                                                modifierState = modifierKeyState,
+                                                kittyKeyboardFlags = terminalState.kittyKeyboardFlags,
+                                            ),
+                                        )
+                                    }
+                                }
+                                onInput(transformed)
+                            }
+                            else -> onInput(input)
                         }
-                        onInput(transformed)
-                        onModifierStateChange(ModifierKeyState())
                     } else {
                         onInput(input)
                     }
@@ -325,7 +369,8 @@ fun TerminalRenderer(
             viewportHeightPx = maxHeightPx,
             isDark = isDark,
             cursorColor = cursorColor,
-            cursorStyle = config.cursor.style,
+            cursorStyle = effectiveCursorStyle,
+            showPromptMarks = config.render.showPromptMarks,
             baseTextStyle = baseTextStyle,
             textMeasurer = textMeasurer,
             enabled = enabled,

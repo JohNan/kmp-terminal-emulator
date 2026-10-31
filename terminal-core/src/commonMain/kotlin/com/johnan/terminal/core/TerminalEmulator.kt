@@ -526,6 +526,7 @@ class TerminalEmulator(
             dynamicForegroundRgb = dynamicForegroundRgb,
             dynamicBackgroundRgb = dynamicBackgroundRgb,
             dynamicCursorRgb = dynamicCursorRgb,
+            promptMarks = screenBuffer.getPromptMarks(),
         )
     }
 
@@ -781,6 +782,7 @@ data class TerminalScreenState(
     val dynamicForegroundRgb: Int? = null,
     val dynamicBackgroundRgb: Int? = null,
     val dynamicCursorRgb: Int? = null,
+    val promptMarks: List<PromptMark> = emptyList(),
 ) {
     companion object {
         fun from(
@@ -798,6 +800,7 @@ data class TerminalScreenState(
             dynamicForegroundRgb: Int? = null,
             dynamicBackgroundRgb: Int? = null,
             dynamicCursorRgb: Int? = null,
+            promptMarks: List<PromptMark> = buffer.getPromptMarks(),
         ): TerminalScreenState {
             var contentHeight = 0
             for (i in 0 until buffer.rows) {
@@ -830,6 +833,7 @@ data class TerminalScreenState(
                 dynamicForegroundRgb = dynamicForegroundRgb,
                 dynamicBackgroundRgb = dynamicBackgroundRgb,
                 dynamicCursorRgb = dynamicCursorRgb,
+                promptMarks = promptMarks,
             )
         }
     }
