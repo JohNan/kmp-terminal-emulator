@@ -3,15 +3,32 @@ updates:
   - package-ecosystem: "gradle"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    groups:
+      gradle-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # Pinned to 1.17.0 for compileSdk 36 compatibility (1.18.0+ requires SDK 37)
       - dependency-name: "androidx.core:core-ktx"
         versions: [">= 1.18.0"]
+
   - package-ecosystem: "npm"
     directory: "/demo-vite"
     schedule:
       interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "cargo"
+    directory: "/demo-rust"
+    schedule:
+      interval: "weekly"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
