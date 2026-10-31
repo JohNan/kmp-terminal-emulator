@@ -4,6 +4,7 @@ import com.johnan.terminal.core.TerminalCell
 import com.johnan.terminal.core.TerminalColor
 import com.johnan.terminal.core.TerminalPalette
 import com.johnan.terminal.core.TerminalScreenState
+import com.johnan.terminal.core.UnderlineStyle
 
 /**
  * Text styling attributes for TUI cells bitwise-OR'd together.
@@ -17,6 +18,25 @@ object TuiCellStyle {
     const val BLINK = 1 shl 4
     const val REVERSE = 1 shl 5
     const val STRIKETHROUGH = 1 shl 6
+    const val OVERLINE = 1 shl 7
+
+    const val UNDERLINE_STYLE_SHIFT = 8
+    const val UNDERLINE_STYLE_MASK = 0x7 shl 8
+
+    fun withUnderlineStyle(style: Int, underlineStyle: UnderlineStyle): Int =
+        (style and UNDERLINE_STYLE_MASK.inv()) or ((underlineStyle.ordinal and 0x7) shl UNDERLINE_STYLE_SHIFT)
+
+    fun getUnderlineStyle(style: Int): UnderlineStyle {
+        val ord = (style and UNDERLINE_STYLE_MASK) ushr UNDERLINE_STYLE_SHIFT
+        val base = UnderlineStyle.entries.getOrElse(ord) {
+            if ((style and UNDERLINE) != 0) UnderlineStyle.SINGLE else UnderlineStyle.NONE
+        }
+        return if (base == UnderlineStyle.NONE && (style and UNDERLINE) != 0) {
+            UnderlineStyle.SINGLE
+        } else {
+            base
+        }
+    }
 }
 
 /**
@@ -25,7 +45,7 @@ object TuiCellStyle {
  */
 class TuiSurface(
     val rows: Int,
-    val cols: Int
+    val cols: Int,
 ) {
     private val totalCells = rows * cols
     private val chars = CharArray(totalCells)
@@ -33,6 +53,8 @@ class TuiSurface(
     private val fgRgbArray = IntArray(totalCells)
     private val bgRgbArray = IntArray(totalCells)
     private val styleArray = IntArray(totalCells)
+    private val underlineRgbArray = IntArray(totalCells) { -1 }
+    private val hyperlinkArray = arrayOfNulls<String>(totalCells)
 
     var cursorRow: Int = 0
     var cursorCol: Int = 0
@@ -51,6 +73,8 @@ class TuiSurface(
         fgRgbArray.fill(fgRgb)
         bgRgbArray.fill(bgRgb)
         styleArray.fill(TuiCellStyle.NONE)
+        underlineRgbArray.fill(-1)
+        hyperlinkArray.fill(null)
     }
 
     /**
@@ -64,6 +88,8 @@ class TuiSurface(
         bgRgb: Int,
         style: Int = TuiCellStyle.NONE,
         codepoint: Int = char.code,
+        underlineRgb: Int = -1,
+        hyperlinkUrl: String? = null,
     ) {
         if (row in 0 until rows && col in 0 until cols) {
             val index = row * cols + col
@@ -72,6 +98,8 @@ class TuiSurface(
             fgRgbArray[index] = fgRgb
             bgRgbArray[index] = bgRgb
             styleArray[index] = style
+            underlineRgbArray[index] = underlineRgb
+            hyperlinkArray[index] = hyperlinkUrl
         }
     }
 
@@ -90,6 +118,12 @@ class TuiSurface(
     fun getStyle(row: Int, col: Int): Int =
         if (row in 0 until rows && col in 0 until cols) styleArray[row * cols + col] else TuiCellStyle.NONE
 
+    fun getUnderlineRgb(row: Int, col: Int): Int =
+        if (row in 0 until rows && col in 0 until cols) underlineRgbArray[row * cols + col] else -1
+
+    fun getHyperlink(row: Int, col: Int): String? =
+        if (row in 0 until rows && col in 0 until cols) hyperlinkArray[row * cols + col] else null
+
     /**
      * Fills a rectangular region of the surface.
      */
@@ -101,7 +135,7 @@ class TuiSurface(
         char: Char = ' ',
         fgRgb: Int,
         bgRgb: Int,
-        style: Int = TuiCellStyle.NONE
+        style: Int = TuiCellStyle.NONE,
     ) {
         val endRow = minOf(rows, row + height)
         val endCol = minOf(cols, col + width)
@@ -122,7 +156,7 @@ class TuiSurface(
         fgRgb: Int,
         bgRgb: Int,
         style: Int = TuiCellStyle.NONE,
-        maxWidth: Int = cols - col
+        maxWidth: Int = cols - col,
     ) {
         if (row !in 0 until rows || col >= cols) return
         val limit = minOf(text.length, maxWidth, cols - col)
@@ -142,7 +176,7 @@ class TuiSurface(
         title: String? = null,
         borderFgRgb: Int,
         bgRgb: Int,
-        titleFgRgb: Int = borderFgRgb
+        titleFgRgb: Int = borderFgRgb,
     ) {
         if (height < 2 || width < 2) return
 
@@ -190,7 +224,7 @@ class TuiSurface(
         height: Int,
         width: Int,
         palette: TerminalPalette = TerminalPalette.DEFAULT,
-        scrollOffset: Int = 0
+        scrollOffset: Int = 0,
     ) {
         val startLine = maxOf(0, state.scrollback.size - scrollOffset)
         val renderHeight = minOf(height, rows - destRow)
@@ -209,13 +243,13 @@ class TuiSurface(
                     cell.getEffectiveForegroundColor(),
                     palette,
                     isDark = true,
-                    isBackground = false
+                    isBackground = false,
                 )
                 val rawBg = TerminalColor.toRgbInt(
                     cell.getEffectiveBackgroundColor(),
                     palette,
                     isDark = true,
-                    isBackground = true
+                    isBackground = true,
                 )
                 val bg = if (rawBg == TerminalColor.TRANSPARENT_RGB) palette.background else rawBg
 
@@ -227,6 +261,16 @@ class TuiSurface(
                 if (cell.blink) style = style or TuiCellStyle.BLINK
                 if (cell.reverse) style = style or TuiCellStyle.REVERSE
                 if (cell.strikethrough) style = style or TuiCellStyle.STRIKETHROUGH
+                if (cell.overline) style = style or TuiCellStyle.OVERLINE
+                if (cell.underline && cell.underlineStyle != UnderlineStyle.NONE) {
+                    style = TuiCellStyle.withUnderlineStyle(style, cell.underlineStyle)
+                }
+
+                val ulRgb = if (cell.underlineColor === TerminalColor.Default) {
+                    -1
+                } else {
+                    TerminalColor.toRgbInt(cell.underlineColor, palette, isDark = true, isBackground = false)
+                }
 
                 val cp = if (cell.isWideSpacer) {
                     0
@@ -236,7 +280,17 @@ class TuiSurface(
                     cell.codepoint
                 }
                 val ch = if (cp in 1..0xFFFF) cp.toChar() else ' '
-                setCell(destRow + r, destCol + c, ch, fg, bg, style, cp)
+                setCell(
+                    destRow + r,
+                    destCol + c,
+                    ch,
+                    fg,
+                    bg,
+                    style,
+                    cp,
+                    underlineRgb = ulRgb,
+                    hyperlinkUrl = cell.hyperlinkUrl,
+                )
             }
         }
 
@@ -267,6 +321,8 @@ class TuiSurface(
         other.fgRgbArray.copyInto(fgRgbArray, 0, 0, count)
         other.bgRgbArray.copyInto(bgRgbArray, 0, 0, count)
         other.styleArray.copyInto(styleArray, 0, 0, count)
+        other.underlineRgbArray.copyInto(underlineRgbArray, 0, 0, count)
+        other.hyperlinkArray.copyInto(hyperlinkArray, 0, 0, count)
         cursorRow = other.cursorRow
         cursorCol = other.cursorCol
         cursorVisible = other.cursorVisible

@@ -17,6 +17,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 9. **Kitty Progressive Keyboard Protocol**: Added progressive keyboard enhancement protocol support in `terminal-core` (`KittyKeyboardProtocol`, `KeyEventType`, `kittyKeyboardFlags`, `encodeKeyEvent`) and extended `:terminal-tui` (`TuiInputParser`, `TuiEvent.Key.eventType`, `toAnsiSequence(..., kittyKeyboardFlags)`).
 10. **Dynamic Palette & Color Overrides (OSC 4/10/11/12/104/110/111/112)** & **DCS Capability Queries (XTGETTCAP / DECRQSS)**: Added dynamic RGB color queries/overrides for foreground, background, cursor, and 256-color palette indices, alongside terminfo capability retrieval (`DCS + q`) and status string queries (`DCS $ q`).
 11. **`:terminal-ui` Protocol Visual Binding & Enhanced Keyboard Handling**: Added `showPromptMarks` to `TerminalRenderOptimizationConfig`, dynamic DECSCUSR cursor shape rendering (`CursorShape.BLOCK`, `UNDERLINE`, `BEAM`), OSC 10/11/12 dynamic canvas background and cursor color binding, and `kittyKeyboardFlags` parameter to `applyModifierToChar` and `handleHardwareKeyEvent`.
+12. **`:terminal-tui` Protocol Parity & Full C-ABI / Rust FFI Bindings**: Extended `:terminal-tui` with `UnderlineStyle` (SGR `4:x`), 24-bit underline RGB (SGR `58;2;r;g;b`), `OVERLINE` (SGR `53`), and `OSC 8` explicit hyperlinks in `TuiSurface` and `TuiAnsiRenderer`. Expanded native C-ABI exports and safe Rust crate (`kmp-terminal-rs`) to full protocol parity (`CursorShape`, `UnderlineStyle`, `drain_response`, `kitty_keyboard_flags`, `encode_key_event`, `working_directory`, `last_exit_code`, `is_command_running`, `extract_last_command_output`).
 
 ---
 
@@ -684,6 +685,109 @@ handleHardwareKeyEvent(
     kittyKeyboardFlags = activeFlags,
 )
 ```
+
+---
+
+### Recipe 20: `:terminal-tui` Protocol Parity & Full C-ABI / Rust FFI Bindings
+
+#### 1. `:terminal-tui` Extended Underlines, Colors, Overline & Hyperlinks
+
+##### Before
+```kotlin
+import com.johnan.terminal.tui.TuiAnsiRenderer
+import com.johnan.terminal.tui.TuiCellStyle
+import com.johnan.terminal.tui.TuiSurface
+
+val surface = TuiSurface(rows = 10, cols = 40)
+// Basic underline only, no overline, underline color, or OSC 8 hyperlinks
+surface.setCell(0, 0, 'X', 0xFFFFFF, 0x000000, TuiCellStyle.UNDERLINE)
+```
+
+##### After
+```kotlin
+import com.johnan.terminal.core.UnderlineStyle
+import com.johnan.terminal.tui.TuiAnsiRenderer
+import com.johnan.terminal.tui.TuiCellStyle
+import com.johnan.terminal.tui.TuiSurface
+
+val surface = TuiSurface(rows = 10, cols = 40)
+
+// Combine styling attributes with styled underlines and overline
+val style = TuiCellStyle.withUnderlineStyle(
+    TuiCellStyle.BOLD or TuiCellStyle.OVERLINE,
+    UnderlineStyle.CURLY, // NONE, SINGLE, DOUBLE, CURLY, DOTTED, DASHED
+)
+
+// Set cell with TrueColor underline (SGR 58;2;r;g;b) and OSC 8 hyperlink URL
+surface.setCell(
+    row = 0,
+    col = 0,
+    char = 'X',
+    fgRgb = 0xE2E8F0,
+    bgRgb = 0x090D16,
+    style = style,
+    underlineRgb = 0xFF5050, // -1 for default underline color
+    hyperlinkUrl = "https://example.com",
+)
+
+// Differential renderer automatically emits:
+// - SGR 4:3 for curly underline
+// - SGR 53 for overline
+// - SGR 58;2;255;80;80 for underline RGB
+// - OSC 8 hyperlink escape sequences: \e]8;;https://example.com\e\ ... \e]8;;\e\
+val renderer = TuiAnsiRenderer()
+val ansiString = renderer.render(surface)
+```
+
+#### 2. Native C-ABI & Rust FFI Protocol Parity (`kmp-terminal-rs`)
+
+##### Before
+```rust
+use kmp_terminal_rs::{PackedCell, Palette, Terminal};
+
+let mut term = Terminal::new(24, 80);
+term.process_str("hello\r\n");
+```
+
+##### After
+```rust
+use kmp_terminal_rs::{CursorShape, PackedCell, Palette, Terminal, UnderlineStyle};
+
+let mut term = Terminal::new(24, 80);
+
+// Synchronously feed ANSI stream with FTCS semantic prompts and OSC 7 CWD
+term.process_str("\x1b]133;A\x1b\\\x1b]7;file://localhost/tmp\x1b\\$ \x1b]133;B\x1b\\ls\r\n\x1b]133;C\x1b\\file.txt\r\n\x1b]133;D;0\x1b\\");
+
+// Inspect semantic shell state
+let cwd = term.working_directory(); // Option<String>
+let running = term.is_command_running(); // bool
+let exit_code = term.last_exit_code(); // Option<i32>
+let output = term.extract_last_command_output(); // Option<String>
+
+// Drain terminal responses (CPR cursor position, DA1 device attributes, etc.)
+let mut resp_buf = [0u8; 512];
+if let Some(resp) = term.drain_response(&mut resp_buf) {
+    println!("Response: {:?}", String::from_utf8_lossy(resp));
+}
+
+// Query active DECSCUSR cursor shape and Kitty Progressive Keyboard flags
+let shape: CursorShape = term.cursor_shape(); // CursorShape::Block, Underline, Beam
+let kitty_flags: u32 = term.kitty_keyboard_flags();
+
+// Encode key event via Kitty progressive keyboard protocol
+let encoded: Option<String> = term.encode_key_event(b'x' as i32, 0, 1, 0, None);
+
+// Read cell grid with styled underline and overline support
+let mut cells = vec![PackedCell::default(); (term.rows() * term.cols()) as usize];
+let count = term.read_grid_into(&mut cells, Palette::Default);
+
+for cell in &cells[..count] {
+    let ul_style: UnderlineStyle = cell.underline_style();
+    let is_overline: bool = cell.attrs().overline();
+    let is_hyperlink: bool = cell.attrs().hyperlink();
+}
+```
+
 
 
 

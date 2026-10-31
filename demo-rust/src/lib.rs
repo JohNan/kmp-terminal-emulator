@@ -72,7 +72,58 @@ pub mod ffi {
             scrollback_offset: i32,
             palette_ordinal: i32,
         ) -> i32;
+        pub fn terminal_get_cursor_shape(handle: *mut c_void) -> i32;
+        pub fn terminal_is_cursor_blinking(handle: *mut c_void) -> i32;
+        pub fn terminal_is_synchronized_output_enabled(handle: *mut c_void) -> i32;
+        pub fn terminal_is_focus_reporting_enabled(handle: *mut c_void) -> i32;
+        pub fn terminal_get_kitty_keyboard_flags(handle: *mut c_void) -> i32;
+        pub fn terminal_encode_key_event(
+            handle: *mut c_void,
+            codepoint: i32,
+            modifiers: i32,
+            event_type_ordinal: i32,
+            out_utf8: *mut i8,
+            capacity: i32,
+        ) -> i32;
+        pub fn terminal_get_working_directory(
+            handle: *mut c_void,
+            out_utf8: *mut i8,
+            capacity: i32,
+        ) -> i32;
+        pub fn terminal_get_last_exit_code(handle: *mut c_void) -> i32;
+        pub fn terminal_is_command_running(handle: *mut c_void) -> i32;
+        pub fn terminal_extract_last_command_output(
+            handle: *mut c_void,
+            out_utf8: *mut i8,
+            capacity: i32,
+        ) -> i32;
+        pub fn terminal_drain_response(
+            handle: *mut c_void,
+            out_utf8: *mut i8,
+            capacity: i32,
+        ) -> i32;
     }
+}
+
+/// DECSCUSR cursor shape state reported by the terminal engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum CursorShape {
+    Block = 0,
+    Underline = 1,
+    Beam = 2,
+}
+
+/// SGR 4:x underline rendering styles per ITU T.416 / modern terminal extensions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum UnderlineStyle {
+    None = 0,
+    Single = 1,
+    Double = 2,
+    Curly = 3,
+    Dotted = 4,
+    Dashed = 5,
 }
 
 /// Security policy for terminal OSC 52 clipboard write operations.
@@ -153,6 +204,8 @@ impl CellAttributes {
     pub const ROW_WRAPPED: u32 = 1 << 9;
     pub const WIDE_CHAR: u32 = 1 << 10;
     pub const WIDE_SPACER: u32 = 1 << 11;
+    pub const UNDERLINE_STYLE_SHIFT: u32 = 12;
+    pub const UNDERLINE_STYLE_MASK: u32 = 0x7 << 12;
 
     #[inline]
     pub fn bold(&self) -> bool {
@@ -212,6 +265,18 @@ impl CellAttributes {
     #[inline]
     pub fn wide_spacer(&self) -> bool {
         (self.0 & Self::WIDE_SPACER) != 0
+    }
+
+    #[inline]
+    pub fn underline_style(&self) -> UnderlineStyle {
+        match (self.0 & Self::UNDERLINE_STYLE_MASK) >> Self::UNDERLINE_STYLE_SHIFT {
+            1 => UnderlineStyle::Single,
+            2 => UnderlineStyle::Double,
+            3 => UnderlineStyle::Curly,
+            4 => UnderlineStyle::Dotted,
+            5 => UnderlineStyle::Dashed,
+            _ => UnderlineStyle::None,
+        }
     }
 }
 
@@ -537,6 +602,82 @@ impl Terminal {
             ffi::terminal_get_last_clipboard_write(handle, ptr, cap)
         })
     }
+
+    /// Returns the active cursor shape (Block, Underline, Beam).
+    pub fn cursor_shape(&self) -> CursorShape {
+        let shape = unsafe { ffi::terminal_get_cursor_shape(self.handle.as_ptr()) };
+        match shape {
+            1 => CursorShape::Underline,
+            2 => CursorShape::Beam,
+            _ => CursorShape::Block,
+        }
+    }
+
+    /// Returns whether cursor blinking is active.
+    pub fn cursor_blinking(&self) -> bool {
+        unsafe { ffi::terminal_is_cursor_blinking(self.handle.as_ptr()) != 0 }
+    }
+
+    /// Returns whether synchronized output mode (DEC mode 2026) is active.
+    pub fn synchronized_output(&self) -> bool {
+        unsafe { ffi::terminal_is_synchronized_output_enabled(self.handle.as_ptr()) != 0 }
+    }
+
+    /// Returns whether focus reporting mode (DEC mode 1004) is active.
+    pub fn focus_reporting(&self) -> bool {
+        unsafe { ffi::terminal_is_focus_reporting_enabled(self.handle.as_ptr()) != 0 }
+    }
+
+    /// Returns the active Kitty keyboard protocol progressive enhancement flags.
+    pub fn kitty_keyboard_flags(&self) -> i32 {
+        unsafe { ffi::terminal_get_kitty_keyboard_flags(self.handle.as_ptr()) }
+    }
+
+    /// Encodes a keyboard event using the active Kitty keyboard flags of the terminal.
+    pub fn encode_key_event(&self, codepoint: i32, modifiers: i32, event_type: i32) -> String {
+        let handle = self.handle.as_ptr();
+        self.read_ffi_string(|ptr, cap| unsafe {
+            ffi::terminal_encode_key_event(handle, codepoint, modifiers, event_type, ptr, cap)
+        })
+        .unwrap_or_default()
+    }
+
+    /// Returns the current working directory set via OSC 7, or None.
+    pub fn working_directory(&self) -> Option<String> {
+        let handle = self.handle.as_ptr();
+        self.read_ffi_string(|ptr, cap| unsafe {
+            ffi::terminal_get_working_directory(handle, ptr, cap)
+        })
+    }
+
+    /// Returns the last semantic command exit code set via OSC 133 D, or None if no command has completed.
+    pub fn last_exit_code(&self) -> Option<i32> {
+        let code = unsafe { ffi::terminal_get_last_exit_code(self.handle.as_ptr()) };
+        if code < 0 {
+            None
+        } else {
+            Some(code)
+        }
+    }
+
+    /// Returns whether a semantic command is currently running between OSC 133 C and OSC 133 D.
+    pub fn is_command_running(&self) -> bool {
+        unsafe { ffi::terminal_is_command_running(self.handle.as_ptr()) != 0 }
+    }
+
+    /// Extracts the text output of the most recent semantic command between OSC 133 C and OSC 133 D, or None.
+    pub fn extract_last_command_output(&self) -> Option<String> {
+        let handle = self.handle.as_ptr();
+        self.read_ffi_string(|ptr, cap| unsafe {
+            ffi::terminal_extract_last_command_output(handle, ptr, cap)
+        })
+    }
+
+    /// Drains any pending terminal responses (e.g. Kitty keyboard queries, device attribute responses), or None.
+    pub fn drain_response(&mut self) -> Option<String> {
+        let handle = self.handle.as_ptr();
+        self.read_ffi_string(|ptr, cap| unsafe { ffi::terminal_drain_response(handle, ptr, cap) })
+    }
 }
 
 #[cfg(kmp_terminal_linked)]
@@ -683,6 +824,61 @@ impl Terminal {
 
     /// Returns None in stub mode.
     pub fn last_clipboard_write(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns default cursor shape (Block) in stub mode.
+    pub fn cursor_shape(&self) -> CursorShape {
+        CursorShape::Block
+    }
+
+    /// Returns cursor blinking (false) in stub mode.
+    pub fn cursor_blinking(&self) -> bool {
+        false
+    }
+
+    /// Returns synchronized output (false) in stub mode.
+    pub fn synchronized_output(&self) -> bool {
+        false
+    }
+
+    /// Returns focus reporting (false) in stub mode.
+    pub fn focus_reporting(&self) -> bool {
+        false
+    }
+
+    /// Returns 0 in stub mode.
+    pub fn kitty_keyboard_flags(&self) -> i32 {
+        0
+    }
+
+    /// Returns empty string in stub mode.
+    pub fn encode_key_event(&self, _codepoint: i32, _modifiers: i32, _event_type: i32) -> String {
+        String::new()
+    }
+
+    /// Returns None in stub mode.
+    pub fn working_directory(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns None in stub mode.
+    pub fn last_exit_code(&self) -> Option<i32> {
+        None
+    }
+
+    /// Returns false in stub mode.
+    pub fn is_command_running(&self) -> bool {
+        false
+    }
+
+    /// Returns None in stub mode.
+    pub fn extract_last_command_output(&self) -> Option<String> {
+        None
+    }
+
+    /// Returns None in stub mode.
+    pub fn drain_response(&mut self) -> Option<String> {
         None
     }
 }
@@ -1072,5 +1268,139 @@ mod tests {
             let scrolled = term.read_viewport(1, Palette::AnsiRaw);
             assert_eq!(scrolled.len(), 30);
         }
+    }
+
+    #[test]
+    fn test_underline_style_bitmask() {
+        let none = CellAttributes(0);
+        assert_eq!(none.underline_style(), UnderlineStyle::None);
+
+        let single = CellAttributes(
+            (UnderlineStyle::Single as u32) << CellAttributes::UNDERLINE_STYLE_SHIFT,
+        );
+        assert_eq!(single.underline_style(), UnderlineStyle::Single);
+
+        let double = CellAttributes(
+            (UnderlineStyle::Double as u32) << CellAttributes::UNDERLINE_STYLE_SHIFT,
+        );
+        assert_eq!(double.underline_style(), UnderlineStyle::Double);
+
+        let curly =
+            CellAttributes((UnderlineStyle::Curly as u32) << CellAttributes::UNDERLINE_STYLE_SHIFT);
+        assert_eq!(curly.underline_style(), UnderlineStyle::Curly);
+
+        let dotted = CellAttributes(
+            (UnderlineStyle::Dotted as u32) << CellAttributes::UNDERLINE_STYLE_SHIFT,
+        );
+        assert_eq!(dotted.underline_style(), UnderlineStyle::Dotted);
+
+        let dashed = CellAttributes(
+            (UnderlineStyle::Dashed as u32) << CellAttributes::UNDERLINE_STYLE_SHIFT,
+        );
+        assert_eq!(dashed.underline_style(), UnderlineStyle::Dashed);
+    }
+
+    #[test]
+    fn test_cursor_shape_and_control_modes() {
+        if !is_native_linked() {
+            return;
+        }
+        let mut term = Terminal::new(5, 20);
+        assert_eq!(term.cursor_shape(), CursorShape::Block);
+        assert!(!term.cursor_blinking());
+        assert!(!term.synchronized_output());
+        assert!(!term.focus_reporting());
+
+        // DECSCUSR 6: steady beam (shape = Beam, blinking = false)
+        term.process_str("\x1b[6 q");
+        assert_eq!(term.cursor_shape(), CursorShape::Beam);
+        assert!(!term.cursor_blinking());
+
+        // DECSCUSR 3: blinking underline (shape = Underline, blinking = true)
+        term.process_str("\x1b[3 q");
+        assert_eq!(term.cursor_shape(), CursorShape::Underline);
+        assert!(term.cursor_blinking());
+
+        // DEC mode 2026: Synchronized output
+        term.process_str("\x1b[?2026h");
+        assert!(term.synchronized_output());
+        term.process_str("\x1b[?2026l");
+        assert!(!term.synchronized_output());
+
+        // DEC mode 1004: Focus reporting
+        term.process_str("\x1b[?1004h");
+        assert!(term.focus_reporting());
+        term.process_str("\x1b[?1004l");
+        assert!(!term.focus_reporting());
+    }
+
+    #[test]
+    fn test_kitty_keyboard_and_drain_response() {
+        if !is_native_linked() {
+            return;
+        }
+        let mut term = Terminal::new(5, 20);
+        assert_eq!(term.kitty_keyboard_flags(), 0);
+        assert_eq!(term.drain_response(), None);
+
+        // Push Kitty progressive keyboard flag: 1 (DISAMBIGUATE_ESCAPE_CODES)
+        term.process_str("\x1b[>1u");
+        assert_eq!(term.kitty_keyboard_flags(), 1);
+
+        // Query Kitty keyboard flags: \x1b[?u triggers response \x1b[?1u
+        term.process_str("\x1b[?u");
+        assert_eq!(term.drain_response(), Some("\x1b[?1u".to_string()));
+        assert_eq!(term.drain_response(), None);
+
+        // Encode key event for Escape (codepoint 27) with active flag 1
+        let encoded = term.encode_key_event(27, 0, 1);
+        assert_eq!(encoded, "\x1b[27u");
+    }
+
+    #[test]
+    fn test_semantic_shell_integration() {
+        if !is_native_linked() {
+            return;
+        }
+        let mut term = Terminal::new(5, 30);
+        assert_eq!(term.working_directory(), None);
+        assert_eq!(term.last_exit_code(), None);
+        assert!(!term.is_command_running());
+        assert_eq!(term.extract_last_command_output(), None);
+
+        // OSC 7 working directory
+        term.process_str("\x1b]7;file://localhost/tmp/rust-project\x07");
+        assert_eq!(
+            term.working_directory(),
+            Some("/tmp/rust-project".to_string()),
+        );
+
+        // OSC 133 semantic command execution
+        term.process_str(
+            "\x1b]133;A\x07$ \x1b]133;B\x07cargo test\r\n\x1b]133;C\x07test passed\r\n",
+        );
+        assert!(term.is_command_running());
+
+        term.process_str("\x1b]133;D;0\x07");
+        assert!(!term.is_command_running());
+        assert_eq!(term.last_exit_code(), Some(0));
+
+        let output = term.extract_last_command_output();
+        assert!(output.is_some());
+        assert_eq!(output.unwrap().trim(), "test passed");
+    }
+
+    #[test]
+    fn test_underline_style_from_terminal() {
+        if !is_native_linked() {
+            return;
+        }
+        let mut term = Terminal::new(5, 20);
+        term.process_str("\x1b[4:3mCurly\x1b[0m");
+
+        let grid = term.read_grid(Palette::Default);
+        assert_eq!(grid[0].ch(), 'C');
+        assert!(grid[0].attrs().underline());
+        assert_eq!(grid[0].attrs().underline_style(), UnderlineStyle::Curly);
     }
 }

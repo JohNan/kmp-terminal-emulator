@@ -17,7 +17,7 @@ class TerminalEmulator(
     val config: TerminalConfig = TerminalConfig.DEFAULT,
     private val onOsc52WriteRequested: ((text: String, onConfirm: () -> Unit) -> Unit)? = null,
     private val logCallback: ((String) -> Unit)? = null,
-    private val onTerminalResponse: ((String) -> Unit)? = null,
+    internal var onTerminalResponse: ((String) -> Unit)? = null,
 ) {
     @Deprecated(
         message = "Use primary constructor with TerminalConfig",
@@ -719,6 +719,9 @@ class TerminalEmulator(
                 if (cell.conceal) attrs = attrs or ATTR_CONCEAL
                 if (cell.width == 2) attrs = attrs or ATTR_WIDE_CHAR
                 if (cell.isWideSpacer) attrs = attrs or ATTR_WIDE_SPACER
+                if (cell.underlineStyle != UnderlineStyle.NONE) {
+                    attrs = attrs or ((cell.underlineStyle.ordinal and 0x7) shl ATTR_UNDERLINE_STYLE_SHIFT)
+                }
 
                 writeCell(outOffset, cell.codepoint, fgRgb, bgRgb, attrs)
                 outOffset += PACKED_CELL_INTS
@@ -752,6 +755,8 @@ class TerminalEmulator(
         const val ATTR_ROW_WRAPPED: Int = 1 shl 9
         const val ATTR_WIDE_CHAR: Int = 1 shl 10
         const val ATTR_WIDE_SPACER: Int = 1 shl 11
+        const val ATTR_UNDERLINE_STYLE_SHIFT: Int = 12
+        const val ATTR_UNDERLINE_STYLE_MASK: Int = 0x7 shl 12
     }
 }
 

@@ -4,6 +4,7 @@ import com.johnan.terminal.core.ScreenBuffer
 import com.johnan.terminal.core.TerminalColor
 import com.johnan.terminal.core.TerminalPalette
 import com.johnan.terminal.core.TerminalScreenState
+import com.johnan.terminal.core.UnderlineStyle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -218,5 +219,35 @@ class TuiSurfaceTest {
         assertEquals(1, s2.cursorRow)
         assertEquals(2, s2.cursorCol)
         assertFalse(s2.cursorVisible)
+    }
+
+    @Test
+    fun testBlitScreenStatePreservesUnderlineStyleColorOverlineAndHyperlink() {
+        val buffer = ScreenBuffer(initialRows = 2, initialCols = 10)
+        buffer.setTextAttributes(
+            underlineStyle = UnderlineStyle.CURLY,
+            underlineColor = TerminalColor.Rgb(255, 80, 80),
+            overline = true,
+        )
+        buffer.setHyperlinkUrl("https://example.com")
+        buffer.writeText("Link")
+
+        val state = TerminalScreenState.from(buffer)
+        val surface = TuiSurface(rows = 2, cols = 10)
+        surface.blitScreenState(
+            state = state,
+            destRow = 0,
+            destCol = 0,
+            height = 2,
+            width = 10,
+        )
+
+        assertEquals('L', surface.getChar(0, 0))
+        val style = surface.getStyle(0, 0)
+        assertTrue((style and TuiCellStyle.OVERLINE) != 0)
+        assertTrue((style and TuiCellStyle.UNDERLINE) != 0)
+        assertEquals(UnderlineStyle.CURLY, TuiCellStyle.getUnderlineStyle(style))
+        assertEquals(0xFF5050, surface.getUnderlineRgb(0, 0))
+        assertEquals("https://example.com", surface.getHyperlink(0, 0))
     }
 }
