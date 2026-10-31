@@ -29,7 +29,8 @@ sealed interface TuiEvent {
         val char: Char? = null,
         val ctrl: Boolean = false,
         val alt: Boolean = false,
-        val shift: Boolean = false
+        val shift: Boolean = false,
+        val eventType: Int = 1,
     ) : TuiEvent
 
     data class Mouse(
@@ -134,40 +135,219 @@ class TuiInputParser {
                     if (j < len) {
                         val finalChar = (bytes[j].toInt() and 0xFF).toChar()
                         val paramStr = bytes.decodeToString(i + 2, j)
-                        val params = if (paramStr.isEmpty()) {
-                            emptyList()
-                        } else {
-                            paramStr.split(';').mapNotNull { it.toIntOrNull() }
-                        }
+                        val paramGroups = if (paramStr.isEmpty()) emptyList() else paramStr.split(';')
+                        val keySubParams = paramGroups.getOrNull(0)?.split(':') ?: emptyList()
+                        val firstParam = keySubParams.getOrNull(0)?.toIntOrNull() ?: 0
+                        val shiftedParam = keySubParams.getOrNull(1)?.toIntOrNull()
+
+                        val modSubParams = paramGroups.getOrNull(1)?.split(':') ?: emptyList()
+                        val modVal = modSubParams.getOrNull(0)?.toIntOrNull() ?: 1
+                        val eventType = modSubParams.getOrNull(1)?.toIntOrNull() ?: 1
 
                         var shift = false
                         var alt = false
                         var ctrl = false
-                        if (params.size >= 2) {
-                            val mod = params[1] - 1
+                        if (paramGroups.size >= 2) {
+                            val mod = modVal - 1
                             shift = (mod and 1) != 0
                             alt = (mod and 2) != 0
                             ctrl = (mod and 4) != 0
                         }
 
                         val keyEvent = when (finalChar) {
-                            'A' -> TuiEvent.Key(TuiKey.UP, shift = shift, alt = alt, ctrl = ctrl)
-                            'B' -> TuiEvent.Key(TuiKey.DOWN, shift = shift, alt = alt, ctrl = ctrl)
-                            'C' -> TuiEvent.Key(TuiKey.RIGHT, shift = shift, alt = alt, ctrl = ctrl)
-                            'D' -> TuiEvent.Key(TuiKey.LEFT, shift = shift, alt = alt, ctrl = ctrl)
-                            'H' -> TuiEvent.Key(TuiKey.HOME, shift = shift, alt = alt, ctrl = ctrl)
-                            'F' -> TuiEvent.Key(TuiKey.END, shift = shift, alt = alt, ctrl = ctrl)
-                            'Z' -> TuiEvent.Key(TuiKey.TAB, shift = true, alt = alt, ctrl = ctrl)
+                            'A' -> TuiEvent.Key(
+                                TuiKey.UP,
+                                shift = shift,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
+                            'B' -> TuiEvent.Key(
+                                TuiKey.DOWN,
+                                shift = shift,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
+                            'C' -> TuiEvent.Key(
+                                TuiKey.RIGHT,
+                                shift = shift,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
+                            'D' -> TuiEvent.Key(
+                                TuiKey.LEFT,
+                                shift = shift,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
+                            'H' -> TuiEvent.Key(
+                                TuiKey.HOME,
+                                shift = shift,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
+                            'F' -> TuiEvent.Key(
+                                TuiKey.END,
+                                shift = shift,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
+                            'Z' -> TuiEvent.Key(
+                                TuiKey.TAB,
+                                shift = true,
+                                alt = alt,
+                                ctrl = ctrl,
+                                eventType = eventType,
+                            )
                             '~' -> {
-                                val code = params.firstOrNull() ?: 0
-                                when (code) {
-                                    1, 7 -> TuiEvent.Key(TuiKey.HOME, shift = shift, alt = alt, ctrl = ctrl)
-                                    4, 8 -> TuiEvent.Key(TuiKey.END, shift = shift, alt = alt, ctrl = ctrl)
-                                    3 -> TuiEvent.Key(TuiKey.DELETE, shift = shift, alt = alt, ctrl = ctrl)
-                                    5 -> TuiEvent.Key(TuiKey.PAGE_UP, shift = shift, alt = alt, ctrl = ctrl)
-                                    6 -> TuiEvent.Key(TuiKey.PAGE_DOWN, shift = shift, alt = alt, ctrl = ctrl)
+                                when (firstParam) {
+                                    1, 7 -> TuiEvent.Key(
+                                        TuiKey.HOME,
+                                        shift = shift,
+                                        alt = alt,
+                                        ctrl = ctrl,
+                                        eventType = eventType,
+                                    )
+                                    4, 8 -> TuiEvent.Key(
+                                        TuiKey.END,
+                                        shift = shift,
+                                        alt = alt,
+                                        ctrl = ctrl,
+                                        eventType = eventType,
+                                    )
+                                    3 -> TuiEvent.Key(
+                                        TuiKey.DELETE,
+                                        shift = shift,
+                                        alt = alt,
+                                        ctrl = ctrl,
+                                        eventType = eventType,
+                                    )
+                                    5 -> TuiEvent.Key(
+                                        TuiKey.PAGE_UP,
+                                        shift = shift,
+                                        alt = alt,
+                                        ctrl = ctrl,
+                                        eventType = eventType,
+                                    )
+                                    6 -> TuiEvent.Key(
+                                        TuiKey.PAGE_DOWN,
+                                        shift = shift,
+                                        alt = alt,
+                                        ctrl = ctrl,
+                                        eventType = eventType,
+                                    )
                                     else -> null
                                 }
+                            }
+                            'u' -> when (firstParam) {
+                                13 -> TuiEvent.Key(
+                                    TuiKey.ENTER,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                9 -> TuiEvent.Key(
+                                    TuiKey.TAB,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                127, 8 -> TuiEvent.Key(
+                                    TuiKey.BACKSPACE,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                27 -> TuiEvent.Key(
+                                    TuiKey.ESCAPE,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57350 -> TuiEvent.Key(
+                                    TuiKey.LEFT,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57351 -> TuiEvent.Key(
+                                    TuiKey.RIGHT,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57352 -> TuiEvent.Key(
+                                    TuiKey.UP,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57353 -> TuiEvent.Key(
+                                    TuiKey.DOWN,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57354 -> TuiEvent.Key(
+                                    TuiKey.PAGE_UP,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57355 -> TuiEvent.Key(
+                                    TuiKey.PAGE_DOWN,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57356 -> TuiEvent.Key(
+                                    TuiKey.HOME,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57357 -> TuiEvent.Key(
+                                    TuiKey.END,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                57349 -> TuiEvent.Key(
+                                    TuiKey.DELETE,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                    eventType = eventType,
+                                )
+                                in 32..0x10FFFF -> {
+                                    val ch = (if (shift && shiftedParam != null) shiftedParam else firstParam).toChar()
+                                    TuiEvent.Key(
+                                        TuiKey.CHAR,
+                                        char = ch,
+                                        shift = shift,
+                                        alt = alt,
+                                        ctrl = ctrl,
+                                        eventType = eventType,
+                                    )
+                                }
+                                else -> null
                             }
                             else -> null
                         }
@@ -262,59 +442,134 @@ class TuiInputParser {
     /**
      * Converts a [TuiEvent.Key] event to its corresponding ANSI byte sequence.
      */
-    fun toAnsiSequence(event: TuiEvent.Key, applicationCursorKeys: Boolean = false): String {
+    fun toAnsiSequence(
+        event: TuiEvent.Key,
+        applicationCursorKeys: Boolean = false,
+        kittyKeyboardFlags: Int = 0,
+    ): String {
+        if (kittyKeyboardFlags == 0) {
+            if (event.eventType == 3) return ""
+            val mod = 1 + (if (event.shift) 1 else 0) + (if (event.alt) 2 else 0) + (if (event.ctrl) 4 else 0)
+
+            return when (event.key) {
+                TuiKey.ENTER -> "\r"
+                TuiKey.BACKSPACE -> "\u007f"
+                TuiKey.TAB -> if (event.shift) "\u001b[Z" else "\t"
+                TuiKey.ESCAPE -> "\u001b"
+                TuiKey.UP -> if (mod > 1) {
+                    "\u001b[1;${mod}A"
+                } else if (applicationCursorKeys) {
+                    "\u001bOA"
+                } else {
+                    "\u001b[A"
+                }
+                TuiKey.DOWN -> if (mod > 1) {
+                    "\u001b[1;${mod}B"
+                } else if (applicationCursorKeys) {
+                    "\u001bOB"
+                } else {
+                    "\u001b[B"
+                }
+                TuiKey.RIGHT -> if (mod > 1) {
+                    "\u001b[1;${mod}C"
+                } else if (applicationCursorKeys) {
+                    "\u001bOC"
+                } else {
+                    "\u001b[C"
+                }
+                TuiKey.LEFT -> if (mod > 1) {
+                    "\u001b[1;${mod}D"
+                } else if (applicationCursorKeys) {
+                    "\u001bOD"
+                } else {
+                    "\u001b[D"
+                }
+                TuiKey.HOME -> if (mod > 1) "\u001b[1;${mod}H" else "\u001b[H"
+                TuiKey.END -> if (mod > 1) "\u001b[1;${mod}F" else "\u001b[F"
+                TuiKey.PAGE_UP -> if (mod > 1) "\u001b[5;$mod~" else "\u001b[5~"
+                TuiKey.PAGE_DOWN -> if (mod > 1) "\u001b[6;$mod~" else "\u001b[6~"
+                TuiKey.DELETE -> if (mod > 1) "\u001b[3;$mod~" else "\u001b[3~"
+                TuiKey.CHAR -> {
+                    if (event.ctrl && event.char != null) {
+                        val c = event.char.lowercaseChar()
+                        if (c in 'a'..'z') {
+                            (c.code - 'a'.code + 1).toChar().toString()
+                        } else {
+                            event.char.toString()
+                        }
+                    } else if (event.alt && event.char != null) {
+                        "\u001b${event.char}"
+                    } else {
+                        event.char?.toString() ?: ""
+                    }
+                }
+            }
+        }
+
+        val reportEventTypes = (kittyKeyboardFlags and 2) != 0
+        val reportAllKeys = (kittyKeyboardFlags and 8) != 0
+        if (event.eventType == 3 && !reportEventTypes) return ""
+
         val mod = 1 + (if (event.shift) 1 else 0) + (if (event.alt) 2 else 0) + (if (event.ctrl) 4 else 0)
+        val hasEventSuffix = reportEventTypes && event.eventType != 1
+        val modSuffix = if (hasEventSuffix) {
+            "$mod:${event.eventType}"
+        } else if (mod > 1) {
+            "$mod"
+        } else {
+            ""
+        }
 
         return when (event.key) {
-            TuiKey.ENTER -> "\r"
-            TuiKey.BACKSPACE -> "\u007f"
-            TuiKey.TAB -> if (event.shift) "\u001b[Z" else "\t"
-            TuiKey.ESCAPE -> "\u001b"
-            TuiKey.UP -> if (mod > 1) {
-                "\u001b[1;${mod}A"
-            } else if (applicationCursorKeys) {
-                "\u001bOA"
-            } else {
-                "\u001b[A"
-            }
-            TuiKey.DOWN -> if (mod > 1) {
-                "\u001b[1;${mod}B"
-            } else if (applicationCursorKeys) {
-                "\u001bOB"
-            } else {
-                "\u001b[B"
-            }
-            TuiKey.RIGHT -> if (mod > 1) {
-                "\u001b[1;${mod}C"
-            } else if (applicationCursorKeys) {
-                "\u001bOC"
-            } else {
-                "\u001b[C"
-            }
-            TuiKey.LEFT -> if (mod > 1) {
-                "\u001b[1;${mod}D"
-            } else if (applicationCursorKeys) {
-                "\u001bOD"
-            } else {
-                "\u001b[D"
-            }
-            TuiKey.HOME -> if (mod > 1) "\u001b[1;${mod}H" else "\u001b[H"
-            TuiKey.END -> if (mod > 1) "\u001b[1;${mod}F" else "\u001b[F"
-            TuiKey.PAGE_UP -> if (mod > 1) "\u001b[5;$mod~" else "\u001b[5~"
-            TuiKey.PAGE_DOWN -> if (mod > 1) "\u001b[6;$mod~" else "\u001b[6~"
-            TuiKey.DELETE -> if (mod > 1) "\u001b[3;$mod~" else "\u001b[3~"
-            TuiKey.CHAR -> {
-                if (event.ctrl && event.char != null) {
-                    val c = event.char.lowercaseChar()
-                    if (c in 'a'..'z') {
-                        (c.code - 'a'.code + 1).toChar().toString()
-                    } else {
-                        event.char.toString()
-                    }
-                } else if (event.alt && event.char != null) {
-                    "\u001b${event.char}"
+            TuiKey.ESCAPE -> "\u001b[27${if (modSuffix.isNotEmpty()) ";$modSuffix" else ""}u"
+            TuiKey.ENTER, TuiKey.TAB, TuiKey.BACKSPACE -> {
+                val cp = when (event.key) {
+                    TuiKey.ENTER -> 13
+                    TuiKey.TAB -> 9
+                    else -> 127
+                }
+                if (reportAllKeys || mod > 1 || hasEventSuffix) {
+                    "\u001b[$cp${if (modSuffix.isNotEmpty()) ";$modSuffix" else ""}u"
                 } else {
-                    event.char?.toString() ?: ""
+                    when (event.key) {
+                        TuiKey.ENTER -> "\r"
+                        TuiKey.TAB -> "\t"
+                        else -> "\u007f"
+                    }
+                }
+            }
+            TuiKey.UP, TuiKey.DOWN, TuiKey.RIGHT, TuiKey.LEFT, TuiKey.HOME, TuiKey.END -> {
+                val finalChar = when (event.key) {
+                    TuiKey.UP -> 'A'
+                    TuiKey.DOWN -> 'B'
+                    TuiKey.RIGHT -> 'C'
+                    TuiKey.LEFT -> 'D'
+                    TuiKey.HOME -> 'H'
+                    else -> 'F'
+                }
+                if (modSuffix.isNotEmpty()) {
+                    "\u001b[1;$modSuffix$finalChar"
+                } else if (applicationCursorKeys && finalChar in "ABCD") {
+                    "\u001bO$finalChar"
+                } else {
+                    "\u001b[$finalChar"
+                }
+            }
+            TuiKey.PAGE_UP, TuiKey.PAGE_DOWN, TuiKey.DELETE -> {
+                val code = when (event.key) {
+                    TuiKey.PAGE_UP -> 5
+                    TuiKey.PAGE_DOWN -> 6
+                    else -> 3
+                }
+                if (modSuffix.isNotEmpty()) "\u001b[$code;$modSuffix~" else "\u001b[$code~"
+            }
+            TuiKey.CHAR -> {
+                val ch = event.char ?: return ""
+                val baseCp = if (event.ctrl || event.alt) ch.lowercaseChar().code else ch.code
+                if (reportAllKeys || event.ctrl || event.alt || hasEventSuffix) {
+                    "\u001b[$baseCp${if (modSuffix.isNotEmpty()) ";$modSuffix" else ""}u"
+                } else {
+                    ch.toString()
                 }
             }
         }

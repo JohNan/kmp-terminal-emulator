@@ -188,6 +188,13 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - Unicode Placeholders (`U=1`, `U+10EEEE`) using the canonical 297-diacritic encoding table for seamless scrolling and reflow inside `tmux` and `zellij`.
   - Layering and z-index ordering: 3-pass draw loop respecting negative, background, text, and overlay z-indices.
   - Safety & Geometry: Configurable `maxImageMemoryBytes` with automatic LRU texture eviction, inflation bomb protection, and subpixel cell geometry via `setCellDimensionsPx`.
+- **Kitty Progressive Keyboard Protocol**:
+  - Full negotiation and flag stack management (`CSI > <flags> u` push, `CSI < <count> u` pop, `CSI = <flags> ; <mode> u` set, `CSI ? u` query).
+  - Progressive enhancement flags: `DISAMBIGUATE_ESCAPE_CODES` (1), `REPORT_EVENT_TYPES` (2), `REPORT_ALTERNATE_KEYS` (4), `REPORT_ALL_KEYS_AS_ESCAPE_CODES` (8), and `REPORT_ASSOCIATED_TEXT` (16).
+  - 16-deep LIFO flag stack with automatic oldest eviction on overflow, independent stack isolation across primary and alternate screens (`?1049h` / `?1049l`), and reset synchronization on RIS (`\ec`) and `resetSync()`.
+  - Disambiguation from legacy `SCORC` (`\e[u` cursor restore).
+  - Key event encoding: `KittyKeyboardProtocol.encodeKeyEvent(...)` and `TerminalEmulator.encodeKeyEvent(...)` with modifiers, event types (`PRESS`, `REPEAT`, `RELEASE`), shifted codepoints, and associated text.
+  - TUI integration: `:terminal-tui` `TuiInputParser` parses `CSI u` sequences and functional keys with `:<eventType>` sub-parameters, and encodes keys using `toAnsiSequence(..., kittyKeyboardFlags = flags)`.
 - **Mobile & Desktop Responsive Features**:
   - Soft keyboard modifier toggle integration (Ctrl, Alt, Shift states).
   - Monospace cell measurement with sub-pixel precision to eliminate column drift.
@@ -467,6 +474,42 @@ for (range in urlRanges) {
     val resolvedUrl = ScreenBuffer.extractUrl(row, range)
     val isExplicitOsc8 = range.url != null // true for OSC 8 hyperlinks, null for regex matches
 }
+```
+
+### 8. Kitty Progressive Keyboard Protocol (`terminal-core` & `terminal-tui`)
+
+Applications query or configure enhanced keyboard modes using Kitty protocol CSI sequences. Active flags are published in `kittyKeyboardFlags`, and key events can be encoded or parsed with full fidelity:
+
+```kotlin
+import com.johnan.terminal.core.KeyEventType
+import com.johnan.terminal.core.KittyKeyboardProtocol
+import com.johnan.terminal.core.TerminalEmulator
+import com.johnan.terminal.tui.TuiEvent
+import com.johnan.terminal.tui.TuiInputParser
+import com.johnan.terminal.tui.TuiKey
+
+// Inspect active keyboard enhancement flags
+val activeFlags = emulator.kittyKeyboardFlags
+val screenFlags = emulator.screenState.value.kittyKeyboardFlags
+
+// Encode key events using active emulator flags
+val escSeq = emulator.encodeKeyEvent(codepoint = 27) // "\u001B[27u" when DISAMBIGUATE_ESCAPE_CODES is active
+val ctrlASeq = emulator.encodeKeyEvent(
+    codepoint = 'a'.code,
+    modifiers = KittyKeyboardProtocol.MODIFIER_CTRL,
+    eventType = KeyEventType.REPEAT,
+) // "\u001B[97;5:2u" with REPORT_EVENT_TYPES
+
+// Parse CSI u sequences and functional keys in TUI apps (:terminal-tui)
+val parser = TuiInputParser()
+val events = parser.parse("\u001b[97;5u".encodeToByteArray())
+// -> TuiEvent.Key(key = TuiKey.CHAR, char = 'a', ctrl = true, eventType = 1)
+
+// Encode TuiEvent keys to ANSI sequences matching active flags
+val outSeq = parser.toAnsiSequence(
+    event = TuiEvent.Key(key = TuiKey.ESCAPE),
+    kittyKeyboardFlags = activeFlags,
+)
 ```
 
 ---

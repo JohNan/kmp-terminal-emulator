@@ -406,6 +406,7 @@ class AnsiParser(
                 terminalEmulator.synchronizedOutputEnabled = false
                 terminalEmulator.focusReportingEnabled = false
                 terminalEmulator.cursorShape = CursorShape.BLOCK
+                screenBuffer.resetKittyKeyboardFlags()
                 state = State.NORMAL
             }
             '=' -> {
@@ -576,8 +577,33 @@ class AnsiParser(
                 state = State.NORMAL
             }
             'u' -> {
-                log("SCORC", "Restore Cursor")
-                screenBuffer.restoreCursor()
+                when {
+                    paramBuffer.isEmpty() -> {
+                        log("SCORC", "Restore Cursor")
+                        screenBuffer.restoreCursor()
+                    }
+                    paramBuffer.startsWith("?") -> {
+                        log("KITTY_KBD_QUERY") { "flags=${screenBuffer.kittyKeyboardFlags}" }
+                        terminalEmulator.sendResponse("\u001B[?${screenBuffer.kittyKeyboardFlags}u")
+                    }
+                    paramBuffer.startsWith(">") -> {
+                        val flags = parseParam(0, 0)
+                        log("KITTY_KBD_PUSH") { "flags=$flags" }
+                        screenBuffer.pushKittyKeyboardFlags(flags)
+                    }
+                    paramBuffer.startsWith("<") -> {
+                        val count = parseParam(0, 1)
+                        log("KITTY_KBD_POP") { "count=$count" }
+                        screenBuffer.popKittyKeyboardFlags(count)
+                    }
+                    paramBuffer.startsWith("=") -> {
+                        parseParamsToBuffer()
+                        val flags = if (paramCount > 0) paramValues[0] else 0
+                        val mode = if (paramCount > 1 && paramValues[1] != 0) paramValues[1] else 1
+                        log("KITTY_KBD_SET") { "flags=$flags, mode=$mode" }
+                        screenBuffer.setKittyKeyboardFlags(flags, mode)
+                    }
+                }
                 state = State.NORMAL
             }
             'r' -> {

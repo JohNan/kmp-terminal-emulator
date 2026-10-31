@@ -41,6 +41,8 @@ class TerminalEmulatorCopyTest {
         val screenCwd: String?,
         val screenLastExitCode: Int?,
         val screenIsCommandRunning: Boolean,
+        val kittyKeyboardFlags: Int,
+        val stateKittyKeyboardFlags: Int,
     )
 
     private fun snapshot(e: TerminalEmulator): Snapshot {
@@ -82,6 +84,8 @@ class TerminalEmulatorCopyTest {
             screenCwd = s.currentWorkingDirectory,
             screenLastExitCode = s.lastExitCode,
             screenIsCommandRunning = s.isCommandRunning,
+            kittyKeyboardFlags = e.kittyKeyboardFlags,
+            stateKittyKeyboardFlags = s.kittyKeyboardFlags,
         )
     }
 
@@ -375,20 +379,33 @@ class TerminalEmulatorCopyTest {
                         "\u001B]133;D;0\u0007",
                 )
             for ((streamIndex, stream) in streams.withIndex()) {
-                val bytes = stream.encodeToByteArray()
-                val expected = snapshot(newEmulator().also { it.processOutput(bytes) })
-                for (k in 0..bytes.size) {
-                    val e1 = newEmulator()
-                    e1.processOutput(bytes.copyOfRange(0, k))
-                    val e2 = e1.copy()
-                    e2.processOutput(bytes.copyOfRange(k, bytes.size))
-                    assertEquals(expected, snapshot(e2), "stream $streamIndex split at $k")
-
-                    // The original keeps working independently of the copy.
-                    e1.processOutput(bytes.copyOfRange(k, bytes.size))
-                    assertEquals(expected, snapshot(e1), "stream $streamIndex original after split at $k")
-                }
+                assertCopyMatchesAtEverySplit(stream, "stream $streamIndex")
             }
+        }
+
+    private suspend fun assertCopyMatchesAtEverySplit(
+        stream: String,
+        label: String = "stream",
+    ) {
+        val bytes = stream.encodeToByteArray()
+        val expected = snapshot(newEmulator().also { it.processOutput(bytes) })
+        for (k in 0..bytes.size) {
+            val e1 = newEmulator()
+            e1.processOutput(bytes.copyOfRange(0, k))
+            val e2 = e1.copy()
+            e2.processOutput(bytes.copyOfRange(k, bytes.size))
+            assertEquals(expected, snapshot(e2), "$label split at $k")
+
+            // The original keeps working independently of the copy.
+            e1.processOutput(bytes.copyOfRange(k, bytes.size))
+            assertEquals(expected, snapshot(e1), "$label original after split at $k")
+        }
+    }
+
+    @Test
+    fun copyPreservesKittyKeyboardFlagsAcrossSplits() =
+        runTest {
+            assertCopyMatchesAtEverySplit("\u001B[>3uHello\u001B[=8;2uWorld\u001B[<1u")
         }
 
     @Test

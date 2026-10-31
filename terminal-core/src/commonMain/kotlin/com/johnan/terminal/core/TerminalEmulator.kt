@@ -93,6 +93,9 @@ class TerminalEmulator(
     private val _isCommandRunning = MutableStateFlow(false)
     val isCommandRunning: StateFlow<Boolean> = _isCommandRunning.asStateFlow()
 
+    val kittyKeyboardFlags: Int
+        get() = screenBuffer.kittyKeyboardFlags
+
     var cursorBlinking = false
         internal set
 
@@ -215,6 +218,26 @@ class TerminalEmulator(
         sendResponse(seq)
         return seq
     }
+
+    /**
+     * Encodes a key event using the active Kitty keyboard flags of the terminal emulator.
+     */
+    fun encodeKeyEvent(
+        codepoint: Int,
+        shiftedCodepoint: Int? = null,
+        baseLayoutCodepoint: Int? = null,
+        modifiers: Int = 0,
+        eventType: KeyEventType = KeyEventType.PRESS,
+        associatedText: String? = null,
+    ): String = KittyKeyboardProtocol.encodeKeyEvent(
+        codepoint = codepoint,
+        shiftedCodepoint = shiftedCodepoint,
+        baseLayoutCodepoint = baseLayoutCodepoint,
+        modifiers = modifiers,
+        eventType = eventType,
+        associatedText = associatedText,
+        flags = kittyKeyboardFlags,
+    )
 
     /**
      * Updates the measured character cell dimensions in pixels for CSI 14 t / CSI 16 t window manipulation reports.
@@ -447,6 +470,7 @@ class TerminalEmulator(
             currentWorkingDirectory = _currentWorkingDirectory.value,
             lastExitCode = _lastExitCode.value,
             isCommandRunning = _isCommandRunning.value,
+            kittyKeyboardFlags = screenBuffer.kittyKeyboardFlags,
         )
     }
 
@@ -509,6 +533,7 @@ class TerminalEmulator(
         focusReportingEnabled = false
         cursorShape = CursorShape.BLOCK
         cursorBlinking = config.cursorBlinkingDefault
+        screenBuffer.resetKittyKeyboardFlags()
         updateScreenState()
     }
 
@@ -696,6 +721,7 @@ data class TerminalScreenState(
     val currentWorkingDirectory: String? = null,
     val lastExitCode: Int? = null,
     val isCommandRunning: Boolean = false,
+    val kittyKeyboardFlags: Int = 0,
 ) {
     companion object {
         fun from(
@@ -709,6 +735,7 @@ data class TerminalScreenState(
             currentWorkingDirectory: String? = null,
             lastExitCode: Int? = null,
             isCommandRunning: Boolean = false,
+            kittyKeyboardFlags: Int = buffer.kittyKeyboardFlags,
         ): TerminalScreenState {
             var contentHeight = 0
             for (i in 0 until buffer.rows) {
@@ -737,6 +764,7 @@ data class TerminalScreenState(
                 currentWorkingDirectory = currentWorkingDirectory,
                 lastExitCode = lastExitCode,
                 isCommandRunning = isCommandRunning,
+                kittyKeyboardFlags = kittyKeyboardFlags,
             )
         }
     }

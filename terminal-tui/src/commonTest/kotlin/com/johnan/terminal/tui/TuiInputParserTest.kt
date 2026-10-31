@@ -155,4 +155,57 @@ class TuiInputParserTest {
         assertEquals("\u001ba", parser.toAnsiSequence(TuiEvent.Key(TuiKey.CHAR, char = 'a', alt = true)))
         assertEquals("x", parser.toAnsiSequence(TuiEvent.Key(TuiKey.CHAR, char = 'x')))
     }
+
+    @Test
+    fun testParseKittyKeyboardSequences() {
+        val escapeEvent = parser.parse("\u001b[27u".encodeToByteArray())
+        assertEquals(1, escapeEvent.size)
+        assertEquals(TuiEvent.Key(TuiKey.ESCAPE), escapeEvent[0])
+
+        val shiftEnterEvent = parser.parse("\u001b[13;2u".encodeToByteArray())
+        assertEquals(1, shiftEnterEvent.size)
+        assertEquals(TuiEvent.Key(TuiKey.ENTER, shift = true), shiftEnterEvent[0])
+
+        val ctrlAEvent = parser.parse("\u001b[97;5u".encodeToByteArray())
+        assertEquals(1, ctrlAEvent.size)
+        assertEquals(TuiEvent.Key(TuiKey.CHAR, char = 'a', ctrl = true), ctrlAEvent[0])
+
+        val shiftAEvent = parser.parse("\u001b[97:65;2u".encodeToByteArray())
+        assertEquals(1, shiftAEvent.size)
+        assertEquals(TuiEvent.Key(TuiKey.CHAR, char = 'A', shift = true), shiftAEvent[0])
+
+        val releaseAEvent = parser.parse("\u001b[97;1:3u".encodeToByteArray())
+        assertEquals(1, releaseAEvent.size)
+        assertEquals(TuiEvent.Key(TuiKey.CHAR, char = 'a', eventType = 3), releaseAEvent[0])
+
+        val repeatUpEvent = parser.parse("\u001b[1;2:2A".encodeToByteArray())
+        assertEquals(1, repeatUpEvent.size)
+        assertEquals(TuiEvent.Key(TuiKey.UP, shift = true, eventType = 2), repeatUpEvent[0])
+    }
+
+    @Test
+    fun testToAnsiSequenceWithKittyKeyboard() {
+        assertEquals(
+            "\u001b[27u",
+            parser.toAnsiSequence(TuiEvent.Key(TuiKey.ESCAPE), kittyKeyboardFlags = 1),
+        )
+        assertEquals(
+            "\u001b[99;5u",
+            parser.toAnsiSequence(
+                TuiEvent.Key(TuiKey.CHAR, char = 'c', ctrl = true),
+                kittyKeyboardFlags = 1,
+            ),
+        )
+        assertEquals(
+            "\u001b[97;1:3u",
+            parser.toAnsiSequence(
+                TuiEvent.Key(TuiKey.CHAR, char = 'a', eventType = 3),
+                kittyKeyboardFlags = 3,
+            ),
+        )
+        assertEquals(
+            "\u001b[13u",
+            parser.toAnsiSequence(TuiEvent.Key(TuiKey.ENTER), kittyKeyboardFlags = 8),
+        )
+    }
 }
