@@ -84,6 +84,15 @@ class TerminalEmulator(
 
     private val windowTitleStack = ArrayDeque<String>()
 
+    private val _currentWorkingDirectory = MutableStateFlow<String?>(null)
+    val currentWorkingDirectory: StateFlow<String?> = _currentWorkingDirectory.asStateFlow()
+
+    private val _lastExitCode = MutableStateFlow<Int?>(null)
+    val lastExitCode: StateFlow<Int?> = _lastExitCode.asStateFlow()
+
+    private val _isCommandRunning = MutableStateFlow(false)
+    val isCommandRunning: StateFlow<Boolean> = _isCommandRunning.asStateFlow()
+
     var cursorBlinking = false
         internal set
 
@@ -232,6 +241,44 @@ class TerminalEmulator(
         }
     }
 
+    internal fun updateWorkingDirectory(path: String?) {
+        _currentWorkingDirectory.value = path
+    }
+
+    internal fun resetSemanticShellState() {
+        _currentWorkingDirectory.value = null
+        _lastExitCode.value = null
+        _isCommandRunning.value = false
+    }
+
+    internal fun handlePromptMark(type: PromptMarkType, exitCode: Int? = null) {
+        screenBuffer.recordPromptMark(type, exitCode)
+        when (type) {
+            PromptMarkType.PROMPT_START, PromptMarkType.COMMAND_START -> {
+                _isCommandRunning.value = false
+            }
+            PromptMarkType.OUTPUT_START -> {
+                _isCommandRunning.value = true
+            }
+            PromptMarkType.COMMAND_FINISHED -> {
+                _isCommandRunning.value = false
+                _lastExitCode.value = exitCode
+            }
+        }
+    }
+
+    fun getPromptMarks(): List<PromptMark> = screenBuffer.getPromptMarks()
+
+    fun findPreviousPromptLine(
+        fromAbsLine: Int = screenBuffer.scrollbackSize + screenBuffer.cursorRow,
+    ): Int? = screenBuffer.findPreviousPromptLine(fromAbsLine)
+
+    fun findNextPromptLine(
+        fromAbsLine: Int = screenBuffer.scrollbackSize + screenBuffer.cursorRow,
+    ): Int? = screenBuffer.findNextPromptLine(fromAbsLine)
+
+    fun extractLastCommandOutput(): String? = screenBuffer.extractLastCommandOutput()
+
     /**
      * Returns a fully independent deep copy of this emulator.
      *
@@ -270,6 +317,9 @@ class TerminalEmulator(
         clone.cellHeightPx = cellHeightPx
         clone._windowTitle.value = _windowTitle.value
         clone.windowTitleStack.addAll(windowTitleStack)
+        clone._currentWorkingDirectory.value = _currentWorkingDirectory.value
+        clone._lastExitCode.value = _lastExitCode.value
+        clone._isCommandRunning.value = _isCommandRunning.value
         clone.bellCount = bellCount
         clone.clipboardWriteCount = clipboardWriteCount
         clone.lastClipboardWrite = lastClipboardWrite
@@ -394,6 +444,9 @@ class TerminalEmulator(
             synchronizedOutputEnabled = synchronizedOutputEnabled,
             focusReportingEnabled = focusReportingEnabled,
             cursorShape = cursorShape,
+            currentWorkingDirectory = _currentWorkingDirectory.value,
+            lastExitCode = _lastExitCode.value,
+            isCommandRunning = _isCommandRunning.value,
         )
     }
 
@@ -447,6 +500,11 @@ class TerminalEmulator(
         screenBuffer.clearScreen()
         screenBuffer.setCursorPosition(0, 0)
         screenBuffer.resetTextAttributes()
+        screenBuffer.setHyperlinkUrl(null)
+        screenBuffer.clearPromptMarks()
+        _currentWorkingDirectory.value = null
+        _lastExitCode.value = null
+        _isCommandRunning.value = false
         synchronizedOutputEnabled = false
         focusReportingEnabled = false
         cursorShape = CursorShape.BLOCK
@@ -635,6 +693,9 @@ data class TerminalScreenState(
     val synchronizedOutputEnabled: Boolean = false,
     val focusReportingEnabled: Boolean = false,
     val cursorShape: CursorShape = CursorShape.BLOCK,
+    val currentWorkingDirectory: String? = null,
+    val lastExitCode: Int? = null,
+    val isCommandRunning: Boolean = false,
 ) {
     companion object {
         fun from(
@@ -645,6 +706,9 @@ data class TerminalScreenState(
             synchronizedOutputEnabled: Boolean = false,
             focusReportingEnabled: Boolean = false,
             cursorShape: CursorShape = CursorShape.BLOCK,
+            currentWorkingDirectory: String? = null,
+            lastExitCode: Int? = null,
+            isCommandRunning: Boolean = false,
         ): TerminalScreenState {
             var contentHeight = 0
             for (i in 0 until buffer.rows) {
@@ -670,6 +734,9 @@ data class TerminalScreenState(
                 synchronizedOutputEnabled = synchronizedOutputEnabled,
                 focusReportingEnabled = focusReportingEnabled,
                 cursorShape = cursorShape,
+                currentWorkingDirectory = currentWorkingDirectory,
+                lastExitCode = lastExitCode,
+                isCommandRunning = isCommandRunning,
             )
         }
     }

@@ -62,6 +62,15 @@ class ScreenBuffer(
     private var currentConceal: Boolean = false
     private var currentUnderlineColor: TerminalColor = TerminalColor.Default
 
+    var currentHyperlinkUrl: String? = null
+        private set
+
+    fun setHyperlinkUrl(url: String?) {
+        currentHyperlinkUrl = url
+    }
+
+    private val promptMarks = ArrayList<PromptMark>()
+
     /**
      * Returns a deep, fully independent copy of this buffer: primary and alternate rows, scrollback, cursor,
      * saved cursor, scroll region, wrap state and current text attributes.
@@ -106,6 +115,8 @@ class ScreenBuffer(
         clone.nextImageVersion = nextImageVersion
         clone.primaryPlacements.addAll(primaryPlacements)
         clone.alternatePlacements.addAll(alternatePlacements)
+        clone.currentHyperlinkUrl = currentHyperlinkUrl
+        clone.promptMarks.addAll(promptMarks)
         // Every var in this class is copied above; rows/cols and maxScrollback come from the constructor.
         return clone
     }
@@ -382,6 +393,7 @@ class ScreenBuffer(
                 isWideSpacer = false,
                 underlineColor = currentUnderlineColor,
                 underlineStyle = currentUnderlineStyle,
+                hyperlinkUrl = currentHyperlinkUrl,
             )
             var changed = row.setCell(cursorCol, primaryCell)
 
@@ -403,6 +415,7 @@ class ScreenBuffer(
                     isWideSpacer = true,
                     underlineColor = currentUnderlineColor,
                     underlineStyle = currentUnderlineStyle,
+                    hyperlinkUrl = currentHyperlinkUrl,
                 )
                 if (row.setCell(cursorCol + 1, spacerCell)) {
                     changed = true
@@ -506,6 +519,7 @@ class ScreenBuffer(
             val ov = currentOverline
             val co = currentConceal
             val uc = currentUnderlineColor
+            val hl = currentHyperlinkUrl
 
             val isDefault =
                 fg === TerminalColor.Default &&
@@ -520,7 +534,8 @@ class ScreenBuffer(
                     !bl &&
                     !st &&
                     !ov &&
-                    !co
+                    !co &&
+                    hl == null
 
             val currentRow = buffer[cursorRow]
             var changed = false
@@ -546,6 +561,7 @@ class ScreenBuffer(
                             co,
                             underlineColor = uc,
                             underlineStyle = us,
+                            hyperlinkUrl = hl,
                         )
                     }
                 if (currentRow.setCell(cursorCol + k, cell)) {
@@ -746,6 +762,17 @@ class ScreenBuffer(
                         }
                     }
                     graphicsVersion++
+                }
+                if (droppingScrollback && promptMarks.isNotEmpty()) {
+                    val markIter = promptMarks.listIterator()
+                    while (markIter.hasNext()) {
+                        val m = markIter.next()
+                        if (m.absLine - 1 < 0) {
+                            markIter.remove()
+                        } else {
+                            markIter.set(m.copy(absLine = m.absLine - 1))
+                        }
+                    }
                 }
             }
 
@@ -997,6 +1024,74 @@ class ScreenBuffer(
         scrollBottom = rows - 1
     }
 
+    fun recordPromptMark(type: PromptMarkType, exitCode: Int? = null) {
+        if (isAlternateScreen) return
+        val absLine = scrollback.size + cursorRow
+        val maxMarks = maxScrollback + rows + 256
+        if (promptMarks.size >= maxMarks) {
+            promptMarks.removeAt(0)
+        }
+        promptMarks.add(PromptMark(type = type, absLine = absLine, col = cursorCol, exitCode = exitCode))
+    }
+
+    fun getPromptMarks(): List<PromptMark> = if (promptMarks.isEmpty()) emptyList() else promptMarks.toList()
+
+    fun clearPromptMarks() {
+        promptMarks.clear()
+    }
+
+    fun findPreviousPromptLine(fromAbsLine: Int): Int? =
+        promptMarks.lastOrNull { it.type == PromptMarkType.PROMPT_START && it.absLine < fromAbsLine }?.absLine
+
+    fun findNextPromptLine(fromAbsLine: Int): Int? =
+        promptMarks.firstOrNull { it.type == PromptMarkType.PROMPT_START && it.absLine > fromAbsLine }?.absLine
+
+    fun extractLastCommandOutput(): String? {
+        val lastOutputIdx = promptMarks.indexOfLast { it.type == PromptMarkType.OUTPUT_START }
+        if (lastOutputIdx < 0) return null
+        val startMark = promptMarks[lastOutputIdx]
+        var endMark: PromptMark? = null
+        for (i in (lastOutputIdx + 1) until promptMarks.size) {
+            if (promptMarks[i].type == PromptMarkType.COMMAND_FINISHED ||
+                promptMarks[i].type == PromptMarkType.PROMPT_START
+            ) {
+                endMark = promptMarks[i]
+                break
+            }
+        }
+        val totalLines = scrollback.size + rows
+        val startLine = startMark.absLine.coerceIn(0, totalLines - 1)
+        val endLine = (endMark?.absLine ?: (scrollback.size + cursorRow)).coerceIn(startLine, totalLines - 1)
+        val startCol = startMark.col
+        val endCol = endMark?.col ?: cursorCol
+
+        val lines = ArrayList<String>()
+        for (absIdx in startLine..endLine) {
+            val rowCells = if (absIdx < scrollback.size) {
+                scrollback[absIdx]
+            } else {
+                buffer[absIdx - scrollback.size].cells
+            }
+            val fromCol = if (absIdx == startLine) startCol.coerceIn(0, rowCells.size) else 0
+            val toCol = if (absIdx == endLine) endCol.coerceIn(fromCol, rowCells.size) else rowCells.size
+            val sb = StringBuilder()
+            for (c in fromCol until toCol) {
+                val cell = rowCells[c]
+                if (!cell.isWideSpacer) {
+                    sb.append(cell.glyphString())
+                }
+            }
+            lines.add(sb.toString().trimEnd())
+        }
+        while (lines.isNotEmpty() && lines.first().isEmpty()) {
+            lines.removeAt(0)
+        }
+        while (lines.isNotEmpty() && lines.last().isEmpty()) {
+            lines.removeAt(lines.lastIndex)
+        }
+        return lines.joinToString("\n")
+    }
+
     companion object {
         private val urlPattern = Regex("(https?://[\\w\\-\\._~:/?#\\[\\]@!$&'()*+,;=]+)")
 
@@ -1026,22 +1121,49 @@ class ScreenBuffer(
          */
         fun getUrlRanges(row: Array<TerminalCell>): List<UrlRange> = UrlCache.getOrPut(row) {
             val ranges = mutableListOf<UrlRange>()
+            var col = 0
+            while (col < row.size) {
+                val link = row[col].hyperlinkUrl
+                if (!link.isNullOrEmpty()) {
+                    val startCol = col
+                    while (col < row.size && row[col].hyperlinkUrl == link) {
+                        col++
+                    }
+                    ranges.add(UrlRange(startCol, col, url = link))
+                } else {
+                    col++
+                }
+            }
+
+            val explicitCount = ranges.size
             val text = TerminalRowCharSequence(row)
             val matches = urlPattern.findAll(text)
+            var addedRegex = false
 
             for (match in matches) {
                 val start = match.range.first
                 val end = match.range.last + 1
-                ranges.add(UrlRange(start, end))
+                if (ranges.none { maxOf(it.startCol, start) < minOf(it.endCol, end) }) {
+                    ranges.add(UrlRange(start, end, url = null))
+                    addedRegex = true
+                }
             }
 
-            if (ranges.isEmpty()) emptyList() else ranges.toList()
+            if (ranges.isEmpty()) {
+                emptyList()
+            } else {
+                if (explicitCount > 0 && addedRegex) {
+                    ranges.sortBy { it.startCol }
+                }
+                ranges.toList()
+            }
         }
 
         /**
          * Extracts plain text URL string from a cell row given a [UrlRange].
          */
         fun extractUrl(row: Array<TerminalCell>, range: UrlRange): String {
+            if (range.url != null) return range.url
             val len = range.endCol - range.startCol
             if (len <= 0) return ""
             val chars = CharArray(len)
@@ -1427,5 +1549,6 @@ class ScreenBuffer(
  */
 data class UrlRange(
     val startCol: Int,
-    val endCol: Int
+    val endCol: Int,
+    val url: String? = null,
 )

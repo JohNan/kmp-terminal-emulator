@@ -158,7 +158,12 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - Ambient Compose propagation via `LocalTerminalUiConfig`.
 - **Reactive State & Attention Events**:
   - `screenState` StateFlow emitting immutable buffer snapshots on change.
+  - Reactive shell integration flows: `currentWorkingDirectory` (`StateFlow<String?>`), `lastExitCode` (`StateFlow<Int?>`), and `isCommandRunning` (`StateFlow<Boolean>`).
   - Reactive event flows: `attentionEvents` (OSC 9 / OSC 777 desktop notifications), `bellEvents` / `bellCount`, `clipboardEvents` / `clipboardWriteCount`, and `windowTitle`.
+- **Semantic Shell Integration & Explicit Hyperlinks**:
+  - **OSC 8 Explicit Hyperlinks**: Supports inline explicit URL hyperlinks (`\e]8;[params];<url>\e\` or `\e]8;[params];<url>\a`), populating `TerminalCell.hyperlinkUrl`. `ScreenBuffer.getUrlRanges(row)` and `ScreenBuffer.extractUrl(row, range)` return explicit URLs via `UrlRange.url` without colliding with regex-detected plain-text URLs on the same line, complete with automatic `TerminalRenderer` / `TerminalCanvas` click handling and reflow preservation.
+  - **OSC 7 & OSC 9;9 Current Working Directory**: Parses shell working directory URIs (`\e]7;file://hostname/path\a`) with RFC 3986 percent-decoding (including multibyte UTF-8) and Windows Terminal / ConEmu markers (`\e]9;9;"path"\a`), updating `TerminalEmulator.currentWorkingDirectory` silently without triggering desktop notification events.
+  - **OSC 133 Semantic Prompt Marks (FTCS)**: Full FinalTerm semantic shell integration (`133;A` prompt start, `133;B` command start, `133;C` output start, `133;D;[exitCode]` command finished). Tracks execution status in `isCommandRunning` and `lastExitCode`, records `PromptMark` boundaries, enables prompt navigation (`findPreviousPromptLine()`, `findNextPromptLine()`), and cleanly isolates command output via `extractLastCommandOutput()` excluding prompts and typed commands.
 - **Text Selection & Clipboard Management**:
   - Multi-line text selection overlay with visual start/end handle indicators.
   - Drag-selection gesture tracking, long-press activation, and auto-copy on release.
@@ -430,6 +435,37 @@ try {
     io.writeStdout(renderer.render(surface))
 } finally {
     io.exitRawTuiMode()
+}
+```
+
+### 7. Semantic Shell Integration & Hyperlinks
+
+Inspect current working directory, command execution status, prompt marks, and OSC 8 hyperlinks:
+
+```kotlin
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.johnan.terminal.core.PromptMarkType
+import com.johnan.terminal.core.ScreenBuffer
+
+// Reactive shell state flows
+val cwd by emulator.currentWorkingDirectory.collectAsState()
+val isRunning by emulator.isCommandRunning.collectAsState()
+val exitCode by emulator.lastExitCode.collectAsState()
+
+// Navigate between semantic prompt marks (FTCS OSC 133;A)
+val prevPromptLine = emulator.findPreviousPromptLine()
+val nextPromptLine = emulator.findNextPromptLine()
+
+// Cleanly copy output of the last executed command (without prompt or command line)
+val lastCommandOutput = emulator.extractLastCommandOutput()
+
+// Query explicit hyperlinks (OSC 8) and plain-text URLs on any terminal row
+val row = emulator.screenState.value.rows[0]
+val urlRanges = ScreenBuffer.getUrlRanges(row)
+for (range in urlRanges) {
+    val resolvedUrl = ScreenBuffer.extractUrl(row, range)
+    val isExplicitOsc8 = range.url != null // true for OSC 8 hyperlinks, null for regex matches
 }
 ```
 

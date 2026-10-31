@@ -83,6 +83,7 @@ data class TerminalCell(
     val underlineColor: TerminalColor = TerminalColor.Default,
     val kittyPlaceholderInfo: Int = 0,
     val underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
+    val hyperlinkUrl: String? = null,
 ) {
     /**
      * Resolves foreground color taking reverse video (inverse attribute) into account.
@@ -129,7 +130,8 @@ data class TerminalCell(
             !blink &&
             !strikethrough &&
             !overline &&
-            !conceal
+            !conceal &&
+            hyperlinkUrl == null
     }
 
     companion object {
@@ -162,6 +164,7 @@ data class TerminalCell(
             underlineColor: TerminalColor = TerminalColor.Default,
             kittyPlaceholderInfo: Int = 0,
             underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
+            hyperlinkUrl: String? = null,
         ): TerminalCell {
             if (codepoint in 0..127 &&
                 !isWideSpacer &&
@@ -179,7 +182,8 @@ data class TerminalCell(
                 !blink &&
                 !strikethrough &&
                 !overline &&
-                !conceal
+                !conceal &&
+                hyperlinkUrl == null
             ) {
                 return ASCII_CACHE[codepoint]
             }
@@ -204,6 +208,7 @@ data class TerminalCell(
                 underlineColor = underlineColor,
                 kittyPlaceholderInfo = kittyPlaceholderInfo,
                 underlineStyle = underlineStyle,
+                hyperlinkUrl = hyperlinkUrl,
             )
         }
 
@@ -226,6 +231,7 @@ data class TerminalCell(
             underlineColor: TerminalColor = TerminalColor.Default,
             kittyPlaceholderInfo: Int = 0,
             underlineStyle: UnderlineStyle = if (underline) UnderlineStyle.SINGLE else UnderlineStyle.NONE,
+            hyperlinkUrl: String? = null,
         ): TerminalCell = createCodepoint(
             codepoint = char.code,
             foregroundColor = foregroundColor,
@@ -242,6 +248,7 @@ data class TerminalCell(
             underlineColor = underlineColor,
             kittyPlaceholderInfo = kittyPlaceholderInfo,
             underlineStyle = underlineStyle,
+            hyperlinkUrl = hyperlinkUrl,
         )
     }
 }
