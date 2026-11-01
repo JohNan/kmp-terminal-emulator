@@ -63,13 +63,24 @@ kotlin {
 
 android {
     namespace = "com.johnan.terminal.ui"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         minSdk = 24
     }
     compileOptions {
         sourceCompatibility = org.gradle.api.JavaVersion.VERSION_21
         targetCompatibility = org.gradle.api.JavaVersion.VERSION_21
+    }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+androidComponents {
+    beforeVariants {
+        (it as? com.android.build.api.variant.HasUnitTestBuilder)?.enableUnitTest = true
     }
 }
 

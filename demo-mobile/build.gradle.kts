@@ -44,7 +44,7 @@ kotlin {
 
 android {
     namespace = "com.johnan.terminal.demomobile"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.johnan.terminal.demomobile"
@@ -63,5 +63,17 @@ android {
         release {
             isMinifyEnabled = false
         }
+    }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+androidComponents {
+    beforeVariants {
+        (it as? com.android.build.api.variant.HasUnitTestBuilder)?.enableUnitTest = true
     }
 }
