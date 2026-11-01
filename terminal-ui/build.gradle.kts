@@ -71,6 +71,17 @@ android {
         sourceCompatibility = org.gradle.api.JavaVersion.VERSION_21
         targetCompatibility = org.gradle.api.JavaVersion.VERSION_21
     }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+androidComponents {
+    beforeVariants {
+        (it as? com.android.build.api.variant.HasUnitTestBuilder)?.enableUnitTest = true
+    }
 }
 
 val signingKey = providers.environmentVariable("GPG_SIGNING_KEY").orNull

@@ -64,4 +64,16 @@ android {
             isMinifyEnabled = false
         }
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+}
+
+androidComponents {
+    beforeVariants {
+        (it as? com.android.build.api.variant.HasUnitTestBuilder)?.enableUnitTest = true
+    }
 }
