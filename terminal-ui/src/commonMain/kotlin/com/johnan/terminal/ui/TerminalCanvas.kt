@@ -68,6 +68,72 @@ fun calculateVisibleRowRange(
 private val DefaultStartDirectTouchSelection: (Int, Int) -> Unit = { _, _ -> }
 
 /**
+ * Maximum discrete mouse wheel steps emitted from a single pointer delta to bound bursts.
+ */
+internal const val MAX_WHEEL_STEPS_PER_EVENT = 64
+
+/**
+ * Discrete wheel steps extracted from an accumulated vertical delta and the remaining delta.
+ */
+internal data class WheelStepResult(
+    val wheelUpSteps: Int,
+    val wheelDownSteps: Int,
+    val remainingDeltaY: Float,
+)
+
+/**
+ * Consumes whole [threshold] increments from [accumulatedDeltaY] into wheel-up/wheel-down step
+ * counts capped at [maxSteps], returning the unconsumed remainder.
+ */
+internal fun consumeWheelSteps(
+    accumulatedDeltaY: Float,
+    threshold: Float,
+    maxSteps: Int = MAX_WHEEL_STEPS_PER_EVENT,
+): WheelStepResult {
+    if (!accumulatedDeltaY.isFinite() || !threshold.isFinite() || threshold <= 0f || maxSteps <= 0) {
+        return WheelStepResult(0, 0, 0f)
+    }
+    val maxConsumable = maxSteps.toFloat() * threshold
+    return if (accumulatedDeltaY >= threshold) {
+        if (accumulatedDeltaY >= maxConsumable) {
+            val rem = accumulatedDeltaY % threshold
+            WheelStepResult(
+                wheelUpSteps = maxSteps,
+                wheelDownSteps = 0,
+                remainingDeltaY = if (rem.isFinite() && rem != 0f) rem else 0f,
+            )
+        } else {
+            val rawSteps = (accumulatedDeltaY / threshold).toInt().coerceIn(0, maxSteps)
+            val rem = accumulatedDeltaY - rawSteps * threshold
+            WheelStepResult(
+                wheelUpSteps = rawSteps,
+                wheelDownSteps = 0,
+                remainingDeltaY = if (rem.isFinite() && rem != 0f) rem else 0f,
+            )
+        }
+    } else if (accumulatedDeltaY <= -threshold) {
+        if (accumulatedDeltaY <= -maxConsumable) {
+            val rem = accumulatedDeltaY % threshold
+            WheelStepResult(
+                wheelUpSteps = 0,
+                wheelDownSteps = maxSteps,
+                remainingDeltaY = if (rem.isFinite() && rem != 0f) rem else 0f,
+            )
+        } else {
+            val rawSteps = (-accumulatedDeltaY / threshold).toInt().coerceIn(0, maxSteps)
+            val rem = accumulatedDeltaY + rawSteps * threshold
+            WheelStepResult(
+                wheelUpSteps = 0,
+                wheelDownSteps = rawSteps,
+                remainingDeltaY = if (rem.isFinite() && rem != 0f) rem else 0f,
+            )
+        }
+    } else {
+        WheelStepResult(0, 0, accumulatedDeltaY)
+    }
+}
+
+/**
  * Renders terminal character grid cells, cursor styles, highlights, and gesture overlays via hardware-accelerated Canvas.
  */
 @Composable
@@ -347,18 +413,13 @@ fun TerminalCanvas(
                                     // Wheel scroll loop
                                     if (isScrolling) {
                                         val threshold = currentCellHeight.coerceAtLeast(10f)
-                                        if (accumulatedDy >= threshold) {
-                                            val steps = (accumulatedDy / threshold).toInt()
-                                            accumulatedDy -= steps * threshold
-                                            repeat(steps) {
-                                                currentOnMouseEvent(MouseEvent.WheelUp, downVisibleRow, downCol)
-                                            }
-                                        } else if (accumulatedDy <= -threshold) {
-                                            val steps = (-accumulatedDy / threshold).toInt()
-                                            accumulatedDy += steps * threshold
-                                            repeat(steps) {
-                                                currentOnMouseEvent(MouseEvent.WheelDown, downVisibleRow, downCol)
-                                            }
+                                        val initialWheelStep = consumeWheelSteps(accumulatedDy, threshold)
+                                        accumulatedDy = initialWheelStep.remainingDeltaY
+                                        repeat(initialWheelStep.wheelUpSteps) {
+                                            currentOnMouseEvent(MouseEvent.WheelUp, downVisibleRow, downCol)
+                                        }
+                                        repeat(initialWheelStep.wheelDownSteps) {
+                                            currentOnMouseEvent(MouseEvent.WheelDown, downVisibleRow, downCol)
                                         }
 
                                         while (true) {
@@ -381,18 +442,13 @@ fun TerminalCanvas(
                                             )
                                             val curVisibleRow = curRow - currentScrollbackLineCount
 
-                                            if (accumulatedDy >= threshold) {
-                                                val steps = (accumulatedDy / threshold).toInt()
-                                                accumulatedDy -= steps * threshold
-                                                repeat(steps) {
-                                                    currentOnMouseEvent(MouseEvent.WheelUp, curVisibleRow, curCol)
-                                                }
-                                            } else if (accumulatedDy <= -threshold) {
-                                                val steps = (-accumulatedDy / threshold).toInt()
-                                                accumulatedDy += steps * threshold
-                                                repeat(steps) {
-                                                    currentOnMouseEvent(MouseEvent.WheelDown, curVisibleRow, curCol)
-                                                }
+                                            val wheelStep = consumeWheelSteps(accumulatedDy, threshold)
+                                            accumulatedDy = wheelStep.remainingDeltaY
+                                            repeat(wheelStep.wheelUpSteps) {
+                                                currentOnMouseEvent(MouseEvent.WheelUp, curVisibleRow, curCol)
+                                            }
+                                            repeat(wheelStep.wheelDownSteps) {
+                                                currentOnMouseEvent(MouseEvent.WheelDown, curVisibleRow, curCol)
                                             }
                                             change.consume()
                                         }
@@ -435,18 +491,13 @@ fun TerminalCanvas(
                                         )
                                         val curVisibleRow = curRow - currentScrollbackLineCount
 
-                                        if (accumulatedDeltaY >= threshold) {
-                                            val steps = (accumulatedDeltaY / threshold).toInt()
-                                            accumulatedDeltaY -= steps * threshold
-                                            repeat(steps) {
-                                                currentOnMouseEvent(MouseEvent.WheelUp, curVisibleRow, curCol)
-                                            }
-                                        } else if (accumulatedDeltaY <= -threshold) {
-                                            val steps = (-accumulatedDeltaY / threshold).toInt()
-                                            accumulatedDeltaY -= steps * threshold
-                                            repeat(steps) {
-                                                currentOnMouseEvent(MouseEvent.WheelDown, curVisibleRow, curCol)
-                                            }
+                                        val wheelStep = consumeWheelSteps(accumulatedDeltaY, threshold)
+                                        accumulatedDeltaY = wheelStep.remainingDeltaY
+                                        repeat(wheelStep.wheelUpSteps) {
+                                            currentOnMouseEvent(MouseEvent.WheelUp, curVisibleRow, curCol)
+                                        }
+                                        repeat(wheelStep.wheelDownSteps) {
+                                            currentOnMouseEvent(MouseEvent.WheelDown, curVisibleRow, curCol)
                                         }
 
                                         if (currentTerminalState.mouseTrackingMode != MouseTrackingMode.Click) {

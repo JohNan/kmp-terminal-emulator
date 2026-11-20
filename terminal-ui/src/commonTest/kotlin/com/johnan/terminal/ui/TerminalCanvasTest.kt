@@ -2,9 +2,11 @@ package com.johnan.terminal.core
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import com.johnan.terminal.ui.MAX_WHEEL_STEPS_PER_EVENT
 import com.johnan.terminal.ui.RenderBatch
 import com.johnan.terminal.ui.calculateBatches
 import com.johnan.terminal.ui.calculateVisibleRowRange
+import com.johnan.terminal.ui.consumeWheelSteps
 import com.johnan.terminal.ui.resolveBatchColors
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -204,5 +206,98 @@ class TerminalCanvasTest {
 
         assertEquals(Color.Blue, batch.resolvedFg)
         assertEquals(Color.Red, batch.resolvedBg)
+    }
+
+    @Test
+    fun testConsumeWheelStepsUpwardSwipeDoesNotDoubleExponentially() {
+        val threshold = 35f
+        var accumulatedDeltaY = 0f
+        var totalWheelDownSteps = 0
+
+        repeat(50) {
+            accumulatedDeltaY += -35f
+            val step = consumeWheelSteps(accumulatedDeltaY, threshold)
+            assertEquals(0, step.wheelUpSteps)
+            assertEquals(1, step.wheelDownSteps)
+            assertEquals(0f, step.remainingDeltaY)
+            accumulatedDeltaY = step.remainingDeltaY
+            totalWheelDownSteps += step.wheelDownSteps
+        }
+
+        assertEquals(50, totalWheelDownSteps)
+    }
+
+    @Test
+    fun testConsumeWheelStepsDownwardSwipeEmitsLinearWheelUp() {
+        val threshold = 35f
+        var accumulatedDeltaY = 0f
+        var totalWheelUpSteps = 0
+
+        repeat(50) {
+            accumulatedDeltaY += 35f
+            val step = consumeWheelSteps(accumulatedDeltaY, threshold)
+            assertEquals(1, step.wheelUpSteps)
+            assertEquals(0, step.wheelDownSteps)
+            assertEquals(0f, step.remainingDeltaY)
+            accumulatedDeltaY = step.remainingDeltaY
+            totalWheelUpSteps += step.wheelUpSteps
+        }
+
+        assertEquals(50, totalWheelUpSteps)
+    }
+
+    @Test
+    fun testConsumeWheelStepsPreservesFractionalRemainder() {
+        val threshold = 35f
+
+        val frame1 = consumeWheelSteps(-20f, threshold)
+        assertEquals(0, frame1.wheelUpSteps)
+        assertEquals(0, frame1.wheelDownSteps)
+        assertEquals(-20f, frame1.remainingDeltaY)
+
+        val frame2 = consumeWheelSteps(frame1.remainingDeltaY + -20f, threshold)
+        assertEquals(0, frame2.wheelUpSteps)
+        assertEquals(1, frame2.wheelDownSteps)
+        assertEquals(-5f, frame2.remainingDeltaY)
+    }
+
+    @Test
+    fun testConsumeWheelStepsClampsPathologicalAndNonFiniteDeltas() {
+        val threshold = 35f
+
+        val nonFiniteDeltas = listOf(Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, Float.NaN)
+        for (delta in nonFiniteDeltas) {
+            val result = consumeWheelSteps(delta, threshold)
+            assertTrue(result.wheelUpSteps <= MAX_WHEEL_STEPS_PER_EVENT)
+            assertTrue(result.wheelDownSteps <= MAX_WHEEL_STEPS_PER_EVENT)
+            assertEquals(0, result.wheelUpSteps)
+            assertEquals(0, result.wheelDownSteps)
+            assertTrue(result.remainingDeltaY.isFinite())
+            assertEquals(0f, result.remainingDeltaY)
+        }
+
+        val extremeDeltas = listOf(-1e9f, -1e12f, 1e12f, -Float.MAX_VALUE)
+        for (delta in extremeDeltas) {
+            val result = consumeWheelSteps(delta, threshold)
+            assertTrue(result.wheelUpSteps <= MAX_WHEEL_STEPS_PER_EVENT)
+            assertTrue(result.wheelDownSteps <= MAX_WHEEL_STEPS_PER_EVENT)
+            if (delta < 0f) {
+                assertEquals(0, result.wheelUpSteps)
+                assertEquals(MAX_WHEEL_STEPS_PER_EVENT, result.wheelDownSteps)
+            } else {
+                assertEquals(MAX_WHEEL_STEPS_PER_EVENT, result.wheelUpSteps)
+                assertEquals(0, result.wheelDownSteps)
+            }
+            assertTrue(result.remainingDeltaY.isFinite())
+            assertTrue(result.remainingDeltaY > -threshold && result.remainingDeltaY < threshold)
+        }
+
+        val zeroThreshold = consumeWheelSteps(-35f, 0f)
+        assertTrue(zeroThreshold.wheelUpSteps <= MAX_WHEEL_STEPS_PER_EVENT)
+        assertTrue(zeroThreshold.wheelDownSteps <= MAX_WHEEL_STEPS_PER_EVENT)
+        assertEquals(0, zeroThreshold.wheelUpSteps)
+        assertEquals(0, zeroThreshold.wheelDownSteps)
+        assertTrue(zeroThreshold.remainingDeltaY.isFinite())
+        assertEquals(0f, zeroThreshold.remainingDeltaY)
     }
 }
