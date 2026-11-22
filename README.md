@@ -143,8 +143,8 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
 ## Key Features
 
 - **Decoupled Tiered Architecture**: 
-  - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models. Zero UI dependencies. Compiles to native C-ABI shared (`libterminal_core.so` / `libterminal_core.dylib`) and static (`libterminal_core.a`) libraries on Linux and macOS.
-  - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, gesture recognizers, platform-native input capture, selection overlays, toolbar key bars, automatic DECSCUSR dynamic cursor shape mapping, OSC 10/11/12 live color overrides, OSC 133 prompt mark gutter indicators, and Kitty Progressive Keyboard input dispatch.
+  - `:terminal-core`: Pure Kotlin multiplatform terminal state machine, screen buffer, ANSI/VT100 parser, `TerminalPalette`, and text selection models (`TerminalSelection`, `TerminalSelectionLogic`, `PointerMouseEvent`, `MouseButton`). Zero UI dependencies. Compiles to native C-ABI shared (`libterminal_core.so` / `libterminal_core.dylib`) and static (`libterminal_core.a`) libraries on Linux and macOS.
+  - `:terminal-ui`: Hardware-accelerated Compose Multiplatform canvas renderer, desktop mouse & touch gesture recognizers, platform-native input capture with mouse soft-keyboard suppression, selection overlays, toolbar key bars, automatic DECSCUSR dynamic cursor shape mapping, OSC 10/11/12 live color overrides, OSC 133 prompt mark gutter indicators, and Kitty Progressive Keyboard + xterm hardware modifier input dispatch.
   - `:terminal-tui`: Low-allocation differential ANSI terminal UI renderer, 24-bit TrueColor, offscreen grid surface (`TuiSurface`), extended underline styles (`UnderlineStyle` / SGR `4:x`), 24-bit underline RGB (SGR `58;2;r;g;b`), overline (SGR `53`), OSC 8 explicit hyperlinks, and raw VT100 / SGR input parser (`TuiInputParser`).
 - **Native C-ABI & Zero-Allocation FFI Interop**:
   - Direct C-ABI dynamic and static library exports from `:terminal-core` for non-JVM / non-Compose runtimes.
@@ -166,7 +166,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - **OSC 133 Semantic Prompt Marks (FTCS)**: Full FinalTerm semantic shell integration (`133;A` prompt start, `133;B` command start, `133;C` output start, `133;D;[exitCode]` command finished). Tracks execution status in `isCommandRunning` and `lastExitCode`, records `PromptMark` boundaries, enables prompt navigation (`findPreviousPromptLine()`, `findNextPromptLine()`), and cleanly isolates command output via `extractLastCommandOutput()` excluding prompts and typed commands.
 - **Text Selection & Clipboard Management**:
   - Multi-line text selection overlay with visual start/end handle indicators.
-  - Drag-selection gesture tracking, long-press activation, and auto-copy on release.
+  - Touch drag-selection with long-press activation, plus desktop mouse direct drag-selection, double-click word selection (`TerminalSelectionLogic.findWordBounds` / `selectWord`), triple-click line selection (`TerminalSelectionLogic.selectLine`), `Shift`+drag bypass during mouse tracking, and `SelectionController.onSelectRange` range callbacks.
   - Plain-text extraction with ANSI sequence stripping and scrollback boundary support.
 - **ANSI & Modern Terminal Standards**:
   - 16 standard/bright ANSI colors, 256 indexed colors, 24-bit TrueColor RGB.
@@ -176,7 +176,7 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - Synchronized Output (DEC Mode 2026 `\e[?2026h` / `\e[?2026l`): Atomic screen updates eliminating tearing and flickering during high-frequency frame rendering in modern CLI and TUI apps.
   - Focus Reporting (DEC Mode 1004 `\e[?1004h` / `\e[?1004l`): Emits `\e[I` on terminal window/input focus gain and `\e[O` on focus loss.
   - Terminal Capabilities & Query Modes: Primary & Secondary Device Attributes (DA1 / DA2 `\e[>c`), Terminal Version reporting (XTVERSION `\e[>0q`), and DEC Request Mode (DECRQM `\e[?<mode>$p`).
-  - SGR Mouse Tracking (1006) and legacy xterm mouse tracking (press, release, drag, wheel).
+  - SGR Mouse Tracking (1006) and legacy xterm mouse tracking via `PointerMouseEvent` and `MouseButton` (`LEFT`, `MIDDLE`, `RIGHT`, `NONE`) with `encode(sgrMode)` supporting press, release, drag, wheel, and Shift/Alt/Ctrl modifiers.
   - OSC 52 clipboard integration with configurable security policies (`ASK`, `ALWAYS_ALLOW`, `ALWAYS_DENY`).
   - Independent deep state cloning (`TerminalEmulator.copy()`) for headless sessions and speculative execution (e.g. Mosh).
   - Soft-wrap row querying (`ScreenBuffer.isRowWrapped(row)`).
@@ -202,7 +202,9 @@ A secure, high-performance Android SSH & SFTP client with hardware-backed encryp
   - UI input dispatch: `:terminal-ui` `applyModifierToChar` and `handleHardwareKeyEvent` accept `kittyKeyboardFlags` to transparently emit unambiguous escape codes (`\e[<code-point>;<modifiers>u`).
   - TUI integration: `:terminal-tui` `TuiInputParser` parses `CSI u` sequences and functional keys with `:<eventType>` sub-parameters, and encodes keys using `toAnsiSequence(..., kittyKeyboardFlags = flags)`.
 - **Mobile & Desktop Responsive Features**:
-  - Soft keyboard modifier toggle integration (Ctrl, Alt, Shift states).
+  - Soft keyboard modifier toggle integration (Ctrl, Alt, Shift states) and `suppressSoftKeyboardForMouse` focus-only routing so mouse clicks focus without popping up on-screen keyboards.
+  - Desktop mouse ergonomics: `enableMouseDirectSelection`, `mouseWheelLinesPerStep` wheel forwarding, `Ctrl`+wheel zoom passthrough, right/middle-click parent bubbling when tracking is off, and dynamic URL hover cursor (`PointerIcon.Hand` over URLs, `PointerIcon.Text` over text).
+  - Enhanced hardware keyboard handling: xterm modifier sequences (`computeXtermModifierParam`, `encodeModifiedArrowKey`, `encodeModifiedSpecialKey`) for Ctrl/Alt+Arrow, F1–F12, Home/End/Insert/Delete/PageUp/PageDown, `Ctrl+Space`/`Ctrl+2` (`NUL`), `Alt+A..Z`/`Alt+0..9`, `Shift+Tab` (`\e[Z`), and `Alt+Tab`.
   - Monospace cell measurement with sub-pixel precision to eliminate column drift.
   - Low-allocation batching render loop with LRU cache.
   - Touch-scroll disambiguation (`touchScrollSendsWheelOnly`) to send mouse wheel events on mobile drag gestures in tmux and vim.
@@ -328,6 +330,9 @@ fun TerminalScreen(emulator: TerminalEmulator) {
             enableSelection = true
             wheelScrollMultiplier = 1.5f
             touchScrollSendsWheelOnly = true // Opt-in wheel-only touch scrolling for tmux/vim
+            enableMouseDirectSelection = true // Immediate mouse drag, double-click word, triple-click line
+            suppressSoftKeyboardForMouse = true // Focus via mouse without opening soft keyboard
+            mouseWheelLinesPerStep = 3 // Lines per wheel step forwarded when mouse tracking is active
         }
         render {
             showPromptMarks = true // 3dp left gutter indicators for OSC 133 semantic prompts
@@ -360,10 +365,12 @@ fun TerminalScreen(emulator: TerminalEmulator) {
 
 ### 3. Text Selection and Copy Mode
 
-Text selection is managed through `TerminalSelection` and `SelectionState`:
+Text selection is managed through `TerminalSelection`, `TerminalSelectionLogic`, `SelectionController`, and `SelectionState`:
 
 ```kotlin
 import com.johnan.terminal.core.TerminalSelection
+import com.johnan.terminal.core.TerminalSelectionLogic
+import com.johnan.terminal.ui.SelectionController
 
 // Programmatically extract text from a selection
 val selection = TerminalSelection(startRow = 0, startCol = 0, endRow = 2, endCol = 40)
@@ -371,6 +378,19 @@ val selectedText = selection.extractText(screenBuffer)
 
 // Selection containment check
 val isInside = selection.contains(row = 1, col = 10)
+
+// Word and line selection helpers for double-click / triple-click
+val rowCells = screenBuffer.getRow(0)
+val wordRange = TerminalSelectionLogic.findWordBounds(rowCells, col = 6)
+val wordSelection = TerminalSelectionLogic.selectWord(row = 0, col = 6, rowCells = rowCells)
+val lineSelection = TerminalSelectionLogic.selectLine(row = 0, cols = 80)
+
+// SelectionController with single-step range selection callback
+val selectionController = SelectionController(
+    onSelectRange = { startRow, startCol, endRow, endCol ->
+        // Update SelectionState.SelectionComplete directly for double/triple-click selection
+    },
+)
 ```
 
 ### 4. Forking state (`TerminalEmulator.copy()`)
@@ -606,6 +626,48 @@ val state = emulator.screenState.value
 val screenFg = state.dynamicForegroundRgb
 val screenBg = state.dynamicBackgroundRgb
 val screenCursor = state.dynamicCursorRgb
+```
+
+### 10. Desktop Mouse Tracking & Hardware Keyboard Input
+
+`TerminalRenderer` and `TerminalCanvas` provide native desktop mouse ergonomics alongside multi-button SGR/X10 pointer tracking and xterm-compatible hardware keyboard encoding:
+
+```kotlin
+import com.johnan.terminal.core.ArrowDirection
+import com.johnan.terminal.core.MouseButton
+import com.johnan.terminal.core.MouseEvent
+import com.johnan.terminal.core.PointerMouseEvent
+import com.johnan.terminal.ui.TerminalRenderer
+import com.johnan.terminal.ui.computeXtermModifierParam
+import com.johnan.terminal.ui.encodeModifiedArrowKey
+import com.johnan.terminal.ui.encodeModifiedSpecialKey
+
+// Encode multi-button / modified mouse events
+val rightClickSeq = PointerMouseEvent(
+    type = MouseEvent.Press,
+    button = MouseButton.RIGHT,
+    row = 4,
+    col = 12,
+    ctrlPressed = true,
+).encode(sgrMode = true) // "\u001B[<18;13;5M"
+
+// Receive full-fidelity mouse events in TerminalRenderer (defaults to SGR/X10 encoding -> onInput)
+TerminalRenderer(
+    terminalState = terminalState,
+    onInput = { seq -> /* send to PTY */ },
+    onArrowKey = { dir, shift -> /* DECCKM arrow key */ },
+    onLog = {},
+    onPointerMouseEvent = { event ->
+        event.encode(terminalState.sgrMouseModeEnabled)?.let(::sendToPty)
+    },
+)
+
+// Hardware keyboard xterm modifier encoding
+val modParam = computeXtermModifierParam(isShift = true, isAlt = false, isCtrl = true) // 6
+val ctrlShiftRight = encodeModifiedArrowKey(ArrowDirection.RIGHT, isShift = true, isAlt = false, isCtrl = true)
+// -> "\u001B[1;6C"
+val ctrlHome = encodeModifiedSpecialKey(baseEscapeCode = "H", isTildeSequence = false, modifierParam = 5)
+// -> "\u001B[1;5H"
 ```
 
 ---

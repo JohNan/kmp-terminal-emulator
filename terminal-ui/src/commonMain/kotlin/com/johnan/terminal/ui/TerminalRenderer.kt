@@ -24,6 +24,9 @@ import androidx.compose.ui.unit.sp
 import com.johnan.terminal.core.ArrowDirection
 import com.johnan.terminal.core.CursorShape
 import com.johnan.terminal.core.KittyKeyboardProtocol
+import com.johnan.terminal.core.MouseButton
+import com.johnan.terminal.core.MouseEvent
+import com.johnan.terminal.core.PointerMouseEvent
 import com.johnan.terminal.core.SearchState
 import com.johnan.terminal.core.SelectionState
 import com.johnan.terminal.core.TerminalCell
@@ -68,6 +71,7 @@ fun TerminalRenderer(
     onCellMeasured: (Float, Float) -> Unit = { _, _ -> },
     selectionController: SelectionController? = null,
     onStartDirectTouchSelection: (row: Int, col: Int) -> Unit = { _, _ -> },
+    onPointerMouseEvent: ((PointerMouseEvent) -> Unit)? = null,
 ) {
     val textMeasurer = rememberTextMeasurer()
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -140,12 +144,19 @@ fun TerminalRenderer(
         val internalFocusRequester = focusRequester ?: remember { FocusRequester() }
 
         var localShowKeyboardSignal by remember { mutableIntStateOf(0) }
+        var localFocusOnlySignal by remember { mutableIntStateOf(0) }
         val effectiveShowKeyboardSignal = showKeyboardSignal + localShowKeyboardSignal
 
         val onRequestFocus = {
             internalFocusRequester.requestFocus()
             keyboardController?.show()
             localShowKeyboardSignal++
+            Unit
+        }
+
+        val onRequestFocusOnly = {
+            internalFocusRequester.requestFocus()
+            localFocusOnlySignal++
             Unit
         }
 
@@ -304,6 +315,9 @@ fun TerminalRenderer(
                                 }
                             }
                         },
+                focusOnlySignal = localFocusOnlySignal,
+                suppressSoftKeyboardForMouse = config.gestures.suppressSoftKeyboardForMouse,
+                kittyKeyboardFlags = terminalState.kittyKeyboardFlags,
             )
         }
 
@@ -336,6 +350,28 @@ fun TerminalRenderer(
             }
 
         val effectiveOnMouseEvent = onMouseEvent ?: defaultOnMouseEvent
+
+        val defaultOnPointerMouseEvent: (PointerMouseEvent) -> Unit =
+            remember(onMouseEvent, onInput, terminalState.sgrMouseModeEnabled) {
+                { event ->
+                    if (onMouseEvent != null &&
+                        (
+                            event.button == MouseButton.LEFT ||
+                                event.type == MouseEvent.WheelUp ||
+                                event.type == MouseEvent.WheelDown
+                        ) &&
+                        !event.shiftPressed &&
+                        !event.altPressed &&
+                        !event.ctrlPressed
+                    ) {
+                        onMouseEvent(event.type, event.row, event.col)
+                    } else {
+                        event.encode(terminalState.sgrMouseModeEnabled)?.let(onInput)
+                    }
+                }
+            }
+
+        val effectiveOnPointerMouseEvent = onPointerMouseEvent ?: defaultOnPointerMouseEvent
 
         val effectiveSelectionController = selectionController ?: remember(
             onStartDraggingStartCursor,
@@ -396,6 +432,8 @@ fun TerminalRenderer(
             onLog = onLog,
             selectionController = effectiveSelectionController,
             onStartDirectTouchSelection = onStartDirectTouchSelection,
+            onRequestFocusOnly = onRequestFocusOnly,
+            onPointerMouseEvent = effectiveOnPointerMouseEvent,
         )
     }
 }

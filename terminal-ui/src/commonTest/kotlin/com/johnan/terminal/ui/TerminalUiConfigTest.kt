@@ -39,6 +39,9 @@ class TerminalUiConfigTest {
         assertEquals(1.0f, config.gestures.wheelScrollMultiplier)
         assertEquals(400L, config.gestures.longPressTimeoutMs)
         assertFalse(config.gestures.touchScrollSendsWheelOnly)
+        assertTrue(config.gestures.enableMouseDirectSelection)
+        assertTrue(config.gestures.suppressSoftKeyboardForMouse)
+        assertEquals(3, config.gestures.mouseWheelLinesPerStep)
 
         // KeyBar
         assertTrue(config.keyBar.isVisible)
@@ -72,6 +75,9 @@ class TerminalUiConfigTest {
                 wheelScrollMultiplier = 2.5f
                 longPressTimeoutMs = 600L
                 touchScrollSendsWheelOnly = true
+                enableMouseDirectSelection = false
+                suppressSoftKeyboardForMouse = false
+                mouseWheelLinesPerStep = 5
             }
             keyBar {
                 isVisible = false
@@ -100,6 +106,9 @@ class TerminalUiConfigTest {
         assertEquals(2.5f, config.gestures.wheelScrollMultiplier)
         assertEquals(600L, config.gestures.longPressTimeoutMs)
         assertTrue(config.gestures.touchScrollSendsWheelOnly)
+        assertFalse(config.gestures.enableMouseDirectSelection)
+        assertFalse(config.gestures.suppressSoftKeyboardForMouse)
+        assertEquals(5, config.gestures.mouseWheelLinesPerStep)
 
         assertFalse(config.keyBar.isVisible)
         assertEquals(56.dp, config.keyBar.height)

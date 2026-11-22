@@ -18,6 +18,7 @@ This document provides explicit, recipe-driven before-and-after migration instru
 10. **Dynamic Palette & Color Overrides (OSC 4/10/11/12/104/110/111/112)** & **DCS Capability Queries (XTGETTCAP / DECRQSS)**: Added dynamic RGB color queries/overrides for foreground, background, cursor, and 256-color palette indices, alongside terminfo capability retrieval (`DCS + q`) and status string queries (`DCS $ q`).
 11. **`:terminal-ui` Protocol Visual Binding & Enhanced Keyboard Handling**: Added `showPromptMarks` to `TerminalRenderOptimizationConfig`, dynamic DECSCUSR cursor shape rendering (`CursorShape.BLOCK`, `UNDERLINE`, `BEAM`), OSC 10/11/12 dynamic canvas background and cursor color binding, and `kittyKeyboardFlags` parameter to `applyModifierToChar` and `handleHardwareKeyEvent`.
 12. **`:terminal-tui` Protocol Parity & Full C-ABI / Rust FFI Bindings**: Extended `:terminal-tui` with `UnderlineStyle` (SGR `4:x`), 24-bit underline RGB (SGR `58;2;r;g;b`), `OVERLINE` (SGR `53`), and `OSC 8` explicit hyperlinks in `TuiSurface` and `TuiAnsiRenderer`. Expanded native C-ABI exports and safe Rust crate (`kmp-terminal-rs`) to full protocol parity (`CursorShape`, `UnderlineStyle`, `drain_response`, `kitty_keyboard_flags`, `encode_key_event`, `working_directory`, `last_exit_code`, `is_command_running`, `extract_last_command_output`).
+13. **Desktop Mouse Ergonomics, Multi-Button Pointer Tracking & Enhanced Hardware Keyboard**: Added `PointerMouseEvent` and `MouseButton` (`LEFT`, `MIDDLE`, `RIGHT`, `NONE`) in `:terminal-core`, `TerminalSelectionLogic.findWordBounds` / `selectWord` / `selectLine`, `SelectionController.onSelectRange`, desktop mouse drag/double-click/triple-click selection, `Shift`+drag bypass during mouse tracking, wheel forwarding with `Ctrl`+wheel zoom passthrough, URL hover `PointerIcon.Hand`/`Text`, `TerminalGestureConfig` desktop options (`enableMouseDirectSelection`, `suppressSoftKeyboardForMouse`, `mouseWheelLinesPerStep`), `TerminalInputCapture` focus-only routing (`focusOnlySignal`, `suppressSoftKeyboardForMouse`, `kittyKeyboardFlags`), and xterm-modified hardware keyboard dispatch (`computeXtermModifierParam`, `encodeModifiedArrowKey`, `encodeModifiedSpecialKey`).
 
 ---
 
@@ -788,8 +789,88 @@ for cell in &cells[..count] {
 }
 ```
 
+---
 
+### Recipe 21: Desktop Mouse Interaction, Multi-Button Tracking & Enhanced Hardware Keyboard
 
+#### 1. Multi-Button Mouse Tracking (`PointerMouseEvent`, `MouseButton`) & Desktop `TerminalGestureConfig`
 
+##### Before (Single-button `onMouseEvent` without modifier/button metadata)
+```kotlin
+val uiConfig = terminalUiConfig {
+    gestures {
+        touchScrollSendsWheelOnly = true
+    }
+}
 
+TerminalRenderer(
+    terminalState = terminalState,
+    config = uiConfig,
+    onInput = { sendToPty(it) },
+    onArrowKey = { dir, shift -> sendArrow(dir, shift) },
+    onLog = {},
+    onMouseEvent = { type, row, col ->
+        // Only receives single-button (LEFT / Wheel) events with no Shift/Alt/Ctrl metadata
+    },
+)
+```
 
+##### After (Multi-button `onPointerMouseEvent`, Shift-bypass selection, wheel steps, and focus-only mouse clicks)
+```kotlin
+import com.johnan.terminal.core.MouseButton
+import com.johnan.terminal.core.PointerMouseEvent
+import com.johnan.terminal.core.TerminalSelectionLogic
+import com.johnan.terminal.ui.SelectionController
+import com.johnan.terminal.ui.TerminalRenderer
+import com.johnan.terminal.ui.terminalUiConfig
+
+val uiConfig = terminalUiConfig {
+    gestures {
+        enableMouseDirectSelection = true     // Immediate drag, double-click word, triple-click line
+        suppressSoftKeyboardForMouse = true   // Focus terminal on mouse click without opening IME
+        mouseWheelLinesPerStep = 3            // Lines per wheel notch forwarded in mouse tracking mode
+    }
+}
+
+// Optional single-step range selection callback for double/triple-click
+val selectionController = SelectionController(
+    onSelectRange = { startRow, startCol, endRow, endCol ->
+        // Directly apply SelectionState.SelectionComplete(TerminalSelection(startRow, startCol, endRow, endCol))
+    },
+)
+
+TerminalRenderer(
+    terminalState = terminalState,
+    config = uiConfig,
+    onInput = { sendToPty(it) },
+    onArrowKey = { dir, shift -> sendArrow(dir, shift) },
+    onLog = {},
+    selectionController = selectionController,
+    // Legacy onMouseEvent still works for unmodified LEFT/Wheel; omit or use onPointerMouseEvent for full parity:
+    onPointerMouseEvent = { event: PointerMouseEvent ->
+        // Carries event.button (LEFT, MIDDLE, RIGHT, NONE) and shiftPressed / altPressed / ctrlPressed
+        event.encode(terminalState.sgrMouseModeEnabled)?.let(::sendToPty)
+    },
+)
+```
+
+- **Mouse Behaviors in `TerminalCanvas`**:
+  - **Hover**: Displays `PointerIcon.Hand` over detected URLs and `PointerIcon.Text` elsewhere.
+  - **Wheel Forwarding**: When `mouseTrackingMode != None`, scroll wheel events forward `mouseWheelLinesPerStep` steps unless `Ctrl` is held (`Ctrl`+wheel remains unconsumed for parent zoom).
+  - **Tracking & `Shift` Bypass**: In mouse tracking mode, holding `Shift` + primary mouse drag/double-click/triple-click performs local selection without emitting PTY mouse sequences; right/middle clicks in `MouseTrackingMode.None` bubble unconsumed to parent modifiers without stealing focus.
+
+#### 2. Word / Line Selection Helpers (`TerminalSelectionLogic`)
+
+```kotlin
+val rowCells = screenBuffer.getRow(row)
+val wordBounds = TerminalSelectionLogic.findWordBounds(rowCells, col)
+val wordState = TerminalSelectionLogic.selectWord(row, col, rowCells)
+val lineState = TerminalSelectionLogic.selectLine(row, cols)
+```
+
+#### 3. Enhanced Hardware Keyboard Modifier Sequences (`TerminalInputHandler`)
+
+- **Before**: Ctrl+Arrow, Alt+Arrow, modified F1–F12/navigation keys, `Ctrl+Space`, `Shift+Tab`, and `Alt+A..Z`/`0..9` either dropped modifiers or required custom handling.
+- **After**: `handleHardwareKeyEvent` (and `TerminalInputCapture` across Android, JVM, WasmJS, and iOS) automatically encodes:
+  - `Ctrl`/`Alt`/`Shift` + Arrow (`\u001B[1;<mod>A..D`), F1–F12 (`\u001B[1;<mod>P..S` / `\u001B[<code>;<mod>~`), Home/End (`\u001B[1;<mod>H/F`), and Insert/Delete/PageUp/PageDown via `computeXtermModifierParam`, `encodeModifiedArrowKey`, and `encodeModifiedSpecialKey`.
+  - `Ctrl+Space` / `Ctrl+2` (`\u0000`), `Ctrl+Shift+Letter` passthrough, `Alt+A..Z` (preserving Shift case), `Alt+0..9`, `Shift+Tab` (`\u001B[Z`), `Alt+Tab` (`\u001B\t`), and `Alt+Shift+Tab` (`\u001B\u001B[Z`).

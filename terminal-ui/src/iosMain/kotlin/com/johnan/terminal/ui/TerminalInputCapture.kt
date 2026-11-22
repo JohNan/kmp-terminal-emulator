@@ -37,6 +37,9 @@ actual fun TerminalInputCapture(
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
     modifier: Modifier,
+    focusOnlySignal: Int,
+    suppressSoftKeyboardForMouse: Boolean,
+    kittyKeyboardFlags: Int,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -44,6 +47,12 @@ actual fun TerminalInputCapture(
         if (showKeyboardSignal > 0) {
             focusRequester.requestFocus()
             keyboardController?.show()
+        }
+    }
+
+    LaunchedEffect(focusOnlySignal) {
+        if (focusOnlySignal > 0) {
+            focusRequester.requestFocus()
         }
     }
 
@@ -79,32 +88,36 @@ actual fun TerminalInputCapture(
                 .focusRequester(focusRequester)
                 .onKeyEvent { keyEvent ->
                     if (keyEvent.type == KeyEventType.KeyDown) {
-                        when (keyEvent.key) {
-                            Key.DirectionLeft -> {
-                                onArrowKey(ArrowDirection.LEFT, keyEvent.isShiftPressed)
-                                true
+                        if (handleHardwareKeyEvent(keyEvent, onInput, onArrowKey, kittyKeyboardFlags)) {
+                            true
+                        } else {
+                            when (keyEvent.key) {
+                                Key.DirectionLeft -> {
+                                    onArrowKey(ArrowDirection.LEFT, keyEvent.isShiftPressed)
+                                    true
+                                }
+                                Key.DirectionRight -> {
+                                    onArrowKey(ArrowDirection.RIGHT, keyEvent.isShiftPressed)
+                                    true
+                                }
+                                Key.DirectionUp -> {
+                                    onArrowKey(ArrowDirection.UP, keyEvent.isShiftPressed)
+                                    true
+                                }
+                                Key.DirectionDown -> {
+                                    onArrowKey(ArrowDirection.DOWN, keyEvent.isShiftPressed)
+                                    true
+                                }
+                                Key.Enter -> {
+                                    onInput("\n")
+                                    true
+                                }
+                                Key.Backspace -> {
+                                    onInput("\u007f")
+                                    true
+                                }
+                                else -> false
                             }
-                            Key.DirectionRight -> {
-                                onArrowKey(ArrowDirection.RIGHT, keyEvent.isShiftPressed)
-                                true
-                            }
-                            Key.DirectionUp -> {
-                                onArrowKey(ArrowDirection.UP, keyEvent.isShiftPressed)
-                                true
-                            }
-                            Key.DirectionDown -> {
-                                onArrowKey(ArrowDirection.DOWN, keyEvent.isShiftPressed)
-                                true
-                            }
-                            Key.Enter -> {
-                                onInput("\n")
-                                true
-                            }
-                            Key.Backspace -> {
-                                onInput("\u007f")
-                                true
-                            }
-                            else -> false
                         }
                     } else {
                         false

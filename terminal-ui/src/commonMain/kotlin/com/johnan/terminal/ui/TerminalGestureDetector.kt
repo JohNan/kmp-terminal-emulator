@@ -1,13 +1,19 @@
 package com.johnan.terminal.ui
 
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import com.johnan.terminal.core.SelectionState
 import com.johnan.terminal.core.TerminalCell
 import kotlin.math.roundToInt
@@ -25,6 +31,7 @@ class SelectionController(
     val onFinalizeEndCursorAndCopy: () -> Unit = {},
     val onClearSelection: () -> Unit = {},
     val onStartDirectTouchSelection: (row: Int, col: Int) -> Unit = { _, _ -> },
+    val onSelectRange: ((startRow: Int, startCol: Int, endRow: Int, endCol: Int) -> Unit)? = null,
 )
 
 /**
@@ -66,11 +73,17 @@ fun Modifier.terminalGestures(
 
     return this
         .pointerInput(Unit) {
-            detectTapGestures(
-                onTap = { offset ->
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = true)
+                if (down.type == PointerType.Mouse && !currentEvent.buttons.isPrimaryPressed) {
+                    return@awaitEachGesture
+                }
+                val up = waitForUpOrCancellation()
+                if (up != null) {
+                    up.consume()
                     val (row, col) =
                         TerminalCoordinateConverter.screenToTerminal(
-                            offset = offset,
+                            offset = up.position,
                             cellWidth = currentCellWidth.value,
                             cellHeight = currentCellHeight.value,
                             scrollbackLineCount = currentScrollbackLineCount.value,
@@ -79,81 +92,64 @@ fun Modifier.terminalGestures(
                             verticalOffset = currentVerticalOffset.value,
                         )
                     currentOnSingleTap.value(row, col)
-                },
-            )
+                }
+            }
         }
         .pointerInput(Unit) {
-            var isDraggingStart = false
-            var isDraggingEnd = false
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                if (down.isConsumed || (down.type == PointerType.Mouse && !currentEvent.buttons.isPrimaryPressed)) {
+                    return@awaitEachGesture
+                }
+                val dragStart = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
 
-            var initialCursorRow = 0
-            var initialCursorCol = 0
-            var totalDragDistance = Offset.Zero
+                val state = currentSelectionState.value
+                var isDraggingStart = false
+                var isDraggingEnd = false
+                var initialCursorRow = 0
+                var initialCursorCol = 0
+                var totalDragDistance = Offset.Zero
 
-            detectDragGesturesAfterLongPress(
-                onDragStart = { _ ->
-                    val state = currentSelectionState.value
-                    totalDragDistance = Offset.Zero
-
-                    when (state) {
-                        is SelectionState.StartCursorPlaced -> {
-                            isDraggingStart = true
-                            isDraggingEnd = false
-                            initialCursorRow = state.startRow
-                            initialCursorCol = state.startCol
-                            currentOnStartDraggingStartCursor.value(initialCursorRow, initialCursorCol)
-                        }
-                        is SelectionState.SelectionComplete -> {
-                            isDraggingStart = false
-                            isDraggingEnd = true
-                            initialCursorRow = state.selection.endRow
-                            initialCursorCol = state.selection.endCol
-                            currentOnStartDraggingEndCursor.value(initialCursorRow, initialCursorCol)
-                        }
-                        else -> {
-                            isDraggingStart = false
-                            isDraggingEnd = false
-                        }
+                when (state) {
+                    is SelectionState.StartCursorPlaced -> {
+                        isDraggingStart = true
+                        initialCursorRow = state.startRow
+                        initialCursorCol = state.startCol
+                        currentOnStartDraggingStartCursor.value(initialCursorRow, initialCursorCol)
                     }
-                },
-                onDrag = { change, dragAmount ->
-                    if (isDraggingStart || isDraggingEnd) {
-                        change.consume()
-
-                        totalDragDistance += dragAmount
-
-                        val rowDelta = (totalDragDistance.y / currentCellHeight.value).roundToInt()
-                        val colDelta = (totalDragDistance.x / currentCellWidth.value).roundToInt()
-
-                        val newRow = (initialCursorRow + rowDelta).coerceIn(0, currentAllRows.value.size - 1)
-                        val newCol = (initialCursorCol + colDelta).coerceIn(0, currentTerminalCols.value - 1)
-
-                        if (isDraggingStart) {
-                            currentOnUpdateStartCursor.value(newRow, newCol)
-                        } else {
-                            currentOnUpdateEndCursor.value(newRow, newCol)
-                        }
+                    is SelectionState.SelectionComplete -> {
+                        isDraggingEnd = true
+                        initialCursorRow = state.selection.endRow
+                        initialCursorCol = state.selection.endCol
+                        currentOnStartDraggingEndCursor.value(initialCursorRow, initialCursorCol)
                     }
-                },
-                onDragEnd = {
+                    else -> return@awaitEachGesture
+                }
+
+                drag(dragStart.id) { change ->
+                    val dragAmount = change.positionChange()
+                    change.consume()
+                    totalDragDistance += dragAmount
+
+                    val rowDelta = (totalDragDistance.y / currentCellHeight.value).roundToInt()
+                    val colDelta = (totalDragDistance.x / currentCellWidth.value).roundToInt()
+
+                    val newRow = (initialCursorRow + rowDelta).coerceIn(0, currentAllRows.value.size - 1)
+                    val newCol = (initialCursorCol + colDelta).coerceIn(0, currentTerminalCols.value - 1)
+
                     if (isDraggingStart) {
-                        currentOnFinalizeStartCursor.value()
-                    } else if (isDraggingEnd) {
-                        currentOnFinalizeEndCursor.value()
+                        currentOnUpdateStartCursor.value(newRow, newCol)
+                    } else {
+                        currentOnUpdateEndCursor.value(newRow, newCol)
                     }
-                    isDraggingStart = false
-                    isDraggingEnd = false
-                },
-                onDragCancel = {
-                    if (isDraggingStart) {
-                        currentOnFinalizeStartCursor.value()
-                    } else if (isDraggingEnd) {
-                        currentOnFinalizeEndCursor.value()
-                    }
-                    isDraggingStart = false
-                    isDraggingEnd = false
-                },
-            )
+                }
+
+                if (isDraggingStart) {
+                    currentOnFinalizeStartCursor.value()
+                } else if (isDraggingEnd) {
+                    currentOnFinalizeEndCursor.value()
+                }
+            }
         }
 }
 

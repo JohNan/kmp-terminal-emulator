@@ -3,6 +3,7 @@ package com.johnan.terminal.ui
 import android.content.Context
 import android.graphics.Rect
 import android.text.InputType
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -20,6 +21,9 @@ class TerminalInputView(
     var onInput: ((String) -> Unit)? = null
     var onArrowKey: ((ArrowDirection, Boolean) -> Unit)? = null
     var onLog: ((String) -> Unit)? = null
+    var suppressSoftKeyboardForMouse: Boolean = true
+    var kittyKeyboardFlags: Int = 0
+    private var lastTouchWasMouse: Boolean = false
 
     init {
         isFocusable = true
@@ -36,7 +40,16 @@ class TerminalInputView(
         }
     }
 
+    fun focusOnly() {
+        post {
+            requestFocus()
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        lastTouchWasMouse =
+            (event.pointerCount > 0 && event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) ||
+            event.isFromSource(InputDevice.SOURCE_MOUSE)
         val handled = super.onTouchEvent(event)
         if (event.action == MotionEvent.ACTION_UP) {
             performClick()
@@ -47,7 +60,11 @@ class TerminalInputView(
 
     override fun performClick(): Boolean {
         super.performClick()
-        showKeyboard()
+        if (suppressSoftKeyboardForMouse && lastTouchWasMouse) {
+            requestFocus()
+        } else {
+            showKeyboard()
+        }
         return true
     }
 
@@ -113,11 +130,18 @@ class TerminalInputView(
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (event == null) return super.onKeyDown(keyCode, event)
 
-        var handled = handleAndroidHardwareKeyEvent(event, onInput, onArrowKey)
+        var handled = handleAndroidHardwareKeyEvent(event, onInput, onArrowKey, kittyKeyboardFlags)
 
         if (!handled && event.action == KeyEvent.ACTION_DOWN) {
             val unicodeChar = event.unicodeChar
-            if (unicodeChar > 0 && !Character.isISOControl(unicodeChar)) {
+            if (shouldEmitFallbackUnicodeChar(
+                    isCtrl = event.isCtrlPressed,
+                    isMeta = event.isMetaPressed,
+                    isAlt = event.isAltPressed,
+                    isAltGrComposed = event.isAltGrComposed(),
+                    unicodeChar = unicodeChar,
+                )
+            ) {
                 onInput?.invoke(unicodeChar.toChar().toString())
                 handled = true
             }

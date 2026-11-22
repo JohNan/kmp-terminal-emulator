@@ -5,6 +5,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,9 +37,18 @@ actual fun TerminalInputCapture(
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
     modifier: Modifier,
+    focusOnlySignal: Int,
+    suppressSoftKeyboardForMouse: Boolean,
+    kittyKeyboardFlags: Int,
 ) {
-    androidx.compose.runtime.LaunchedEffect(showKeyboardSignal) {
+    LaunchedEffect(showKeyboardSignal) {
         if (showKeyboardSignal > 0) {
+            focusRequester.requestFocus()
+        }
+    }
+
+    LaunchedEffect(focusOnlySignal) {
+        if (focusOnlySignal > 0) {
             focusRequester.requestFocus()
         }
     }
@@ -88,32 +98,36 @@ actual fun TerminalInputCapture(
             .focusRequester(focusRequester)
             .onKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.key) {
-                        Key.DirectionLeft -> {
-                            onArrowKey(ArrowDirection.LEFT, keyEvent.isShiftPressed)
-                            true
+                    if (handleHardwareKeyEvent(keyEvent, onInput, onArrowKey, kittyKeyboardFlags)) {
+                        true
+                    } else {
+                        when (keyEvent.key) {
+                            Key.DirectionLeft -> {
+                                onArrowKey(ArrowDirection.LEFT, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                onArrowKey(ArrowDirection.RIGHT, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.DirectionUp -> {
+                                onArrowKey(ArrowDirection.UP, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.DirectionDown -> {
+                                onArrowKey(ArrowDirection.DOWN, keyEvent.isShiftPressed)
+                                true
+                            }
+                            Key.Enter -> {
+                                onInput("\n")
+                                true
+                            }
+                            Key.Backspace -> {
+                                onInput("\u007f")
+                                true
+                            }
+                            else -> false
                         }
-                        Key.DirectionRight -> {
-                            onArrowKey(ArrowDirection.RIGHT, keyEvent.isShiftPressed)
-                            true
-                        }
-                        Key.DirectionUp -> {
-                            onArrowKey(ArrowDirection.UP, keyEvent.isShiftPressed)
-                            true
-                        }
-                        Key.DirectionDown -> {
-                            onArrowKey(ArrowDirection.DOWN, keyEvent.isShiftPressed)
-                            true
-                        }
-                        Key.Enter -> {
-                            onInput("\n")
-                            true
-                        }
-                        Key.Backspace -> {
-                            onInput("\u007f")
-                            true
-                        }
-                        else -> false
                     }
                 } else {
                     false

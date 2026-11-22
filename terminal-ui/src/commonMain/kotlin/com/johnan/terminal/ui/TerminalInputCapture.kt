@@ -17,4 +17,7 @@ expect fun TerminalInputCapture(
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
     modifier: Modifier = Modifier,
+    focusOnlySignal: Int = 0,
+    suppressSoftKeyboardForMouse: Boolean = true,
+    kittyKeyboardFlags: Int = 0,
 )
