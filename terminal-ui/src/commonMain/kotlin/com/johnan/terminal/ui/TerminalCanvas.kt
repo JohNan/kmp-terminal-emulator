@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -20,6 +23,20 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.areAnyPressed
+import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.input.pointer.isTertiaryPressed
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,8 +50,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.johnan.terminal.core.KITTY_PLACEHOLDER_CODEPOINT
 import com.johnan.terminal.core.KittyUnicodePlaceholders
+import com.johnan.terminal.core.MouseButton
 import com.johnan.terminal.core.MouseEvent
 import com.johnan.terminal.core.MouseTrackingMode
+import com.johnan.terminal.core.PointerMouseEvent
 import com.johnan.terminal.core.PromptMark
 import com.johnan.terminal.core.PromptMarkType
 import com.johnan.terminal.core.ScreenBuffer
@@ -44,10 +63,13 @@ import com.johnan.terminal.core.TerminalCell
 import com.johnan.terminal.core.TerminalColor
 import com.johnan.terminal.core.TerminalImagePlacement
 import com.johnan.terminal.core.TerminalScreenState
+import com.johnan.terminal.core.TerminalSelectionLogic
 import com.johnan.terminal.core.UnderlineStyle
 import com.johnan.terminal.core.UrlRange
 import com.johnan.terminal.core.toComposeColor
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Calculates the index range of rows visible within the viewport, including an overscan margin.
@@ -134,6 +156,267 @@ internal fun consumeWheelSteps(
 }
 
 /**
+ * Converts a Compose pointer vertical scroll delta into a mouse wheel event direction and step count.
+ */
+internal fun resolveMouseWheelSteps(
+    scrollDeltaY: Float,
+    wheelScrollMultiplier: Float,
+    linesPerStep: Int,
+): Pair<MouseEvent, Int>? {
+    if (!scrollDeltaY.isFinite() || scrollDeltaY == 0f) return null
+    if (!wheelScrollMultiplier.isFinite() || wheelScrollMultiplier <= 0f) return null
+    val event = if (scrollDeltaY > 0f) MouseEvent.WheelDown else MouseEvent.WheelUp
+    val rawSteps = abs(scrollDeltaY) * wheelScrollMultiplier * linesPerStep.coerceAtLeast(1)
+    val steps = if (rawSteps.isFinite()) {
+        rawSteps.roundToInt().coerceIn(1, MAX_WHEEL_STEPS_PER_EVENT)
+    } else {
+        MAX_WHEEL_STEPS_PER_EVENT
+    }
+    return event to steps
+}
+
+/**
+ * Resolves the column range selected by a multi-click mouse action (double-click word, triple-click line).
+ */
+internal fun resolveMouseClickSelection(
+    clickCount: Int,
+    row: Int,
+    col: Int,
+    rowCells: Array<TerminalCell>?,
+    cols: Int,
+): IntRange? = when {
+    clickCount == 2 -> {
+        if (rowCells == null) {
+            null
+        } else {
+            val range = TerminalSelectionLogic.findWordBounds(rowCells, col)
+            if (range.isEmpty()) null else range
+        }
+    }
+    clickCount >= 3 -> 0..(cols - 1).coerceAtLeast(0)
+    else -> null
+}
+
+/**
+ * Selects a single-row cell column range via [SelectionController.onSelectRange] or direct-touch fallback.
+ */
+internal fun selectCellRange(
+    controller: SelectionController,
+    row: Int,
+    startCol: Int,
+    endCol: Int,
+) {
+    val onSelectRange = controller.onSelectRange
+    if (onSelectRange != null) {
+        onSelectRange(row, startCol, row, endCol)
+    } else {
+        controller.onStartDirectTouchSelection(row, startCol)
+        controller.onUpdateEndCursor(row, endCol)
+        controller.onFinalizeEndCursorAndCopy()
+    }
+}
+
+private class MouseClickTracker {
+    var lastClickTimeMs: Long = -1L
+    var lastClickPos: Offset = Offset.Zero
+    var clickCount: Int = 0
+}
+
+internal fun emitPointerMouseEvent(
+    onPointerMouseEvent: ((PointerMouseEvent) -> Unit)?,
+    onMouseEvent: (MouseEvent, Int, Int) -> Unit,
+    type: MouseEvent,
+    button: MouseButton,
+    row: Int,
+    col: Int,
+    shift: Boolean,
+    alt: Boolean,
+    ctrl: Boolean,
+) {
+    if (onPointerMouseEvent != null) {
+        onPointerMouseEvent(
+            PointerMouseEvent(
+                type = type,
+                button = button,
+                row = row,
+                col = col,
+                shiftPressed = shift,
+                altPressed = alt,
+                ctrlPressed = ctrl,
+            ),
+        )
+    } else if (
+        button == MouseButton.LEFT ||
+        type == MouseEvent.WheelUp ||
+        type == MouseEvent.WheelDown
+    ) {
+        onMouseEvent(type, row, col)
+    }
+}
+
+private suspend fun AwaitPointerEventScope.handleMousePrimarySelectionAndMultiClick(
+    downEvent: PointerInputChange,
+    clickTracker: MouseClickTracker,
+    wasSelectionNone: Boolean,
+    allowSingleClickUrlAndTap: Boolean,
+    selController: SelectionController,
+    cellWidthState: State<Float>,
+    cellHeightState: State<Float>,
+    verticalOffsetState: State<Float>,
+    terminalColsState: State<Int>,
+    terminalState: State<TerminalScreenState>,
+    allRowsState: State<List<Array<TerminalCell>>>,
+    gestureConfigState: State<TerminalGestureConfig>,
+    onRequestFocusOnlyState: State<() -> Unit>,
+    onUrlClickState: State<(String) -> Unit>,
+    onSingleTapState: State<(Int, Int) -> Unit>,
+) {
+    val downPos = downEvent.position
+    downEvent.consume()
+    onRequestFocusOnlyState.value.invoke()
+
+    val now = downEvent.uptimeMillis
+    clickTracker.clickCount =
+        if (clickTracker.clickCount > 0 &&
+            clickTracker.lastClickTimeMs >= 0L &&
+            now - clickTracker.lastClickTimeMs <= viewConfiguration.doubleTapTimeoutMillis &&
+            (downPos - clickTracker.lastClickPos).getDistance() <= viewConfiguration.touchSlop
+        ) {
+            clickTracker.clickCount + 1
+        } else {
+            1
+        }
+    clickTracker.lastClickTimeMs = now
+    clickTracker.lastClickPos = downPos
+
+    val dragThresholdPx = 4.dp.toPx()
+    var isDragSelecting = false
+    var lastDragRow = -1
+    var lastDragCol = -1
+
+    while (true) {
+        val event = awaitPointerEvent()
+        if (event.type == PointerEventType.Scroll) {
+            continue
+        }
+        val change = event.changes.firstOrNull { it.id == downEvent.id }
+            ?: event.changes.firstOrNull()
+        if (change == null || !change.pressed || !event.buttons.isPrimaryPressed) {
+            change?.consume()
+            break
+        }
+
+        val state = terminalState.value
+        val cols = terminalColsState.value
+        val cWidth = cellWidthState.value
+        val cHeight = cellHeightState.value
+        val vOffset = verticalOffsetState.value
+
+        if (!isDragSelecting) {
+            val distance = (change.position - downPos).getDistance()
+            if (distance > dragThresholdPx) {
+                isDragSelecting = true
+                clickTracker.clickCount = 0
+                val (startCol, startRow) = pixelToCellCoordinates(
+                    pixelX = downPos.x,
+                    pixelY = downPos.y,
+                    scrollOffset = 0f,
+                    cellWidth = cWidth,
+                    cellHeight = cHeight,
+                    verticalOffset = vOffset,
+                    cols = cols,
+                    visibleRows = state.rows.size,
+                    scrollbackSize = state.scrollback.size,
+                )
+                selController.onStartDirectTouchSelection(startRow, startCol)
+                val (curCol, curRow) = pixelToCellCoordinates(
+                    pixelX = change.position.x,
+                    pixelY = change.position.y,
+                    scrollOffset = 0f,
+                    cellWidth = cWidth,
+                    cellHeight = cHeight,
+                    verticalOffset = vOffset,
+                    cols = cols,
+                    visibleRows = state.rows.size,
+                    scrollbackSize = state.scrollback.size,
+                )
+                selController.onUpdateEndCursor(curRow, curCol)
+                lastDragRow = curRow
+                lastDragCol = curCol
+            }
+        } else {
+            val (curCol, curRow) = pixelToCellCoordinates(
+                pixelX = change.position.x,
+                pixelY = change.position.y,
+                scrollOffset = 0f,
+                cellWidth = cWidth,
+                cellHeight = cHeight,
+                verticalOffset = vOffset,
+                cols = cols,
+                visibleRows = state.rows.size,
+                scrollbackSize = state.scrollback.size,
+            )
+            if (curRow != lastDragRow || curCol != lastDragCol) {
+                selController.onUpdateEndCursor(curRow, curCol)
+                lastDragRow = curRow
+                lastDragCol = curCol
+            }
+        }
+        change.consume()
+    }
+
+    if (isDragSelecting) {
+        selController.onFinalizeEndCursorAndCopy()
+    } else {
+        val state = terminalState.value
+        val cols = terminalColsState.value
+        val (col, row) = pixelToCellCoordinates(
+            pixelX = downPos.x,
+            pixelY = downPos.y,
+            scrollOffset = 0f,
+            cellWidth = cellWidthState.value,
+            cellHeight = cellHeightState.value,
+            verticalOffset = verticalOffsetState.value,
+            cols = cols,
+            visibleRows = state.rows.size,
+            scrollbackSize = state.scrollback.size,
+        )
+        val count = clickTracker.clickCount
+        if (count == 2 || count >= 3) {
+            val rowCells = allRowsState.value.getOrNull(row)
+            val range = resolveMouseClickSelection(
+                clickCount = count,
+                row = row,
+                col = col,
+                rowCells = rowCells,
+                cols = cols,
+            )
+            if (range != null) {
+                selectCellRange(selController, row, range.first, range.last)
+            }
+            if (count >= 3) {
+                clickTracker.clickCount = 0
+            }
+        } else if (allowSingleClickUrlAndTap) {
+            if (wasSelectionNone && gestureConfigState.value.enableUrlClick) {
+                val clickedRowData = allRowsState.value.getOrNull(row)
+                if (clickedRowData != null) {
+                    val ranges = ScreenBuffer.getUrlRanges(clickedRowData)
+                    val clickedRange = ranges.find { range ->
+                        col >= range.startCol && col < range.endCol
+                    }
+                    if (clickedRange != null) {
+                        val url = ScreenBuffer.extractUrl(clickedRowData, clickedRange)
+                        onUrlClickState.value.invoke(url)
+                    }
+                }
+            }
+            onSingleTapState.value.invoke(row, col)
+        }
+    }
+}
+
+/**
  * Renders terminal character grid cells, cursor styles, highlights, and gesture overlays via hardware-accelerated Canvas.
  */
 @Composable
@@ -177,12 +460,15 @@ fun TerminalCanvas(
     onLog: (String) -> Unit = {},
     selectionController: SelectionController? = null,
     onStartDirectTouchSelection: (row: Int, col: Int) -> Unit = DefaultStartDirectTouchSelection,
+    onRequestFocusOnly: () -> Unit = onRequestFocus,
+    onPointerMouseEvent: ((PointerMouseEvent) -> Unit)? = null,
 ) {
     // Get terminal dimensions
     val terminalCols = terminalState.cols
 
     // Remember callback references
-    val currentOnSingleTap by rememberUpdatedState(onSingleTap)
+    val currentOnSingleTapState = rememberUpdatedState(onSingleTap)
+    val currentOnSingleTap by currentOnSingleTapState
     val currentOnStartDraggingStartCursor by rememberUpdatedState(onStartDraggingStartCursor)
     val currentOnUpdateStartCursor by rememberUpdatedState(onUpdateStartCursor)
     val currentOnFinalizeStartCursor by rememberUpdatedState(onFinalizeStartCursor)
@@ -191,8 +477,13 @@ fun TerminalCanvas(
     val currentOnFinalizeEndCursorAndCopy by rememberUpdatedState(onFinalizeEndCursorAndCopy)
     val currentOnExitCopyMode by rememberUpdatedState(onExitCopyMode)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
-    val currentOnUrlClick by rememberUpdatedState(onUrlClick)
+    val currentOnUrlClickState = rememberUpdatedState(onUrlClick)
+    val currentOnUrlClick by currentOnUrlClickState
     val currentOnMouseEvent by rememberUpdatedState(onMouseEvent)
+    val currentOnPointerMouseEvent by rememberUpdatedState(onPointerMouseEvent)
+    val currentOnRequestFocus by rememberUpdatedState(onRequestFocus)
+    val currentOnRequestFocusOnlyState = rememberUpdatedState(onRequestFocusOnly)
+    val currentOnRequestFocusOnly by currentOnRequestFocusOnlyState
     val currentTouchScrollSendsWheelOnly by rememberUpdatedState(touchScrollSendsWheelOnly)
     val currentOnStartDirectTouchSelection by rememberUpdatedState(onStartDirectTouchSelection)
 
@@ -201,6 +492,8 @@ fun TerminalCanvas(
             touchScrollSendsWheelOnly = gestureConfig.touchScrollSendsWheelOnly || touchScrollSendsWheelOnly,
         )
     }
+    val currentGestureConfigState = rememberUpdatedState(effectiveGestureConfig)
+    val currentGestureConfig by currentGestureConfigState
 
     val activeSelectionController = selectionController ?: remember(
         onStartDraggingStartCursor,
@@ -277,15 +570,23 @@ fun TerminalCanvas(
             ?: colorScheme?.background
             ?: (if (isDark) Color(0xFF0D1117) else Color(0xFF1E1E1E))
 
-    val currentTerminalCols by rememberUpdatedState(terminalCols)
+    val currentTerminalColsState = rememberUpdatedState(terminalCols)
+    val currentTerminalCols by currentTerminalColsState
     val currentTotalRows by rememberUpdatedState(allRows.size)
     val currentScrollbackLineCount by rememberUpdatedState(scrollbackLineCount)
-    val currentCellWidth by rememberUpdatedState(cellWidth)
-    val currentCellHeight by rememberUpdatedState(cellHeight)
-    val currentVerticalOffset by rememberUpdatedState(verticalOffset)
-    val currentTerminalState by rememberUpdatedState(terminalState)
+    val currentCellWidthState = rememberUpdatedState(cellWidth)
+    val currentCellWidth by currentCellWidthState
+    val currentCellHeightState = rememberUpdatedState(cellHeight)
+    val currentCellHeight by currentCellHeightState
+    val currentVerticalOffsetState = rememberUpdatedState(verticalOffset)
+    val currentVerticalOffset by currentVerticalOffsetState
+    val currentTerminalStateHolder = rememberUpdatedState(terminalState)
+    val currentTerminalState by currentTerminalStateHolder
     val currentSelectionState by rememberUpdatedState(selectionState)
-    val currentAllRows by rememberUpdatedState(allRows)
+    val currentAllRowsState = rememberUpdatedState(allRows)
+    val currentAllRows by currentAllRowsState
+
+    var isHoveringUrl by remember { mutableStateOf(false) }
 
     // Scrollable container with terminal background from color scheme
     Box(
@@ -298,16 +599,204 @@ fun TerminalCanvas(
                     enabled = selectionState is SelectionState.None || selectionState is SelectionState.CopyModeActive,
                 )
                 .background(terminalBackgroundColor)
-                // Standard mode gestures - long-press direct selection and mouse tracking
+                .pointerHoverIcon(if (isHoveringUrl) PointerIcon.Hand else PointerIcon.Text)
+                // Copy-mode gestures (outer to standard pointerInput so mouse multi-click takes priority)
+                .then(
+                    if (isCopyMode) {
+                        Modifier.terminalGestures(
+                            selectionState = selectionState,
+                            terminalCols = terminalCols,
+                            allRows = allRows,
+                            cellWidth = cellWidth,
+                            cellHeight = cellHeight,
+                            scrollbackLineCount = scrollbackLineCount,
+                            verticalOffset = verticalOffset,
+                            onSingleTap = currentOnSingleTap,
+                            onStartDraggingStartCursor = currentOnStartDraggingStartCursor,
+                            onUpdateStartCursor = currentOnUpdateStartCursor,
+                            onFinalizeStartCursor = currentOnFinalizeStartCursor,
+                            onStartDraggingEndCursor = currentOnStartDraggingEndCursor,
+                            onUpdateEndCursor = currentOnUpdateEndCursor,
+                            onFinalizeEndCursor = currentOnFinalizeEndCursorAndCopy,
+                            onExitCopyMode = currentOnExitCopyMode,
+                        )
+                    } else {
+                        Modifier
+                    },
+                )
+                // Standard mode gestures: long-press touch selection, desktop mouse selection, and tracking
                 .pointerInput(
                     terminalState.mouseTrackingMode,
                     effectiveGestureConfig,
                 ) {
-                    val isMouseTracking = currentTerminalState.mouseTrackingMode != MouseTrackingMode.None
+                    val isMouseTracking = terminalState.mouseTrackingMode != MouseTrackingMode.None
+                    val clickTracker = MouseClickTracker()
                     if (isMouseTracking) {
                         awaitPointerEventScope {
                             while (true) {
                                 val downEvent = awaitFirstDown(requireUnconsumed = false)
+                                if (downEvent.type == PointerType.Mouse) {
+                                    val downButtonsEvent = currentEvent
+                                    val isShiftBypass = downButtonsEvent.keyboardModifiers.isShiftPressed
+                                    if (isShiftBypass &&
+                                        downButtonsEvent.buttons.isPrimaryPressed &&
+                                        currentGestureConfig.enableMouseDirectSelection
+                                    ) {
+                                        val wasSelectionNone = currentSelectionState is SelectionState.None
+                                        if (wasSelectionNone ||
+                                            currentSelectionState is SelectionState.SelectionComplete
+                                        ) {
+                                            handleMousePrimarySelectionAndMultiClick(
+                                                downEvent = downEvent,
+                                                clickTracker = clickTracker,
+                                                wasSelectionNone = wasSelectionNone,
+                                                allowSingleClickUrlAndTap = false,
+                                                selController = currentSelectionController,
+                                                cellWidthState = currentCellWidthState,
+                                                cellHeightState = currentCellHeightState,
+                                                verticalOffsetState = currentVerticalOffsetState,
+                                                terminalColsState = currentTerminalColsState,
+                                                terminalState = currentTerminalStateHolder,
+                                                allRowsState = currentAllRowsState,
+                                                gestureConfigState = currentGestureConfigState,
+                                                onRequestFocusOnlyState = currentOnRequestFocusOnlyState,
+                                                onUrlClickState = currentOnUrlClickState,
+                                                onSingleTapState = currentOnSingleTapState,
+                                            )
+                                        }
+                                        continue
+                                    } else if (!isShiftBypass && currentSelectionState is SelectionState.None) {
+                                        if (currentCellWidth <= 0f ||
+                                            currentCellHeight <= 0f ||
+                                            currentTotalRows <= 0 ||
+                                            currentTerminalCols <= 0
+                                        ) {
+                                            continue
+                                        }
+                                        downEvent.consume()
+                                        currentOnRequestFocusOnly()
+                                        val downPos = downEvent.position
+                                        val (downRow, downCol) = TerminalCoordinateConverter.screenToTerminal(
+                                            offset = downPos,
+                                            cellWidth = currentCellWidth,
+                                            cellHeight = currentCellHeight,
+                                            scrollbackLineCount = currentScrollbackLineCount,
+                                            totalRows = currentTotalRows,
+                                            cols = currentTerminalCols,
+                                            verticalOffset = currentVerticalOffset,
+                                        )
+                                        val downVisibleRow = downRow - currentScrollbackLineCount
+                                        val button = when {
+                                            downButtonsEvent.buttons.isSecondaryPressed -> MouseButton.RIGHT
+                                            downButtonsEvent.buttons.isTertiaryPressed -> MouseButton.MIDDLE
+                                            else -> MouseButton.LEFT
+                                        }
+                                        val hasExplicitButtonFlag =
+                                            downButtonsEvent.buttons.isPrimaryPressed ||
+                                                downButtonsEvent.buttons.isSecondaryPressed ||
+                                                downButtonsEvent.buttons.isTertiaryPressed
+                                        if (downButtonsEvent.buttons.areAnyPressed && !hasExplicitButtonFlag) {
+                                            continue
+                                        }
+                                        val pressSent = downVisibleRow in 0 until currentTerminalState.rows.size
+                                        if (pressSent) {
+                                            emitPointerMouseEvent(
+                                                onPointerMouseEvent = currentOnPointerMouseEvent,
+                                                onMouseEvent = currentOnMouseEvent,
+                                                type = MouseEvent.Press,
+                                                button = button,
+                                                row = downVisibleRow,
+                                                col = downCol,
+                                                shift = downButtonsEvent.keyboardModifiers.isShiftPressed,
+                                                alt = downButtonsEvent.keyboardModifiers.isAltPressed,
+                                                ctrl = downButtonsEvent.keyboardModifiers.isCtrlPressed,
+                                            )
+                                        }
+
+                                        var lastRow = downVisibleRow
+                                        var lastCol = downCol
+
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.type == PointerEventType.Scroll) {
+                                                continue
+                                            }
+                                            val change = event.changes.firstOrNull { it.id == downEvent.id }
+                                                ?: event.changes.firstOrNull()
+                                            val trackedButtonReleased = hasExplicitButtonFlag &&
+                                                when (button) {
+                                                    MouseButton.LEFT -> !event.buttons.isPrimaryPressed
+                                                    MouseButton.RIGHT -> !event.buttons.isSecondaryPressed
+                                                    MouseButton.MIDDLE -> !event.buttons.isTertiaryPressed
+                                                    MouseButton.NONE -> true
+                                                }
+                                            if (change == null || !change.pressed || trackedButtonReleased) {
+                                                if (pressSent && currentTerminalState.rows.isNotEmpty()) {
+                                                    val maxVisibleRow =
+                                                        (currentTerminalState.rows.size - 1).coerceAtLeast(0)
+                                                    val releaseRow = lastRow.coerceIn(0, maxVisibleRow)
+                                                    emitPointerMouseEvent(
+                                                        onPointerMouseEvent = currentOnPointerMouseEvent,
+                                                        onMouseEvent = currentOnMouseEvent,
+                                                        type = MouseEvent.Release,
+                                                        button = button,
+                                                        row = releaseRow,
+                                                        col = lastCol,
+                                                        shift = event.keyboardModifiers.isShiftPressed,
+                                                        alt = event.keyboardModifiers.isAltPressed,
+                                                        ctrl = event.keyboardModifiers.isCtrlPressed,
+                                                    )
+                                                }
+                                                change?.consume()
+                                                break
+                                            }
+
+                                            if (currentCellWidth > 0f &&
+                                                currentCellHeight > 0f &&
+                                                currentTotalRows > 0 &&
+                                                currentTerminalCols > 0 &&
+                                                currentTerminalState.rows.isNotEmpty()
+                                            ) {
+                                                val (curRow, curCol) = TerminalCoordinateConverter.screenToTerminal(
+                                                    offset = change.position,
+                                                    cellWidth = currentCellWidth,
+                                                    cellHeight = currentCellHeight,
+                                                    scrollbackLineCount = currentScrollbackLineCount,
+                                                    totalRows = currentTotalRows,
+                                                    cols = currentTerminalCols,
+                                                    verticalOffset = currentVerticalOffset,
+                                                )
+                                                val maxVisibleRow =
+                                                    (currentTerminalState.rows.size - 1).coerceAtLeast(0)
+                                                val curVisibleRow =
+                                                    (curRow - currentScrollbackLineCount).coerceIn(0, maxVisibleRow)
+
+                                                if (currentTerminalState.mouseTrackingMode != MouseTrackingMode.Click) {
+                                                    if (curVisibleRow != lastRow || curCol != lastCol) {
+                                                        emitPointerMouseEvent(
+                                                            onPointerMouseEvent = currentOnPointerMouseEvent,
+                                                            onMouseEvent = currentOnMouseEvent,
+                                                            type = MouseEvent.Drag,
+                                                            button = button,
+                                                            row = curVisibleRow,
+                                                            col = curCol,
+                                                            shift = event.keyboardModifiers.isShiftPressed,
+                                                            alt = event.keyboardModifiers.isAltPressed,
+                                                            ctrl = event.keyboardModifiers.isCtrlPressed,
+                                                        )
+                                                        lastRow = curVisibleRow
+                                                        lastCol = curCol
+                                                    }
+                                                }
+                                            }
+                                            change.consume()
+                                        }
+                                        continue
+                                    } else {
+                                        continue
+                                    }
+                                }
+
                                 if (currentSelectionState !is SelectionState.None) {
                                     continue
                                 }
@@ -518,10 +1007,46 @@ fun TerminalCanvas(
                         awaitPointerEventScope {
                             while (true) {
                                 val downEvent = awaitFirstDown(requireUnconsumed = false)
-                                if (currentSelectionState !is SelectionState.None) {
+                                if (downEvent.type == PointerType.Mouse) {
+                                    val downButtonsEvent = currentEvent
+                                    if (!downButtonsEvent.buttons.isPrimaryPressed) {
+                                        // Do not consume or focus-steal; bubble right/middle clicks to parent modifiers
+                                        continue
+                                    }
+                                    val wasSelectionNone = currentSelectionState is SelectionState.None
+                                    if (!wasSelectionNone &&
+                                        currentSelectionState !is SelectionState.SelectionComplete
+                                    ) {
+                                        continue
+                                    }
+                                    if (currentGestureConfig.enableMouseDirectSelection) {
+                                        handleMousePrimarySelectionAndMultiClick(
+                                            downEvent = downEvent,
+                                            clickTracker = clickTracker,
+                                            wasSelectionNone = wasSelectionNone,
+                                            allowSingleClickUrlAndTap = true,
+                                            selController = selController,
+                                            cellWidthState = currentCellWidthState,
+                                            cellHeightState = currentCellHeightState,
+                                            verticalOffsetState = currentVerticalOffsetState,
+                                            terminalColsState = currentTerminalColsState,
+                                            terminalState = currentTerminalStateHolder,
+                                            allRowsState = currentAllRowsState,
+                                            gestureConfigState = currentGestureConfigState,
+                                            onRequestFocusOnlyState = currentOnRequestFocusOnlyState,
+                                            onUrlClickState = currentOnUrlClickState,
+                                            onSingleTapState = currentOnSingleTapState,
+                                        )
+                                        continue
+                                    } else if (!wasSelectionNone) {
+                                        continue
+                                    }
+                                } else if (currentSelectionState !is SelectionState.None) {
                                     continue
                                 }
+
                                 val downPos = downEvent.position
+                                val isMousePointer = downEvent.type == PointerType.Mouse
                                 var isMovedBeyondSlop = false
                                 var tapCompleted = false
 
@@ -532,7 +1057,11 @@ fun TerminalCanvas(
                                             ?: event.changes.firstOrNull()
                                         if (change == null || !change.pressed) {
                                             // Pointer released before longPressTimeoutMillis -> Tap
-                                            onRequestFocus()
+                                            if (isMousePointer) {
+                                                currentOnRequestFocusOnly()
+                                            } else {
+                                                currentOnRequestFocus()
+                                            }
                                             val (row, col) = TerminalCoordinateConverter.screenToTerminal(
                                                 offset = downPos,
                                                 cellWidth = currentCellWidth,
@@ -542,15 +1071,17 @@ fun TerminalCanvas(
                                                 cols = currentTerminalCols,
                                                 verticalOffset = currentVerticalOffset,
                                             )
-                                            val clickedRowData = currentAllRows.getOrNull(row)
-                                            if (clickedRowData != null) {
-                                                val ranges = ScreenBuffer.getUrlRanges(clickedRowData)
-                                                val clickedRange = ranges.find { range ->
-                                                    col >= range.startCol && col < range.endCol
-                                                }
-                                                if (clickedRange != null) {
-                                                    val url = ScreenBuffer.extractUrl(clickedRowData, clickedRange)
-                                                    currentOnUrlClick(url)
+                                            if (currentGestureConfig.enableUrlClick) {
+                                                val clickedRowData = currentAllRows.getOrNull(row)
+                                                if (clickedRowData != null) {
+                                                    val ranges = ScreenBuffer.getUrlRanges(clickedRowData)
+                                                    val clickedRange = ranges.find { range ->
+                                                        col >= range.startCol && col < range.endCol
+                                                    }
+                                                    if (clickedRange != null) {
+                                                        val url = ScreenBuffer.extractUrl(clickedRowData, clickedRange)
+                                                        currentOnUrlClick(url)
+                                                    }
                                                 }
                                             }
                                             currentOnSingleTap(row, col)
@@ -573,7 +1104,11 @@ fun TerminalCanvas(
 
                                 if (timeoutResult == null && !isMovedBeyondSlop) {
                                     // Held for longPressTimeoutMillis within touchSlop -> Direct selection
-                                    onRequestFocus()
+                                    if (isMousePointer) {
+                                        currentOnRequestFocusOnly()
+                                    } else {
+                                        currentOnRequestFocus()
+                                    }
                                     val (startCol, startRow) = pixelToCellCoordinates(
                                         pixelX = downPos.x,
                                         pixelY = downPos.y,
@@ -613,30 +1148,133 @@ fun TerminalCanvas(
                         }
                     }
                 }
-                // Selection gestures - only active in copy mode
-                .then(
-                    if (isCopyMode) {
-                        Modifier.terminalGestures(
-                            selectionState = selectionState,
-                            terminalCols = terminalCols,
-                            allRows = allRows,
-                            cellWidth = cellWidth,
-                            cellHeight = cellHeight,
-                            scrollbackLineCount = scrollbackLineCount,
-                            verticalOffset = verticalOffset,
-                            onSingleTap = currentOnSingleTap,
-                            onStartDraggingStartCursor = currentOnStartDraggingStartCursor,
-                            onUpdateStartCursor = currentOnUpdateStartCursor,
-                            onFinalizeStartCursor = currentOnFinalizeStartCursor,
-                            onStartDraggingEndCursor = currentOnStartDraggingEndCursor,
-                            onUpdateEndCursor = currentOnUpdateEndCursor,
-                            onFinalizeEndCursor = currentOnFinalizeEndCursorAndCopy,
-                            onExitCopyMode = currentOnExitCopyMode,
-                        )
-                    } else {
-                        Modifier
-                    },
-                ),
+                // Mouse wheel forwarding when terminal mouse tracking is active
+                .pointerInput(
+                    terminalState.mouseTrackingMode,
+                    effectiveGestureConfig,
+                ) {
+                    if (terminalState.mouseTrackingMode == MouseTrackingMode.None) {
+                        return@pointerInput
+                    }
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type != PointerEventType.Scroll) continue
+                            if (currentSelectionState !is SelectionState.None) continue
+                            if (event.keyboardModifiers.isCtrlPressed) continue
+                            val change = event.changes.firstOrNull() ?: continue
+                            if (currentTerminalState.rows.isEmpty() ||
+                                currentCellWidth <= 0f ||
+                                currentCellHeight <= 0f ||
+                                currentTotalRows <= 0 ||
+                                currentTerminalCols <= 0
+                            ) {
+                                continue
+                            }
+                            val resolved = resolveMouseWheelSteps(
+                                scrollDeltaY = change.scrollDelta.y,
+                                wheelScrollMultiplier = currentGestureConfig.wheelScrollMultiplier,
+                                linesPerStep = currentGestureConfig.mouseWheelLinesPerStep,
+                            ) ?: continue
+                            val (row, col) = TerminalCoordinateConverter.screenToTerminal(
+                                offset = change.position,
+                                cellWidth = currentCellWidth,
+                                cellHeight = currentCellHeight,
+                                scrollbackLineCount = currentScrollbackLineCount,
+                                totalRows = currentTotalRows,
+                                cols = currentTerminalCols,
+                                verticalOffset = currentVerticalOffset,
+                            )
+                            val maxVisibleRow = (currentTerminalState.rows.size - 1).coerceAtLeast(0)
+                            val visibleRow = (row - currentScrollbackLineCount).coerceIn(0, maxVisibleRow)
+                            val (wheelType, steps) = resolved
+                            val shift = event.keyboardModifiers.isShiftPressed
+                            val alt = event.keyboardModifiers.isAltPressed
+                            val ctrl = event.keyboardModifiers.isCtrlPressed
+                            repeat(steps) {
+                                emitPointerMouseEvent(
+                                    onPointerMouseEvent = currentOnPointerMouseEvent,
+                                    onMouseEvent = currentOnMouseEvent,
+                                    type = wheelType,
+                                    button = MouseButton.NONE,
+                                    row = visibleRow,
+                                    col = col,
+                                    shift = shift,
+                                    alt = alt,
+                                    ctrl = ctrl,
+                                )
+                            }
+                            change.consume()
+                        }
+                    }
+                }
+                // Mouse hover URL detection for Hand/Text pointer icon
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        var lastHoverRow = -1
+                        var cachedRowData: Array<TerminalCell>? = null
+                        var cachedRanges: List<UrlRange> = emptyList()
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Main)
+                            when (event.type) {
+                                PointerEventType.Move, PointerEventType.Enter -> {
+                                    val change = event.changes.firstOrNull()
+                                    if (change != null &&
+                                        change.type == PointerType.Mouse &&
+                                        currentGestureConfig.enableUrlClick
+                                    ) {
+                                        if (currentCellWidth > 0f &&
+                                            currentCellHeight > 0f &&
+                                            currentTotalRows > 0 &&
+                                            currentTerminalCols > 0
+                                        ) {
+                                            val (row, col) = TerminalCoordinateConverter.screenToTerminal(
+                                                offset = change.position,
+                                                cellWidth = currentCellWidth,
+                                                cellHeight = currentCellHeight,
+                                                scrollbackLineCount = currentScrollbackLineCount,
+                                                totalRows = currentTotalRows,
+                                                cols = currentTerminalCols,
+                                                verticalOffset = currentVerticalOffset,
+                                            )
+                                            val rowData = currentAllRows.getOrNull(row)
+                                            if (rowData != null) {
+                                                if (row != lastHoverRow || rowData !== cachedRowData) {
+                                                    lastHoverRow = row
+                                                    cachedRowData = rowData
+                                                    cachedRanges = ScreenBuffer.getUrlRanges(rowData)
+                                                }
+                                                var hovering = false
+                                                for (i in 0 until cachedRanges.size) {
+                                                    val range = cachedRanges[i]
+                                                    if (col >= range.startCol && col < range.endCol) {
+                                                        hovering = true
+                                                        break
+                                                    }
+                                                }
+                                                if (isHoveringUrl != hovering) {
+                                                    isHoveringUrl = hovering
+                                                }
+                                            } else if (isHoveringUrl) {
+                                                isHoveringUrl = false
+                                            }
+                                        }
+                                    } else if (isHoveringUrl) {
+                                        isHoveringUrl = false
+                                    }
+                                }
+                                PointerEventType.Exit -> {
+                                    lastHoverRow = -1
+                                    cachedRowData = null
+                                    cachedRanges = emptyList()
+                                    if (isHoveringUrl) {
+                                        isHoveringUrl = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
     ) {
         val imageBitmapCache = remember { LinkedHashMap<Int, Pair<Long, ImageBitmap>>() }
         for ((id, img) in terminalState.images) {

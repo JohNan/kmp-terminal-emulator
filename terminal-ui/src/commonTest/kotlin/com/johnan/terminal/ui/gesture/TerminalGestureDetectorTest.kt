@@ -1,9 +1,20 @@
 package com.johnan.terminal.ui.gesture
 
+import com.johnan.terminal.core.MouseButton
+import com.johnan.terminal.core.MouseEvent
+import com.johnan.terminal.core.PointerMouseEvent
+import com.johnan.terminal.core.TerminalCell
+import com.johnan.terminal.ui.MAX_WHEEL_STEPS_PER_EVENT
 import com.johnan.terminal.ui.SelectionController
+import com.johnan.terminal.ui.emitPointerMouseEvent
 import com.johnan.terminal.ui.pixelToCellCoordinates
+import com.johnan.terminal.ui.resolveMouseClickSelection
+import com.johnan.terminal.ui.resolveMouseWheelSteps
+import com.johnan.terminal.ui.selectCellRange
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TerminalGestureDetectorTest {
@@ -202,5 +213,176 @@ class TerminalGestureDetectorTest {
         )
         assertEquals(0, col)
         assertEquals(0, row)
+    }
+
+    @Test
+    fun testSelectionControllerOnSelectRangeDefaultAndCustom() {
+        val defaultController = SelectionController()
+        assertNull(defaultController.onSelectRange)
+
+        var recordedStartRow = -1
+        var recordedStartCol = -1
+        var recordedEndRow = -1
+        var recordedEndCol = -1
+        val customController = SelectionController(
+            onSelectRange = { sr, sc, er, ec ->
+                recordedStartRow = sr
+                recordedStartCol = sc
+                recordedEndRow = er
+                recordedEndCol = ec
+            },
+        )
+
+        customController.onSelectRange?.invoke(2, 4, 2, 11)
+        assertEquals(2, recordedStartRow)
+        assertEquals(4, recordedStartCol)
+        assertEquals(2, recordedEndRow)
+        assertEquals(11, recordedEndCol)
+    }
+
+    @Test
+    fun testResolveMouseWheelStepsDirectionScalingAndClamping() {
+        assertNull(resolveMouseWheelSteps(0f, 1.0f, 3))
+        assertNull(resolveMouseWheelSteps(-0f, 1.0f, 3))
+        assertNull(resolveMouseWheelSteps(Float.NaN, 1.0f, 3))
+        assertNull(resolveMouseWheelSteps(Float.POSITIVE_INFINITY, 1.0f, 3))
+        assertNull(resolveMouseWheelSteps(Float.NEGATIVE_INFINITY, 1.0f, 3))
+        assertNull(resolveMouseWheelSteps(1.0f, 0f, 3))
+        assertNull(resolveMouseWheelSteps(-1.0f, -1.0f, 3))
+        assertNull(resolveMouseWheelSteps(1.0f, Float.NaN, 3))
+        assertNull(resolveMouseWheelSteps(1.0f, Float.POSITIVE_INFINITY, 3))
+
+        assertEquals(MouseEvent.WheelDown to 3, resolveMouseWheelSteps(1.0f, 1.0f, 3))
+        assertEquals(MouseEvent.WheelUp to 9, resolveMouseWheelSteps(-2.0f, 1.5f, 3))
+        assertEquals(MouseEvent.WheelDown to 1, resolveMouseWheelSteps(0.1f, 1.0f, 1))
+        assertEquals(MouseEvent.WheelUp to 1, resolveMouseWheelSteps(-1.0f, 1.0f, 0))
+        assertEquals(
+            MouseEvent.WheelDown to MAX_WHEEL_STEPS_PER_EVENT,
+            resolveMouseWheelSteps(500.0f, 1.0f, 3),
+        )
+    }
+
+    @Test
+    fun testResolveMouseClickSelectionWordLineAndSingleClick() {
+        val rowText = "echo /tmp/out.log --flag"
+        val rowCells = Array(rowText.length) { i -> TerminalCell.create(rowText[i]) }
+
+        // Single click (or clickCount < 2) returns null
+        assertNull(resolveMouseClickSelection(clickCount = 0, row = 0, col = 1, rowCells = rowCells, cols = 80))
+        assertNull(resolveMouseClickSelection(clickCount = 1, row = 0, col = 1, rowCells = rowCells, cols = 80))
+
+        // Double click resolves word / path bounds
+        assertEquals(
+            0..3,
+            resolveMouseClickSelection(clickCount = 2, row = 0, col = 1, rowCells = rowCells, cols = 80),
+        )
+        assertEquals(
+            5..16,
+            resolveMouseClickSelection(clickCount = 2, row = 0, col = 8, rowCells = rowCells, cols = 80),
+        )
+        assertNull(resolveMouseClickSelection(clickCount = 2, row = 0, col = 0, rowCells = null, cols = 80))
+        assertNull(resolveMouseClickSelection(clickCount = 2, row = 0, col = 0, rowCells = emptyArray(), cols = 80))
+
+        // Triple click (or higher) resolves entire row column range
+        assertEquals(
+            0..79,
+            resolveMouseClickSelection(clickCount = 3, row = 4, col = 10, rowCells = rowCells, cols = 80),
+        )
+        assertEquals(
+            0..79,
+            resolveMouseClickSelection(clickCount = 4, row = 4, col = 10, rowCells = null, cols = 80),
+        )
+        assertEquals(
+            0..0,
+            resolveMouseClickSelection(clickCount = 3, row = 0, col = 0, rowCells = rowCells, cols = 0),
+        )
+    }
+
+    @Test
+    fun testSelectCellRangeUsesOnSelectRangeAndFallback() {
+        var selectRangeCalled = false
+        var fallbackCalled = false
+        var rangeArgs: List<Int> = emptyList()
+
+        val controllerWithRange = SelectionController(
+            onStartDirectTouchSelection = { _, _ -> fallbackCalled = true },
+            onUpdateEndCursor = { _, _ -> fallbackCalled = true },
+            onFinalizeEndCursorAndCopy = { fallbackCalled = true },
+            onSelectRange = { sr, sc, er, ec ->
+                selectRangeCalled = true
+                rangeArgs = listOf(sr, sc, er, ec)
+            },
+        )
+
+        selectCellRange(controllerWithRange, row = 3, startCol = 5, endCol = 16)
+        assertTrue(selectRangeCalled)
+        assertFalse(fallbackCalled)
+        assertEquals(listOf(3, 5, 3, 16), rangeArgs)
+
+        val events = mutableListOf<String>()
+        val fallbackController = SelectionController(
+            onStartDirectTouchSelection = { r, c -> events.add("start:$r,$c") },
+            onUpdateEndCursor = { r, c -> events.add("update:$r,$c") },
+            onFinalizeEndCursorAndCopy = { events.add("finalize") },
+        )
+
+        selectCellRange(fallbackController, row = 7, startCol = 0, endCol = 79)
+        assertEquals(listOf("start:7,0", "update:7,79", "finalize"), events)
+    }
+
+    @Test
+    fun testEmitPointerMouseEventLegacyFallbackForwardsLeftAndWheelOnly() {
+        val legacyEvents = mutableListOf<Triple<MouseEvent, Int, Int>>()
+        val onMouseEvent: (MouseEvent, Int, Int) -> Unit = { type, row, col ->
+            legacyEvents.add(Triple(type, row, col))
+        }
+
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.Press, MouseButton.LEFT, 1, 2, false, false, false)
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.Drag, MouseButton.LEFT, 3, 4, false, false, false)
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.Release, MouseButton.LEFT, 3, 4, false, false, false)
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.WheelUp, MouseButton.NONE, 5, 6, false, false, false)
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.WheelDown, MouseButton.NONE, 7, 8, false, false, false)
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.Press, MouseButton.RIGHT, 9, 10, false, false, false)
+        emitPointerMouseEvent(null, onMouseEvent, MouseEvent.Press, MouseButton.MIDDLE, 11, 12, false, false, false)
+
+        assertEquals(
+            listOf(
+                Triple(MouseEvent.Press, 1, 2),
+                Triple(MouseEvent.Drag, 3, 4),
+                Triple(MouseEvent.Release, 3, 4),
+                Triple(MouseEvent.WheelUp, 5, 6),
+                Triple(MouseEvent.WheelDown, 7, 8),
+            ),
+            legacyEvents,
+        )
+
+        val richEvents = mutableListOf<PointerMouseEvent>()
+        val unusedLegacy = mutableListOf<Triple<MouseEvent, Int, Int>>()
+        emitPointerMouseEvent(
+            onPointerMouseEvent = { richEvents.add(it) },
+            onMouseEvent = { type, row, col -> unusedLegacy.add(Triple(type, row, col)) },
+            type = MouseEvent.Press,
+            button = MouseButton.RIGHT,
+            row = 2,
+            col = 9,
+            shift = true,
+            alt = false,
+            ctrl = true,
+        )
+        assertTrue(unusedLegacy.isEmpty())
+        assertEquals(
+            listOf(
+                PointerMouseEvent(
+                    type = MouseEvent.Press,
+                    button = MouseButton.RIGHT,
+                    row = 2,
+                    col = 9,
+                    shiftPressed = true,
+                    altPressed = false,
+                    ctrlPressed = true,
+                ),
+            ),
+            richEvents,
+        )
     }
 }

@@ -54,6 +54,9 @@ data class TerminalGestureConfig(
     val wheelScrollMultiplier: Float = 1.0f,
     val longPressTimeoutMs: Long = 400L,
     val touchScrollSendsWheelOnly: Boolean = false,
+    val enableMouseDirectSelection: Boolean = true,
+    val suppressSoftKeyboardForMouse: Boolean = true,
+    val mouseWheelLinesPerStep: Int = 3,
 )
 
 /**
@@ -139,6 +142,9 @@ class TerminalUiConfigBuilder {
             wheelScrollMultiplier = gestures.wheelScrollMultiplier
             longPressTimeoutMs = gestures.longPressTimeoutMs
             touchScrollSendsWheelOnly = gestures.touchScrollSendsWheelOnly
+            enableMouseDirectSelection = gestures.enableMouseDirectSelection
+            suppressSoftKeyboardForMouse = gestures.suppressSoftKeyboardForMouse
+            mouseWheelLinesPerStep = gestures.mouseWheelLinesPerStep
         }
         builder.init()
         gestures = builder.build()
@@ -200,6 +206,9 @@ class TerminalGestureConfigBuilder {
     var wheelScrollMultiplier: Float = 1.0f
     var longPressTimeoutMs: Long = 400L
     var touchScrollSendsWheelOnly: Boolean = false
+    var enableMouseDirectSelection: Boolean = true
+    var suppressSoftKeyboardForMouse: Boolean = true
+    var mouseWheelLinesPerStep: Int = 3
 
     fun build() =
         TerminalGestureConfig(
@@ -209,6 +218,9 @@ class TerminalGestureConfigBuilder {
             wheelScrollMultiplier = wheelScrollMultiplier,
             longPressTimeoutMs = longPressTimeoutMs,
             touchScrollSendsWheelOnly = touchScrollSendsWheelOnly,
+            enableMouseDirectSelection = enableMouseDirectSelection,
+            suppressSoftKeyboardForMouse = suppressSoftKeyboardForMouse,
+            mouseWheelLinesPerStep = mouseWheelLinesPerStep,
         )
 }
 

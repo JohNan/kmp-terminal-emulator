@@ -24,6 +24,9 @@ actual fun TerminalInputCapture(
     onArrowKey: (ArrowDirection, Boolean) -> Unit,
     onLog: (String) -> Unit,
     modifier: Modifier,
+    focusOnlySignal: Int,
+    suppressSoftKeyboardForMouse: Boolean,
+    kittyKeyboardFlags: Int,
 ) {
     var inputView by remember { mutableStateOf<TerminalInputView?>(null) }
 
@@ -31,6 +34,13 @@ actual fun TerminalInputCapture(
         if (showKeyboardSignal > 0) {
             focusRequester.requestFocus()
             inputView?.showKeyboard()
+        }
+    }
+
+    LaunchedEffect(focusOnlySignal, inputView) {
+        if (focusOnlySignal > 0) {
+            focusRequester.requestFocus()
+            inputView?.focusOnly()
         }
     }
 
@@ -51,6 +61,8 @@ actual fun TerminalInputCapture(
             view.onInput = onInput
             view.onArrowKey = onArrowKey
             view.onLog = onLog
+            view.suppressSoftKeyboardForMouse = suppressSoftKeyboardForMouse
+            view.kittyKeyboardFlags = kittyKeyboardFlags
 
             if (view.isFocusable && !view.isFocused && enabled) {
                 view.requestFocus()

@@ -196,6 +196,58 @@ object TerminalSelectionLogic {
         return SelectionState.SelectionComplete(selection)
     }
 
+    fun findWordBounds(
+        rowCells: Array<TerminalCell>,
+        col: Int,
+    ): IntRange {
+        if (rowCells.isEmpty()) return IntRange.EMPTY
+
+        val clampedCol = col.coerceIn(0, rowCells.lastIndex)
+        val targetClass = classifyChar(rowCells[clampedCol].char)
+
+        var startCol = clampedCol
+        while (startCol > 0 && classifyChar(rowCells[startCol - 1].char) == targetClass) {
+            startCol--
+        }
+
+        var endCol = clampedCol
+        while (endCol < rowCells.lastIndex && classifyChar(rowCells[endCol + 1].char) == targetClass) {
+            endCol++
+        }
+
+        return startCol..endCol
+    }
+
+    fun selectWord(
+        row: Int,
+        col: Int,
+        rowCells: Array<TerminalCell>,
+    ): SelectionState {
+        val bounds = findWordBounds(rowCells, col)
+        if (bounds.isEmpty()) return SelectionState.None
+        return SelectionState.SelectionComplete(
+            TerminalSelection(
+                startRow = row,
+                startCol = bounds.first,
+                endRow = row,
+                endCol = bounds.last,
+            ),
+        )
+    }
+
+    fun selectLine(
+        row: Int,
+        cols: Int,
+    ): SelectionState =
+        SelectionState.SelectionComplete(
+            TerminalSelection(
+                startRow = row,
+                startCol = 0,
+                endRow = row,
+                endCol = (cols - 1).coerceAtLeast(0),
+            ),
+        )
+
     // --- Backward-Compatible Overloads Operating on TerminalUiState.Active ---
 
     fun onSingleTap(
@@ -253,4 +305,19 @@ object TerminalSelectionLogic {
 
     fun exitCopyMode(state: TerminalUiState.Active): TerminalUiState.Active =
         state.copy(selectionState = exitCopyMode())
+
+    private val WORD_EXTRA_CHARS = charArrayOf('_', '-', '.', '/', ':', '~')
+
+    private enum class CharClass {
+        WHITESPACE,
+        WORD,
+        PUNCTUATION,
+    }
+
+    private fun classifyChar(ch: Char): CharClass =
+        when {
+            ch == ' ' || ch == '\u0000' || ch == '\t' || ch.isWhitespace() -> CharClass.WHITESPACE
+            ch.isLetterOrDigit() || ch in WORD_EXTRA_CHARS -> CharClass.WORD
+            else -> CharClass.PUNCTUATION
+        }
 }

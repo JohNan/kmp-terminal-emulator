@@ -127,4 +127,70 @@ class TerminalSelectionLogicTest {
         assertEquals(9, finalizedEnd.selection.endRow)
         assertEquals(15, finalizedEnd.selection.endCol)
     }
+
+    @Test
+    fun testFindWordBoundsWordsPathsAndUrls() {
+        val pathCells = cellsFromString("cat /home/user-1/my_file.txt --flag")
+        assertEquals(0..2, TerminalSelectionLogic.findWordBounds(pathCells, 0))
+        assertEquals(0..2, TerminalSelectionLogic.findWordBounds(pathCells, 2))
+        assertEquals(4..27, TerminalSelectionLogic.findWordBounds(pathCells, 4))
+        assertEquals(4..27, TerminalSelectionLogic.findWordBounds(pathCells, 10))
+        assertEquals(4..27, TerminalSelectionLogic.findWordBounds(pathCells, 27))
+        assertEquals(29..34, TerminalSelectionLogic.findWordBounds(pathCells, 31))
+
+        val tildeCells = cellsFromString("~/docs/readme.md")
+        assertEquals(0..15, TerminalSelectionLogic.findWordBounds(tildeCells, 0))
+
+        val urlCells = cellsFromString("open https://example.com:8080/v1/api?q=1")
+        assertEquals(0..3, TerminalSelectionLogic.findWordBounds(urlCells, 1))
+        assertEquals(5..35, TerminalSelectionLogic.findWordBounds(urlCells, 15))
+        assertEquals(36..36, TerminalSelectionLogic.findWordBounds(urlCells, 36))
+        assertEquals(37..37, TerminalSelectionLogic.findWordBounds(urlCells, 37))
+        assertEquals(38..38, TerminalSelectionLogic.findWordBounds(urlCells, 38))
+        assertEquals(39..39, TerminalSelectionLogic.findWordBounds(urlCells, 39))
+    }
+
+    @Test
+    fun testFindWordBoundsWhitespacePunctuationEmptyAndClamping() {
+        val mixedCells = cellsFromString("foo   \t\u0000 bar === (b) !!")
+        assertEquals(3..8, TerminalSelectionLogic.findWordBounds(mixedCells, 3))
+        assertEquals(3..8, TerminalSelectionLogic.findWordBounds(mixedCells, 6))
+        assertEquals(3..8, TerminalSelectionLogic.findWordBounds(mixedCells, 7))
+        assertEquals(13..15, TerminalSelectionLogic.findWordBounds(mixedCells, 14))
+        assertEquals(17..17, TerminalSelectionLogic.findWordBounds(mixedCells, 17))
+        assertEquals(21..22, TerminalSelectionLogic.findWordBounds(mixedCells, 21))
+
+        assertEquals(IntRange.EMPTY, TerminalSelectionLogic.findWordBounds(emptyArray(), 0))
+        assertEquals(IntRange.EMPTY, TerminalSelectionLogic.findWordBounds(emptyArray(), -1))
+
+        val clampedCells = cellsFromString("abc def")
+        assertEquals(0..2, TerminalSelectionLogic.findWordBounds(clampedCells, -10))
+        assertEquals(4..6, TerminalSelectionLogic.findWordBounds(clampedCells, 99))
+    }
+
+    @Test
+    fun testSelectWordAndSelectLine() {
+        val emptySelection = TerminalSelectionLogic.selectWord(row = 2, col = 0, rowCells = emptyArray())
+        assertEquals(SelectionState.None, emptySelection)
+
+        val rowCells = cellsFromString("echo /tmp/out.log")
+        val wordSelection = TerminalSelectionLogic.selectWord(row = 4, col = 8, rowCells = rowCells)
+        assertTrue(wordSelection is SelectionState.SelectionComplete)
+        assertEquals(TerminalSelection(startRow = 4, startCol = 5, endRow = 4, endCol = 16), wordSelection.selection)
+
+        val lineSelection = TerminalSelectionLogic.selectLine(row = 7, cols = 80)
+        assertTrue(lineSelection is SelectionState.SelectionComplete)
+        assertEquals(TerminalSelection(startRow = 7, startCol = 0, endRow = 7, endCol = 79), lineSelection.selection)
+
+        val singleColLine = TerminalSelectionLogic.selectLine(row = 2, cols = 1)
+        assertTrue(singleColLine is SelectionState.SelectionComplete)
+        assertEquals(TerminalSelection(startRow = 2, startCol = 0, endRow = 2, endCol = 0), singleColLine.selection)
+
+        val zeroColLine = TerminalSelectionLogic.selectLine(row = 0, cols = 0)
+        assertTrue(zeroColLine is SelectionState.SelectionComplete)
+        assertEquals(TerminalSelection(startRow = 0, startCol = 0, endRow = 0, endCol = 0), zeroColLine.selection)
+    }
+
+    private fun cellsFromString(text: String): Array<TerminalCell> =
+        Array(text.length) { index -> TerminalCell.create(text[index]) }
 }
